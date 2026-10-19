@@ -639,6 +639,40 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
+            "payment date accepts past local time and rejects future",
+            async () => {
+                const { default: DateTime } = await server.ssrLoadModule(
+                    "/src/components/ConfirmedDateTimeInput.vue",
+                );
+                const render = (modelValue) => renderToString(
+                    createSSRApp(DateTime, {
+                        modelValue,
+                        title: "Дата оплаты (ваше местное время)",
+                        pastOnly: true,
+                    }),
+                );
+
+                const past = await render("2001-02-03T09:00");
+                assert.match(past, /3 февраля 2001 г\., 09:00/);
+                assert.doesNotMatch(past, /не ранее текущего времени/);
+                assert.doesNotMatch(past, /не позже текущего времени/);
+                assert.match(past, /type="date"[^>]*max="\d{4}-\d{2}-\d{2}"/);
+                assert.doesNotMatch(past, /type="date"[^>]*min=/);
+
+                const future = await render("2999-01-01T10:00");
+                assert.match(future, /не позже текущего времени/);
+
+                const visit = await renderToString(
+                    createSSRApp(DateTime, {
+                        modelValue: "2001-02-03T09:00",
+                        title: "Дата визита",
+                    }),
+                );
+                assert.match(visit, /не ранее текущего времени плюс 30 минут/);
+            },
+        );
+
+        await context.test(
             "vehicle make and model use dependent searchable selectors",
             async () => {
                 const { default: Picker } = await server.ssrLoadModule(

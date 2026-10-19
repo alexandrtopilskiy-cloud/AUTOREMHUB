@@ -59,6 +59,16 @@ function minimumLocalValue(timestamp) {
     return rounded.toISOString().slice(0, 16);
 }
 
+// Последний получасовой слот, не позже текущего местного времени браузера.
+function latestPastLocalValue(timestamp) {
+    const now = new Date(timestamp);
+    const slot = now.getMinutes() < 30 ? "00" : "30";
+    const pad = (value) => String(value).padStart(2, "0");
+
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+        + `T${pad(now.getHours())}:${slot}`;
+}
+
 export default {
     name: "ConfirmedDateTimeInput",
     props: {
@@ -83,6 +93,12 @@ export default {
             type: String,
             default: "23:30",
             validator: validTime,
+        },
+        // Фактическая дата события (например, оплаты): допускается прошлое
+        // местное время и запрещено будущее вместо правила «сейчас + 30 минут».
+        pastOnly: {
+            type: Boolean,
+            default: false,
         },
     },
     emits: ["update:modelValue", "confirm"],
@@ -119,7 +135,13 @@ export default {
             return this.minimumValue;
         },
         minimumDate() {
-            return this.minimumSelectableValue.slice(0, 10);
+            return this.pastOnly ? null : this.minimumSelectableValue.slice(0, 10);
+        },
+        maximumValue() {
+            return this.pastOnly ? latestPastLocalValue(this.nowTick) : "";
+        },
+        maximumDate() {
+            return this.pastOnly ? this.maximumValue.slice(0, 10) : null;
         },
         minimumAllowedTime() {
             if (this.minimumDate !== this.pendingDate) {
@@ -163,8 +185,17 @@ export default {
         invalidPast() {
             return Boolean(
                 !this.disabled
+                && !this.pastOnly
                 && this.pendingValue
                 && this.pendingValue < this.minimumSelectableValue,
+            );
+        },
+        invalidFuture() {
+            return Boolean(
+                !this.disabled
+                && this.pastOnly
+                && this.pendingValue
+                && this.pendingValue > this.maximumValue,
             );
         },
         invalidRange() {
@@ -199,6 +230,12 @@ export default {
     },
     methods: {
         timeDisabled(time) {
+            if (this.pastOnly) {
+                return !this.disabled
+                    && this.pendingDate === this.maximumDate
+                    && time > this.maximumValue.slice(11, 16);
+            }
+
             return !this.disabled
                 && this.pendingDate === this.minimumDate
                 && time < this.minimumAllowedTime;
@@ -230,12 +267,12 @@ export default {
         handleTimeChange() {
             this.commit();
 
-            if (this.pendingValue && !this.invalidPast && !this.invalidRange) {
+            if (this.pendingValue && !this.invalidPast && !this.invalidFuture && !this.invalidRange) {
                 this.closePanel();
             }
         },
         commit() {
-            if (this.invalidPast || this.invalidRange) {
+            if (this.invalidPast || this.invalidFuture || this.invalidRange) {
                 return;
             }
 
@@ -334,6 +371,7 @@ export default {
                             v-model="pendingDate"
                             type="date"
                             :min="minimumDate"
+                            :max="maximumDate"
                             :disabled="disabled"
                             @change="handleDateChange"
                         />
@@ -365,6 +403,9 @@ export default {
 
         <small v-if="invalidPast" class="error-message">
             Выберите дату и время не ранее текущего времени плюс 30 минут.
+        </small>
+        <small v-else-if="invalidFuture" class="error-message">
+            Выберите дату и время не позже текущего времени.
         </small>
         <small v-else-if="invalidRange" class="error-message">
             Выберите время с {{ minTime }} до {{ maxTime }}.

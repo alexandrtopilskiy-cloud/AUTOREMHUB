@@ -230,6 +230,7 @@ function verify() {
       <ConfirmedDateTimeInput
         v-model="paidAt"
         title="Дата оплаты (ваше местное время)"
+        past-only
         :disabled="busy"
       />
 
