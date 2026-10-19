@@ -36,8 +36,7 @@ ln -sfn "$BASE/shared/.env" "$DIR/api/.env"
 chgrp -R www-data "$DIR/api/bootstrap/cache"
 chmod -R g+w "$DIR/api/bootstrap/cache"
 
-echo "==> Кеш настроек и миграции"
-"${ARTISAN[@]}" optimize:clear
+echo "==> Миграции и кеш настроек"
 "${ARTISAN[@]}" migrate --force
 "${ARTISAN[@]}" config:cache
 "${ARTISAN[@]}" route:cache
