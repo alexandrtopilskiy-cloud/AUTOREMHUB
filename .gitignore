@@ -8,3 +8,4 @@ front/dist/
 front/.env
 e2e/shots/
 e2e/probe-results.json
+__pycache__/
