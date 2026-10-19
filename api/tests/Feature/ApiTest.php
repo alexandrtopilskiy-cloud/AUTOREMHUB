@@ -821,6 +821,40 @@ final class ApiTest extends TestCase
             ->assertJsonPath('error.code', 'DRAFT_DELETE_FORBIDDEN');
     }
 
+    public function test_draft_returned_from_route_is_not_deletable(): void
+    {
+        $sent = $this->patchRequest($this->draft(), [
+            'vehicleId' => $this->vehicle->uuid,
+            'contactId' => $this->contact->uuid,
+            'reasonId'  => $this->reason->uuid,
+            'mileage'   => '15000',
+        ]);
+        $sent = $this->api('POST', '/requests/' . $sent['id'] . '/next', [
+            'revision'      => $sent['revision'],
+            'comment'       => '',
+            'attachmentIds' => [],
+        ])->assertOk()->json('request');
+
+        $this->actingAs($this->actors['manager']);
+        $returned = $this->api('POST', '/requests/' . $sent['id'] . '/return', [
+            'revision'      => $sent['revision'],
+            'comment'       => 'Уточните описание',
+            'attachmentIds' => [],
+        ])->assertOk()->json('request');
+        $this->assertSame(0, $returned['stage']);
+
+        $this->actingAs($this->actors['customer']);
+        $draft = $this->api('GET', '/requests/' . $sent['id'])->assertOk()->json('request');
+        $this->assertFalse($draft['permissions']['canDeleteDraft']);
+
+        $this->api('DELETE', '/requests/' . $sent['id'])
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'DRAFT_DELETE_FORBIDDEN');
+        $this->api('POST', '/requests/drafts/delete', ['ids' => [$sent['id']]])
+            ->assertForbidden();
+        $this->assertDatabaseHas('repair_requests', ['uuid' => $sent['id']]);
+    }
+
     public function test_manager_does_not_see_customer_drafts(): void
     {
         $request = $this->draft();

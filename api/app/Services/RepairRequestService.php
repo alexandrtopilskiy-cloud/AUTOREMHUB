@@ -128,6 +128,12 @@ final class RepairRequestService
                 ->where('tenant_id', $user->tenantId())
                 ->where('created_by', $user->id)
                 ->where('stage', RepairStage::Draft->value)
+                // stage=0 недостаточно: возвращённый из маршрута документ
+                // имеет периоды других этапов и остаётся в истории.
+                ->whereDoesntHave(
+                    'periods',
+                    fn ($query) => $query->where('stage', '<>', RepairStage::Draft->value),
+                )
                 ->whereIn('uuid', $validated['ids'])
                 ->lockForUpdate()
                 ->get();

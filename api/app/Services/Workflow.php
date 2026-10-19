@@ -167,7 +167,8 @@ final class Workflow
         return [
             'editableFields'   => $editableFields,
             'canDeleteDraft'   => $stage === RepairStage::Draft
-                && $request->created_by === $user->id,
+                && $request->created_by === $user->id
+                && !self::wasRouted($request),
             'canAdvance'       => $isOwner
                 && !$isStationDecision
                 && !$isCustomerSlotDecision
@@ -225,5 +226,21 @@ final class Workflow
             RepairStage::ManagerRouting,
             RepairStage::StationApproval,
         ], true);
+    }
+
+    /**
+     * Документ хоть раз покидал черновик (есть период другого этапа).
+     */
+    private static function wasRouted(RepairRequest $request): bool
+    {
+        if ($request->relationLoaded('periods')) {
+            return $request->periods->contains(
+                fn ($period): bool => $period->stage !== RepairStage::Draft,
+            );
+        }
+
+        return $request->periods()
+            ->where('stage', '<>', RepairStage::Draft->value)
+            ->exists();
     }
 }
