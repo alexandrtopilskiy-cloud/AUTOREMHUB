@@ -1,0 +1,15 @@
+{
+  "version": "0.37.1",
+  "codeDate": "2026-10-15",
+  "archiveDate": "2026-10-17",
+  "repositories": {
+    "api": {
+      "commit": "db65e68c82df0095e29ed1fc72aa1cce44971503",
+      "files": 302
+    },
+    "front": {
+      "commit": "571cd023c7c60bc6dd99bba9aa4d77b715071330",
+      "files": 70
+    }
+  }
+}

@@ -1,0 +1,71 @@
+stages:
+  - test
+
+variables:
+  APP_ENV: testing
+  COMPOSER_ALLOW_SUPERUSER: "1"
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: msto_test
+  DB_SCHEMA: msto_test
+  DB_USERNAME: postgres
+  DB_PASSWORD: postgres
+  POSTGRES_DB: msto_test
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+
+api:tests:
+  stage: test
+  image: php:8.4-cli-bookworm
+  services:
+    - name: postgres:15-alpine
+      alias: postgres
+  cache:
+    key:
+      files:
+        - composer.lock
+    paths:
+      - vendor/
+      - .composer-cache/
+  before_script:
+    - >-
+      apt-get update && apt-get install -y --no-install-recommends
+      $PHPIZE_DEPS ca-certificates curl git libonig-dev libpq-dev
+      libxml2-dev libzip-dev postgresql-client unzip
+    - docker-php-ext-install -j"$(nproc)" bcmath mbstring pdo_pgsql simplexml zip
+    - pecl install pcov
+    - docker-php-ext-enable pcov
+    - curl -fsSL https://composer.github.io/installer.sig -o composer-installer.sig
+    - curl -fsSL https://getcomposer.org/installer -o composer-setup.php
+    - >-
+      test "$(cat composer-installer.sig)" =
+      "$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+    - php composer-setup.php --quiet --install-dir=/usr/local/bin --filename=composer
+    - composer config cache-dir "$CI_PROJECT_DIR/.composer-cache"
+    - composer install --prefer-dist --no-interaction --no-progress
+    - until pg_isready -h postgres -U postgres -d msto_test; do sleep 1; done
+  script:
+    - mkdir -p build
+    - composer lint
+    - php artisan config:clear
+    - >-
+      php -d pcov.enabled=1 -d pcov.directory="$CI_PROJECT_DIR/app"
+      vendor/bin/phpunit --colors=never
+      --coverage-text=build/coverage.txt
+      --coverage-clover=build/coverage.xml
+      --log-junit=build/junit.xml
+    - php scripts/coverage-gate.php build/coverage.txt 60 85
+    - cat build/coverage.txt
+  coverage: '/Lines:\s+\d+(?:\.\d+)?%/'
+  artifacts:
+    when: always
+    expire_in: 14 days
+    reports:
+      junit: build/junit.xml
+    paths:
+      - build/coverage.txt
+      - build/coverage.xml
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'

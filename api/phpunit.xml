@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" colors="true" cacheDirectory=".phpunit.cache" failOnWarning="true">
+  <testsuites>
+    <testsuite name="Unit">
+      <directory>tests/Unit</directory>
+    </testsuite>
+    <testsuite name="Feature">
+      <directory>tests/Feature</directory>
+    </testsuite>
+  </testsuites>
+  <source>
+    <include>
+      <directory>app</directory>
+    </include>
+    <exclude>
+      <directory suffix=".php">app/Console/Commands</directory>
+      <directory suffix=".php">app/Providers</directory>
+      <directory suffix=".php">app/Exceptions</directory>
+    </exclude>
+  </source>
+  <php>
+    <env name="APP_ENV" value="testing" force="true"/>
+    <env name="APP_KEY" value="base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" force="true"/>
+    <env name="APP_DEBUG" value="false" force="true"/>
+    <env name="DB_DATABASE" value="msto_test"/>
+    <env name="DB_SCHEMA" value="msto_test"/>
+    <env name="CACHE_STORE" value="database" force="true"/>
+    <env name="BCRYPT_ROUNDS" value="4" force="true"/>
+    <env name="SESSION_SECURE_COOKIE" value="false" force="true"/>
+    <env name="FRONTEND_ORIGINS" value="http://localhost:5173" force="true"/>
+  </php>
+</phpunit>

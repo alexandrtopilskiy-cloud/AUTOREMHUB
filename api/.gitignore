@@ -1,0 +1,75 @@
+# ─── Зависимости ───
+/vendor/
+/node_modules/
+/public/build/
+/public/hot/
+/public/storage/
+
+# ─── Окружение ───
+/.env
+/.env.*.example
+!/.env.example
+/.env.testing
+
+# ─── Тесты ───
+/.phpunit.cache/
+/phpunit-result.xml
+/.phpunit.result.cache
+
+# ─── IDE ───
+.idea/
+.vscode/
+*.sublime-*
+*.swp
+*.swo
+
+# ─── CI ───
+.github/
+
+# ─── Логи ───
+/storage/logs/*.log
+!/storage/logs/.gitignore
+
+# ─── Кэш фреймворка ───
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+!/storage/framework/cache/.gitignore
+!/storage/framework/sessions/.gitignore
+!/storage/framework/views/.gitignore
+
+# ─── Пользовательские файлы ───
+/storage/app/media/*
+/storage/app/private/*
+/storage/app/public/*
+!/storage/app/media/.gitignore
+!/storage/app/private/.gitignore
+!/storage/app/public/.gitignore
+
+# ─── Системные ───
+.DS_Store
+Thumbs.db
+
+# ─── Прочее ───
+*.log
+npm-debug.log*
+yarn-error.log*
+
+.bundles
+# Coverage
+/coverage/
+/coverage.xml
+/coverage.html
+*.lcov
+/storage/*.key
+/.github/
+
+/build/
+coverage.txt
+.phpunit.cache/
+.phpunit.result.cache
+
+*.docx
+*.pdf
+
+header.tex

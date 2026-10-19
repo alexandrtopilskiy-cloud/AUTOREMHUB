@@ -1,0 +1,50 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'cdn_url'         => env('MEDIA_CDN_URL'),
+    'cdn_key_pair'    => env('MEDIA_CDN_KEY_PAIR_ID'),
+    'cdn_private_key' => env('MEDIA_CDN_PRIVATE_KEY_PATH'),
+    'frontend_origins' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('FRONTEND_ORIGINS', 'http://localhost:5173')),
+    ))),
+    'service_timezone' => env('SERVICE_TIMEZONE', 'Europe/Moscow'),
+    'visit_time_start' => env('VISIT_TIME_START', '08:00'),
+    'visit_time_end'   => env('VISIT_TIME_END', '22:00'),
+    'document_lock_ttl_seconds' => (int) env('DOCUMENT_LOCK_TTL_SECONDS', 120),
+    'part_units'       => [
+        'шт.',
+        'ед.',
+        'компл.',
+        'набор',
+        'пара',
+        'упак.',
+        'л',
+        'мл',
+        'кг',
+        'г',
+        'м',
+        'см',
+        'м²',
+        'рулон',
+        'баллон',
+        'канистра',
+    ],
+    'work_groups'      => [
+        'Кузов',
+        'Салон',
+        'Двигатель',
+        'Трансмиссия',
+        'Шасси',
+        'Подвеска',
+        'Тормозная система',
+        'Рулевое управление',
+        'Техническое обслуживание',
+        'Регулировочные',
+        'Электрика',
+        'Шиномонтаж',
+        'Прочее',
+    ],
+];

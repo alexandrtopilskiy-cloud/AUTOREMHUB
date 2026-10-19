@@ -1,0 +1,441 @@
+# Замените token, UUID и revision значениями из последнего ответа.
+@base = http://localhost:8000/api
+@origin = http://localhost:5173
+@login = Zakaz
+@password = replace-with-real-password
+@token = replace-with-token-from-login
+@request = RP-000001
+@draftUuid = 9be7e60b-28f8-4d20-a1a2-80c48615b9fd
+@revision = 0
+@vehicle = 35ba2fa5-8e6e-4b99-962b-c34bd0b40733
+@contact = 51d0ca01-602d-485a-adac-3f9117b01292
+@driver = 54e72214-cdee-4a28-bb14-47cf4881304a
+@person = 51d0ca01-602d-485a-adac-3f9117b01292
+@reason = 3aa60e67-7686-4254-aa76-59133219c28b
+@subtype = 27de864b-4a6a-4937-93d8-61d10664502d
+@station = f4a5ca1a-a8cb-452c-b5b1-a0924529173a
+@attachment = c314f94b-ff37-4a78-b97c-0f93c3c4b33a
+@part = 9ad84f25-347e-4ced-8c57-a761c7152087
+@supplier = 7378ab9f-da96-49d6-a86b-5ee6c61cf407
+@catalogRecord = 35ba2fa5-8e6e-4b99-962b-c34bd0b40733
+@vehicleMake = 4d45c45d-1693-4ac0-b0a9-b15009bfb0d1
+@lock = 15ea8f4a-f569-4b65-9ba3-e6f8944f129e
+
+### Вход
+POST {{base}}/login
+Origin: {{origin}}
+Accept: application/json
+Content-Type: application/json
+
+{"login":"{{login}}","password":"{{password}}"}
+
+### Принудительный вход с завершением прежней сессии
+POST {{base}}/login
+Origin: {{origin}}
+Accept: application/json
+Content-Type: application/json
+
+{"login":"{{login}}","password":"{{password}}","force":true}
+
+### Сессия
+GET {{base}}/session
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Пустой список или сохранённые заявки
+GET {{base}}/requests
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Создать полностью пустую заявку
+POST {{base}}/requests
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### Получить заявку по UUID или RP-номеру
+GET {{base}}/requests/{{request}}
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Удалить выбранные собственные черновики
+POST {{base}}/requests/drafts/delete
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"ids":["{{draftUuid}}"]}
+
+### Сохранить обязательные поля заявки Заказчика
+PATCH {{base}}/requests/{{request}}
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "revision": {{revision}},
+  "patch": {
+    "vehicleId": "{{vehicle}}",
+    "contactId": "{{contact}}",
+    "driverId": "{{driver}}",
+    "reasonId": "{{reason}}",
+    "mileage": "42500"
+  }
+}
+
+### Поиск автомобилей
+GET {{base}}/vehicles?q=LVTDB21B4PE905103
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Точный поиск по VIN
+GET {{base}}/vehicles/lookup?vin=LVTDB21B4PE905103
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Автомобиль
+GET {{base}}/vehicles/{{vehicle}}
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Контактные лица выбранного автомобиля
+GET {{base}}/vehicles/{{vehicle}}/contacts
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Водители выбранного автомобиля
+GET {{base}}/vehicles/{{vehicle}}/drivers
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Статистика автомобиля
+GET {{base}}/vehicles/{{vehicle}}/statistics
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Справочники для форм
+GET {{base}}/reference-data
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Все доступные записи справочников
+GET {{base}}/catalogs
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Быстрый поиск марки по начальным символам
+GET {{base}}/vehicle-reference/makes?search=lad&limit=50
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Быстрый поиск модели выбранной марки
+GET {{base}}/vehicle-reference/models?makeId={{vehicleMake}}&search=ves&limit=100
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Поколения выбранной модели для применимости нормы
+GET {{base}}/vehicle-reference/generations?modelId={{vehicleModel}}&search=b9&limit=100
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Двигатели выбранной модели и поколения для применимости нормы
+GET {{base}}/vehicle-reference/engines?modelId={{vehicleModel}}&generationId={{vehicleGeneration}}&search=cze&limit=100
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Закрытый справочник трансмиссий
+GET {{base}}/vehicle-reference/transmissions?search=акп&limit=50
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Закрытый справочник приводов
+GET {{base}}/vehicle-reference/drives?search=пол&limit=50
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Создать отсутствующую марку и модель
+POST {{base}}/vehicle-reference/models
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"record":{"make":"LADA","model":"Vesta","modelYearFrom":2015,"modelYearTo":2026,"engineIndex":"21129","horsepower":106.0,"transmission":"МКПП","driveType":"передний","engineType":"Бензин"}}
+
+### Создать контактное лицо организации
+POST {{base}}/catalogs/people
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"record":{"kind":"contact","lastName":"Иванов","firstName":"Иван","middleName":"Иванович","phone":"+7 (999) 123 45 67"}}
+
+### Изменить контактное лицо или водителя
+PATCH {{base}}/catalogs/people/{{person}}
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"patch":{"phone":"+7 (999) 123 45 68"}}
+
+### Удалить контактное лицо или водителя
+DELETE {{base}}/catalogs/people/{{person}}
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Добавить поставщика (УК)
+POST {{base}}/catalogs/suppliers
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"record":{"name":"Поставщик","contact":"+7 900 000-00-00","taxId":"7800000000","active":true}}
+
+### Изменить коэффициент нормо-часа автомобиля (УК)
+PATCH {{base}}/catalogs/{{catalogRecord}}
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"patch":{"laborRateCoefficient":1.59}}
+
+### Добавить запчасть в справочник (УК)
+POST {{base}}/catalogs/parts
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"record":{"name":"Масляный фильтр","article":"OF-1","manufacturer":"Производитель","unit":"шт.","active":true}}
+
+### Журнал записи справочника (УК)
+GET {{base}}/catalogs/history?recordId={{catalogRecord}}
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Импорт норм времени XLSX (УК)
+POST {{base}}/catalogs/time-norms/import
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=IDE-NORMS-BOUNDARY
+
+--IDE-NORMS-BOUNDARY
+Content-Disposition: form-data; name="file"; filename="time-norms.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ./time-norms.xlsx
+--IDE-NORMS-BOUNDARY--
+
+### Загрузить evidence текущего статуса
+POST {{base}}/requests/{{request}}/attachments
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=IDE-BOUNDARY
+
+--IDE-BOUNDARY
+Content-Disposition: form-data; name="revision"
+
+{{revision}}
+--IDE-BOUNDARY
+Content-Disposition: form-data; name="purpose"
+
+evidence
+--IDE-BOUNDARY
+Content-Disposition: form-data; name="file"; filename="stage-photo.jpg"
+Content-Type: image/jpeg
+
+< ./stage-photo.jpg
+--IDE-BOUNDARY--
+
+### Следующий этап
+POST {{base}}/requests/{{request}}/next
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"comment":"Проверено","attachmentIds":["{{attachment}}"]}
+
+### Первичная передача Заказчик → УК (комментарий и файлы необязательны)
+POST {{base}}/requests/{{request}}/next
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"comment":"","attachmentIds":[]}
+
+### Решение УК (комментарий необязателен, файлы не используются)
+POST {{base}}/requests/{{request}}/next
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"comment":"","attachmentIds":[]}
+
+### СТО подтверждает время (комментарий необязателен)
+POST {{base}}/requests/{{request}}/station-decision
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"decision":"confirmed","comment":"Время подтверждено, пост зарезервирован"}
+
+### СТО предлагает другое время
+POST {{base}}/requests/{{request}}/station-decision
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"decision":"rescheduled","stationSlot":"2026-10-20T14:00","comment":"Предлагаем принять автомобиль позже"}
+
+### Заказчик принимает время СТО
+POST {{base}}/requests/{{request}}/customer-slot-decision
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"decision":"accepted","comment":"Согласовано"}
+
+### Заказчик предлагает своё время
+POST {{base}}/requests/{{request}}/customer-slot-decision
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"decision":"rescheduled","slot":"2026-10-21T10:30","comment":"Просим принять утром"}
+
+### СТО отказывается, заявка возвращается в УК
+POST {{base}}/requests/{{request}}/station-decision
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"decision":"declined","comment":"Нет свободного поста"}
+
+### СТО оформляет электронный акт приёма и начинает работы
+POST {{base}}/requests/{{request}}/acceptance-act
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"mode":"electronic","mileage":42520,"fuelLevel":"half","condition":"Комплектность проверена","defectTypes":["scratch"],"diagramMarks":[{"zone":"left","type":"scratch","comment":"Передняя дверь"}]}
+
+### Уведомления текущего пользователя
+GET {{base}}/notifications
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Заблокировать открытую заявку
+POST {{base}}/document-locks
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"resourceType":"request","resourceKey":"{{request}}","label":"Заявка {{request}}"}
+
+### Продлить блокировку
+POST {{base}}/document-locks/{{lock}}/heartbeat
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### Освободить блокировку
+DELETE {{base}}/document-locks/{{lock}}
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Отметить уведомление прочитанным
+POST {{base}}/notifications/{{notification}}/read
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### Возврат на этап
+POST {{base}}/requests/{{request}}/return
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"comment":"Требуется уточнение","attachmentIds":["{{attachment}}"]}
+
+### История и сроки статусов
+GET {{base}}/requests/{{request}}/history
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Сохранить диагностику (СТО, этап 5)
+POST {{base}}/requests/{{request}}/diagnostics
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"conclusion":"Заключение диагностики","attachmentIds":[]}
+
+### Добавить запчасть
+POST {{base}}/requests/{{request}}/parts
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"name":"Шаровая опора","article":"BALL-001","supplierId":"{{supplier}}","qty":1,"price":6200}
+
+### Заказать согласованную запчасть
+POST {{base}}/requests/{{request}}/parts/{{part}}/status
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"status":"ordered","comment":"Заказано поставщику"}
+
+### Возврат запчасти
+POST {{base}}/requests/{{request}}/parts/{{part}}/movements
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"kind":"return","qty":1,"comment":"Не потребовалась","replacementPartId":"","attachmentIds":[]}
+
+### Заказ-наряд
+GET {{base}}/requests/{{request}}/work-order
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Выставить счёт (УК, этап 10)
+POST {{base}}/requests/{{request}}/invoice
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"number":"СЧ-2026-0001","amount":8700,"attachmentId":"{{attachment}}"}
+
+### Подтвердить оплату (Заказчик, этап 11)
+POST {{base}}/requests/{{request}}/payment
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"paidAmount":8700,"paidAt":"2026-09-18T09:30:00+03:00","attachmentId":"{{attachment}}","comment":"Оплачено"}
+
+### Проверить оплату (УК, этап 12)
+POST {{base}}/requests/{{request}}/payment/verify
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"revision":{{revision}},"comment":"Полная сумма поступила"}
+
+### Временная ссылка на файл
+GET {{base}}/attachments/{{attachment}}/url
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Выход
+POST {{base}}/logout
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}

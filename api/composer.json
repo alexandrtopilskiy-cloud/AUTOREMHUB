@@ -1,0 +1,54 @@
+{
+  "name": "sto/marketplace-api",
+  "type": "project",
+  "description": "STO platform API v2 with normalized fleet, repair lifecycle and private cloud media",
+  "require": {
+    "php": "~8.4.0",
+    "ext-bcmath": "*",
+    "ext-fileinfo": "*",
+    "ext-json": "*",
+    "ext-mbstring": "*",
+    "ext-pdo": "*",
+    "ext-pdo_pgsql": "*",
+    "ext-simplexml": "*",
+    "ext-zip": "*",
+    "laravel/framework": "^13.0",
+    "laravel/sanctum": "^4.3"
+  },
+  "require-dev": {
+    "laravel/tinker": "^3.0",
+    "mockery/mockery": "^1.6",
+    "phpunit/phpunit": "^12.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/",
+      "Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+      "@php artisan package:discover --ansi"
+    ],
+    "test": [
+      "@php artisan config:clear",
+      "@php vendor/bin/phpunit"
+    ],
+    "lint": "find app bootstrap config database public routes tests -name '*.php' -print0 | xargs -0 -n1 php -l"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "preferred-install": "dist",
+    "sort-packages": true,
+    "allow-plugins": {}
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "license": "proprietary"
+}
