@@ -6,3 +6,5 @@ api/.phpunit.cache/
 front/node_modules/
 front/dist/
 front/.env
+e2e/shots/
+e2e/probe-results.json
