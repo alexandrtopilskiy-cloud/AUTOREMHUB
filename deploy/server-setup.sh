@@ -157,7 +157,8 @@ chown www-data:www-data "$BASE/shared/.env" && chmod 640 "$BASE/shared/.env"
 
 say "6/7 Firewall и HTTPS-сертификат для $DOMAIN"
 ufw allow "$SSH_PORT/tcp" >/dev/null
-ufw allow 'Nginx Full' >/dev/null
+ufw allow 80/tcp >/dev/null
+ufw allow 443/tcp >/dev/null
 ufw --force enable
 if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     certbot certonly --standalone -n -d "$DOMAIN" --agree-tos -m "$LE_EMAIL" --no-eff-email \
