@@ -94,6 +94,24 @@ final class VehicleReferenceImporterTest extends TestCase
         $this->assertSame('Бензин/газ', $model->source_engine_type);
     }
 
+    public function test_import_persists_extended_engine_types(): void
+    {
+        $path = $this->xlsx([
+            $this->headers(),
+            $this->row('Audi', 'A4', '2007', '2015', 'CFKA', '8K2', '180', 'МКПП', 'Передний', 'Газ/бензин'),
+            $this->row('Toyota', 'Mirai', '2020', '2026', '', 'JPD20', '182', 'Электро', 'Задний', 'Водородный (FCEV)'),
+            $this->row('Lada', 'Vesta CNG', '2017', '2024', '21129', '', '106', 'МКПП', 'Передний', 'Газ'),
+        ]);
+
+        $result = $this->importer()->import($path);
+
+        $this->assertSame(3, $result['created']);
+        $this->assertEqualsCanonicalizing(
+            ['газ', 'газ/бензин', 'водородный'],
+            VehicleModel::query()->pluck('engine_type')->all(),
+        );
+    }
+
     public function test_second_import_marks_model_as_existing(): void
     {
         $path = $this->xlsx([
