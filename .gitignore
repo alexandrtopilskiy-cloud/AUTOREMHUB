@@ -1,0 +1,8 @@
+.composer-home/
+api/vendor/
+api/.env
+api/.env.testing
+api/.phpunit.cache/
+front/node_modules/
+front/dist/
+front/.env

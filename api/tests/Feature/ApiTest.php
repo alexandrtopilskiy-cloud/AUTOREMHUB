@@ -375,6 +375,11 @@ final class ApiTest extends TestCase
     {
         $importer = app(VehicleImporter::class);
         $file = base_path('../imports/vehicles-test.xlsx');
+        if (!is_file($file)) {
+            // Файл с 23 реальными ТС не входит в исходный архив 0.37.1;
+            // механизм импорта покрыт VehicleImporterTest на сгенерированных XLSX.
+            $this->markTestSkipped('Нет исходного файла ../imports/vehicles-test.xlsx');
+        }
 
         $dry = $importer->import($this->actors['customer']->organization, $file, true);
         $this->assertSame(23, $dry['total']);
@@ -443,9 +448,15 @@ final class ApiTest extends TestCase
         $this->assertSame($this->contact->uuid, $first['contactId']);
         $this->assertSame($this->driver->uuid, $first['driverId']);
 
+        // Незакрытая заявка не является источником предыдущего пробега.
         $second = $this->patchRequest($this->draft(), ['vehicleId' => $this->vehicle->uuid]);
-        $this->assertSame(15000, $second['previousServiceMileage']);
-        $this->assertNotEmpty($second['previousServiceAt']);
+        $this->assertNull($second['previousServiceMileage']);
+
+        RepairRequest::query()->where('uuid', $first['id'])->update(['stage' => 11]);
+
+        $third = $this->patchRequest($this->draft(), ['vehicleId' => $this->vehicle->uuid]);
+        $this->assertSame(15000, $third['previousServiceMileage']);
+        $this->assertNotEmpty($third['previousServiceAt']);
     }
 
     public function test_customer_cannot_add_work_and_revision_conflict_does_not_write(): void

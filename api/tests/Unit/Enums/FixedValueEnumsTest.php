@@ -61,6 +61,7 @@ final class FixedValueEnumsTest extends TestCase
                 'timeNorms',
                 'normApplicabilities',
                 'parts',
+                'partManufacturers',
                 'reasons',
                 'regulations',
                 'suppliers',
