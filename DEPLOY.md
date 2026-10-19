@@ -198,6 +198,11 @@ Workflow `.github/workflows/deploy.yml` на каждый PR и пуш запу�
 
 ### Подготовка сервера (один раз, от root)
 
+На чистой Ubuntu 24.04 всё ниже, а также установку пакетов, базу, сертификат
+Let's Encrypt и Nginx делает скрипт `sudo bash deploy/server-setup.sh` (домен
+задаётся переменной `DOMAIN`). В конце он печатает значения для секретов GitHub.
+После первого деплоя: `sudo bash deploy/server-setup.sh init`.
+
 1. Пользователь для деплоя и права:
 
 ```bash
