@@ -1,0 +1,162 @@
+# AutoRemHub: проверки на каждый PR и пуш, автодеплой на сервер при пуше в main.
+# Деплой выключен, пока в Settings → Environments → production не задана
+# переменная DEPLOY_ENABLED=true. Настройка сервера и секретов — DEPLOY.md,
+# раздел «Автодеплой из GitHub».
+name: CI / Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: msto_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d msto_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: msto_test
+      DB_SCHEMA: msto_test
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: bcmath, mbstring, pdo_pgsql, simplexml, zip, intl
+          coverage: none
+          tools: composer:v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('api/composer.lock') }}
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: composer lint
+      - run: php artisan config:clear
+      - run: vendor/bin/phpunit --colors=never
+
+  front-tests:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  build:
+    if: github.event_name != 'pull_request'
+    needs: [api-tests, front-tests]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: bcmath, mbstring, pdo_pgsql, simplexml, zip, intl
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - name: Composer (production, без dev-пакетов)
+        working-directory: api
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+      - name: Сборка Front (API на том же домене, /api)
+        working-directory: front
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || '/api' }}
+          VITE_SERVICE_TIMEZONE: ${{ vars.VITE_SERVICE_TIMEZONE || 'Europe/Moscow' }}
+        run: npm ci && npm run build
+      - name: Архив релиза
+        run: |
+          echo "${GITHUB_SHA}" > REVISION
+          tar -czf "$RUNNER_TEMP/release.tar.gz" \
+            --exclude=api/.env --exclude=api/storage --exclude=api/tests \
+            --exclude=front/node_modules --exclude=front/src --exclude=front/tests \
+            --exclude=e2e --exclude=.git --exclude=.github \
+            REVISION api front deploy DEPLOY.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: ${{ runner.temp }}/release.tar.gz
+          retention-days: 7
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+    steps:
+      - name: Деплой выключен
+        if: env.DEPLOY_ENABLED != 'true'
+        run: |
+          echo "::notice::Деплой пропущен, в environment production не задана переменная DEPLOY_ENABLED=true."
+      - uses: actions/download-artifact@v4
+        if: env.DEPLOY_ENABLED == 'true'
+        with:
+          name: release
+      - name: SSH-ключ и known_hosts
+        if: env.DEPLOY_ENABLED == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Загрузка и переключение релиза
+        if: env.DEPLOY_ENABLED == 'true'
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/autoremhub' }}
+          PHP_FPM_SERVICE: ${{ vars.PHP_FPM_SERVICE || 'php8.4-fpm' }}
+        run: |
+          SSH="ssh -i $HOME/.ssh/deploy_key -p $PORT -o StrictHostKeyChecking=yes -o BatchMode=yes"
+          RELEASE="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          $SSH "$USER@$HOST" "mkdir -p '$DEPLOY_PATH/uploads'"
+          scp -i "$HOME/.ssh/deploy_key" -P "$PORT" -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            release.tar.gz "$USER@$HOST:$DEPLOY_PATH/uploads/$RELEASE.tar.gz"
+          $SSH "$USER@$HOST" "mkdir -p /tmp/arh-$RELEASE && tar -xzf '$DEPLOY_PATH/uploads/$RELEASE.tar.gz' -C /tmp/arh-$RELEASE deploy/remote-deploy.sh \
+            && bash /tmp/arh-$RELEASE/deploy/remote-deploy.sh '$DEPLOY_PATH' '$RELEASE' '$PHP_FPM_SERVICE'; rc=\$?; rm -rf /tmp/arh-$RELEASE; exit \$rc"
