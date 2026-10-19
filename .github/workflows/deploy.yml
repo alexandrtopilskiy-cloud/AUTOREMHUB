@@ -129,7 +129,8 @@ jobs:
     steps:
       - name: Деплой выключен
         if: env.DEPLOY_ENABLED != 'true'
-        run: echo "::notice::Деплой пропущен: в environment production не задана переменная DEPLOY_ENABLED=true."
+        run: |
+          echo "::notice::Деплой пропущен, в environment production не задана переменная DEPLOY_ENABLED=true."
       - uses: actions/download-artifact@v4
         if: env.DEPLOY_ENABLED == 'true'
         with:
