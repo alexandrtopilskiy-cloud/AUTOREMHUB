@@ -172,3 +172,111 @@ VITE_API_BASE_URL=https://api.<домен>/api VITE_SERVICE_TIMEZONE=Europe/Mosc
 - После любой правки `api/.env` выполните `php artisan config:cache`.
 - `php artisan serve` и `npm run dev` — только для разработки, не для сервера.
 - Тестовые пользователи создаются только командой `sto:test-users-create` (раздел «Тестовые пользователи»); сами по себе при установке они не появляются.
+
+## Автодеплой из GitHub
+
+Workflow `.github/workflows/deploy.yml` на каждый PR и пуш запускает тесты API
+(PostgreSQL 15) и Front. При пуше в `main` он дополнительно собирает релиз
+(`composer install --no-dev`, `npm run build`) и выкладывает его на сервер по SSH
+скриптом `deploy/remote-deploy.sh`: распаковка в новый каталог релиза,
+`migrate --force`, `config:cache`, `route:cache`, переключение ссылки `current`,
+`reload` PHP-FPM. Хранятся 5 последних релизов, откат — переключить `current` на
+предыдущий каталог и перезагрузить PHP-FPM.
+
+Пока не задана переменная `DEPLOY_ENABLED=true`, деплой пропускается и
+работают только проверки.
+
+### Раскладка на сервере
+
+```
+/var/www/autoremhub/
+  releases/<дата>-<коммит>/   код релиза
+  shared/.env                 настройки API
+  shared/storage/             вложения, логи (бывший api/storage)
+  current -> releases/...     на него смотрит Nginx
+```
+
+### Подготовка сервера (один раз, от root)
+
+1. Пользователь для деплоя и права:
+
+```bash
+adduser --disabled-password --gecos '' deploy
+usermod -aG www-data deploy
+install -d -o deploy -g www-data /var/www/autoremhub/{releases,shared,uploads}
+cat > /etc/sudoers.d/autoremhub-deploy <<'SUDO'
+deploy ALL=(www-data) NOPASSWD: /usr/bin/php
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload php8.4-fpm
+SUDO
+chmod 440 /etc/sudoers.d/autoremhub-deploy
+```
+
+2. SSH-ключ только для деплоя (на своём компьютере, без пароля):
+
+```bash
+ssh-keygen -t ed25519 -N '' -C github-deploy -f autoremhub_deploy
+```
+
+Содержимое `autoremhub_deploy.pub` добавьте в `/home/deploy/.ssh/authorized_keys`
+на сервере.
+
+3. Общие `.env` и `storage`.
+   - Если установка уже работает в плоском каталоге (`/var/www/autoremhub/api`),
+     перенесите их, сохранив APP_KEY:
+
+     ```bash
+     cd /var/www/autoremhub
+     cp -a api/.env shared/.env
+     cp -a api/storage shared/storage
+     ```
+
+   - Для новой установки возьмите `api/.env.production.example` в
+     `shared/.env`, создайте `shared/storage` из `api/storage` архива и после
+     первого деплоя выполните шаги «Инициализация» из раздела «Новая установка»
+     в каталоге `/var/www/autoremhub/current/api`.
+
+   Затем:
+
+   ```bash
+   chown -R www-data:www-data /var/www/autoremhub/shared/storage
+   chown www-data:www-data /var/www/autoremhub/shared/.env && chmod 640 /var/www/autoremhub/shared/.env
+   ```
+
+4. Nginx должен смотреть в `current`. В `/etc/nginx/sites-available/autoremhub.conf`
+   замените пути (после первого успешного деплоя, когда `current` уже есть):
+
+```bash
+sed -i 's#/var/www/autoremhub/front/dist#/var/www/autoremhub/current/front/dist#; s#/var/www/autoremhub/api/public#/var/www/autoremhub/current/api/public#g' \
+  /etc/nginx/sites-available/autoremhub.conf
+nginx -t && systemctl reload nginx
+```
+
+   Старые каталоги `api`, `front`, `deploy` в `/var/www/autoremhub` после этого
+   можно удалить.
+
+### Настройки в GitHub
+
+Settings → Environments → создать `production` (там же можно включить ручное
+подтверждение деплоя через Required reviewers).
+
+Secrets (environment `production`):
+
+| Имя | Значение |
+|---|---|
+| `DEPLOY_HOST` | IP или имя сервера |
+| `DEPLOY_USER` | `deploy` |
+| `DEPLOY_SSH_KEY` | содержимое приватного ключа `autoremhub_deploy` |
+| `DEPLOY_KNOWN_HOSTS` | вывод `ssh-keyscan -p <порт> <сервер>` |
+| `DEPLOY_PORT` | порт SSH, если не 22 |
+
+Variables (environment `production`):
+
+| Имя | Значение |
+|---|---|
+| `DEPLOY_ENABLED` | `true` — включает деплой |
+| `DEPLOY_PATH` | каталог установки, по умолчанию `/var/www/autoremhub` |
+| `PHP_FPM_SERVICE` | служба PHP-FPM, по умолчанию `php8.4-fpm` |
+| `VITE_API_BASE_URL` | адрес API для Front, по умолчанию `/api` |
+
+Первый деплой можно запустить вручную: Actions → CI / Deploy → Run workflow
+(ветка `main`).
