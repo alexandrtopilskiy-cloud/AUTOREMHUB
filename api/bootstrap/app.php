@@ -7,7 +7,6 @@ use App\Console\Commands\Edo\RegisterEdoOrganizationCommand;
 use App\Exceptions\ApiErrorRenderer;
 use App\Exceptions\ApiException;
 use App\Http\Middleware\ApiHeaders;
-use App\Http\Middleware\EnsureApiUser;
 use App\Http\Middleware\EnsureJsonBody;
 use App\Http\Middleware\EnsureLoginOrigin;
 use Illuminate\Foundation\Application;
@@ -61,7 +60,6 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
-            'api.user'     => EnsureApiUser::class,
             'login.origin' => EnsureLoginOrigin::class,
         ]);
     })

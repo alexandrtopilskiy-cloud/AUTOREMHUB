@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature\Http\Controllers;
 
 use App\Models\Organization;
-use App\Models\OrganizationPerson;
-use App\Models\RequestNotification;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -14,7 +12,6 @@ use App\Models\VehicleChangeRequest;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
 use App\Services\ReferenceSeeder;
-use App\Services\VehicleReferenceService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;

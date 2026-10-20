@@ -18,7 +18,6 @@ use App\Models\TimeNorm;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\WorkType;
-use App\Services\PartManufacturerService;
 use App\Services\ReferenceSeeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;

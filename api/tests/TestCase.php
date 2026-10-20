@@ -162,4 +162,28 @@ abstract class TestCase extends BaseTestCase
             $status,
         );
     }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $edoProvider = env('EDO_PROVIDER', 'sberkorus');
+
+        // Принудительно применяем конфиг
+        config(['edo.default' => $edoProvider]);
+
+        // Подставляем фейковые ключи, чтобы провайдеры не падали на инициализации
+        if ($edoProvider === 'sberkorus') {
+            config([
+                'edo.providers.sberkorus.username' => 'test-user',
+                'edo.providers.sberkorus.password' => 'test-password',
+                'edo.providers.sberkorus.api_key'  => 'test-api-key',
+            ]);
+        } elseif ($edoProvider === 'edoru') {
+            config([
+                'edo.providers.edoru.client_id' => 'test-client',
+                'edo.providers.edoru.password'  => 'test-password',
+            ]);
+        }
+    }
 }

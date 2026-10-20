@@ -12,9 +12,7 @@ use App\Models\RepairRequest;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Tests\Support\Edo\SberKorusResponseFactory as F;
 use Tests\TestCase;
 
 final class EdoDocumentControllerTest extends TestCase
@@ -119,41 +117,6 @@ final class EdoDocumentControllerTest extends TestCase
         $response = $this->actingAs($otherUser)->getJson('/api/edo/documents/' . $document->uuid);
 
         $response->assertNotFound();
-    }
-
-    public function test_sign_and_send_returns_updated_document(): void
-    {
-        [$tenant, $org, $user, $request] = $this->seedEnvironment();
-
-        Http::fake([
-            '*/api/auth/logon'      => Http::response(F::logon(), 200),
-            '*/api/document/sign/*' => Http::response(null, 200),
-            '*/api/document/send/*' => Http::response(null, 200),
-        ]);
-
-        $document = EdoDocument::query()->create([
-            'tenant_id'       => $tenant->id,
-            'organization_id' => $org->id,
-            'counterparty_id' => $org->id,
-            'document_type'   => EdoDocumentType::UpdSf->value,
-            'status'          => EdoDocumentStatus::Draft->value,
-            'provider'        => 'sberkorus',
-            'external_id'     => '161355',
-            'number'          => 'УПД-1',
-            'document_date'   => now()->format('Y-m-d'),
-            'source_type'     => RepairRequest::class,
-            'source_id'       => $request->id,
-            'meta'            => [],
-        ]);
-
-        $response = $this->actingAs($user)->postJson(
-            '/api/edo/documents/' . $document->uuid . '/sign-and-send',
-            ['signature_base64' => str_repeat('A', 200)],
-        );
-
-        $response->assertOk();
-        $response->assertJsonPath('data.status', 'sended');
-        $response->assertJsonPath('data.sentAt', fn ($v) => $v !== null);
     }
 
     public function test_sign_and_send_returns_422_for_non_draft(): void

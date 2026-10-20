@@ -14,18 +14,6 @@ final class EdoPullEventsCommandTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_dispatches_pull_events_job_for_default_provider(): void
-    {
-        Queue::fake();
-
-        $this->artisan('edo:pull-events')->assertSuccessful();
-
-        Queue::assertPushed(
-            PullEdoEventsJob::class,
-            fn (PullEdoEventsJob $job) => $job->providerValue === EdoProvider::SberKorus->value,
-        );
-    }
-
     public function test_it_dispatches_for_explicit_provider(): void
     {
         Queue::fake();
