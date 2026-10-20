@@ -122,3 +122,31 @@ php scripts/coverage-gate.php build/coverage.txt 60 85
 
 Финальный Definition of Done остаётся строже: Classes ≥ 75%, Lines ≥ 88%.
 До достижения финального этапа эти значения не используются как CI-гейт.
+
+## CI (GitLab)
+
+Пайплайн в `.gitlab-ci.yml`. Два job'а:
+
+### lint:phpstan
+- Образ: `php:8.4-cli-alpine`;
+- Покрытие: только PHPStan (без тестов);
+- Команда: `vendor/bin/phpstan analyse --no-progress --memory-limit=1G`.
+
+### api:tests
+- Образ: `php:8.4-cli-alpine`;
+- Service: `postgres:16-alpine` как `postgres`;
+- БД: `msto_test`, схема `msto_test`;
+- Composer: с `GITHUB_TOKEN` через `composer config --global github-oauth.github.com "$GITHUB_TOKEN"`;
+- Покрытие: **PCOV не используется**. Baseline через baseline.sh на проде;
+- Команда: `php -d memory_limit=1G vendor/bin/phpunit --log-junit=build/junit.xml`.
+
+### Требования к `GITHUB_TOKEN`
+
+Переменная должна быть **без флага `Protected`** в GitLab CI/CD Variables,
+иначе MR из незащищённых веток не получит токен, и Composer упадёт с
+`Could not authenticate against github.com`.
+
+### Требования к `composer.lock`
+
+Версия PHP в CI и локально должна совпадать (8.4), иначе
+`composer install` может упасть из-за platform requirements.

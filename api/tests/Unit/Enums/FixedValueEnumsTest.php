@@ -44,6 +44,8 @@ final class FixedValueEnumsTest extends TestCase
                 'video/webm',
                 'video/quicktime',
                 'application/pdf',
+                'text/xml',
+                'application/xml',
             ]],
             AttachmentPurpose::class => [AttachmentPurpose::class, [
                 'evidence',
@@ -51,6 +53,7 @@ final class FixedValueEnumsTest extends TestCase
                 'issued_invoice',
                 'paid_invoice',
                 'acceptance_act',
+                'edo_payload',
             ]],
             CatalogKind::class => [CatalogKind::class, [
                 'vehicles',

@@ -1,38 +1,51 @@
-# Схема данных
+# Схема БД
 
-Актуальная карта таблиц, моделей, связей и правил хранения находится в корневом файле [`../../DATABASE_SCHEMA.md`](../../DATABASE_SCHEMA.md).
+## Основные (multi-tenant)
+- `tenants` — контуры
+- `organizations` — организации (УК, Заказчик, СТО)
+- `users` — пользователи всех кабинетов
+- `personal_access_tokens` — токены Sanctum
+- `sessions` — сессии
 
-DDL реализован миграциями в `database/migrations`. PostgreSQL-комментарии на таблицах и новых полях создаются соответствующими миграциями, включая `2026_09_27_000014_add_station_working_schedule.php`.
+## Заявки
+- `repair_requests` — заявки
+- `request_events` — история
+- `request_works`, `request_parts` — позиции смет
+- `request_approvals` — согласования
+- `request_notifications` — уведомления
+- `request_status_periods` — периоды статусов
+- `vehicle_acceptance_acts` — акты приёма
+- `work_orders`, `work_order_items`, `work_order_versions` — заказ-наряды
+- `invoices` — счета
 
-Последняя миграция добавляет:
+## Чат
+- `request_chats`, `request_chat_messages`, `request_chat_files`, `request_chat_reads`
 
-- `vehicles.labor_rate_coefficient` — поправочный коэффициент нормо-часа;
-- `catalog_parts` / `App\Models\CatalogPart` — справочник запчастей УК;
-- `catalog_change_events` / `App\Models\CatalogChangeEvent` — журнал создания, ручного изменения и импорта записей справочников.
-- `request_notifications` / `App\Models\RequestNotification` — персональные уведомления пользователей по заявкам.
-- `organization_people` / `App\Models\OrganizationPerson` — справочники контактных лиц и водителей организации;
-- `document_locks` / `App\Models\DocumentLock` — временные блокировки совместного открытия документов и справочников.
-- `vehicle_change_requests` / `App\Models\VehicleChangeRequest` — изменения ТС Заказчика, ожидающие акцепта УК;
-- `vehicles.labor_hour_rate` — стоимость нормо/часа в рублях, доступная для изменения только УК;
-- `vehicle_contacts.kind` — разделение связанных лиц на контактных лиц и водителей;
-- `stations.profile` — структурированный чек-лист СТО;
-- `stations.workday_start`, `stations.workday_end` — локальные границы рабочего дня СТО;
-- `stations.working_days` — рабочие дни СТО по ISO-8601 (`1` — понедельник, `7` — воскресенье);
-- `time_norms.hours = NULL` — импортированная норма, ожидающая ручного заполнения УК.
-- `vehicle_makes` / `App\Models\VehicleMake` — внутренний справочник марок с
-  признаком актуальности;
-- `vehicle_models` / `App\Models\VehicleModel` — технические варианты моделей,
-  поколения/кузова, двигатели и исходные обозначения характеристик;
-- `vehicles.make`, `vehicles.model` — отдельные текстовые значения марки и модели;
-- `vehicles.vehicle_model_id` — ссылка на выбранный вариант справочника.
+## Справочники
+- `vehicle_makes`, `vehicle_models`, `vehicle_generations`, `vehicle_engine_variants` — каталог ТС
+- `vehicle_drive_types`, `vehicle_transmission_types` — приводы и трансмиссии
+- `work_types`, `time_norms`, `time_norm_applicabilities` — работы и нормы
+- `work_catalog_imports` — ревизии импорта справочника
+- `part_manufacturers`, `catalog_parts`, `suppliers` — запчасти
+- `part_movements` — движения ЗЧ
+- `service_reasons` — причины обращения
+- `maintenance_regulations`, `maintenance_regulation_items` — регламенты ТО
+- `catalog_change_events`, `catalog_records` — журнал изменений справочников
+- `vehicle_change_requests` — заявки на изменение ТС
 
+## Файлы и инфраструктура
+- `attachments` — метаданные вложений
+- `cache`, `cache_locks` — кэш
+- `jobs`, `job_batches`, `failed_jobs` — очереди
+- `document_locks` — блокировки редактирования
+- `migrations` — миграции
+- `pg_stat_statements`, `pg_stat_statements_info` — метрики PostgreSQL
 
 ## Рекомендации (0.36.1)
+- `recommendations`, `recommendation_items`
 
-- `recommendations` — модель `App\Models\Recommendation`: отдельный документ REC, tenant, автомобиль/VIN, организация Заказчика, исходная заявка, автор, ревизия и дата.
-- `recommendation_items` — модель `App\Models\RecommendationItem`: вид позиции, полный неизменяемый JSON-снимок данных БД и отображения, автор с индексом роли, дата, целевая заявка и момент переноса.
-- `source_request_id` и `target_request_id` — внешние ключи на `repair_requests`. При удалении собственного черновика ссылка обнуляется; снимок и отметка переноса сохраняются.
-- `vehicle_id`, `customer_organization_id`, `created_by`, `actor_id` — FK на действующие таблицы проекта. Все операции изменения проходят проверку прав, ревизии и транзакцию.
+## ЭДО
+- `edo_documents`, `edo_provider_state`
 
 ## Поставщики и снимки ЗЧ (0.37.1)
 

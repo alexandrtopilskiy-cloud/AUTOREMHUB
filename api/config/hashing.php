@@ -1,2 +1,11 @@
 <?php
-return ['driver' => 'bcrypt', 'bcrypt' => ['rounds' => (int) env('BCRYPT_ROUNDS', 12), 'verify' => true], 'rehash_on_login' => true];
+declare(strict_types=1);
+
+return [
+    'driver' => 'bcrypt',
+    'bcrypt' => [
+        'rounds' => (int) env('BCRYPT_ROUNDS', 12),
+        'verify' => true
+    ],
+    'rehash_on_login' => true
+];

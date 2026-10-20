@@ -1,7 +1,22 @@
 <?php
+declare(strict_types=1);
+
 return [
-    'defaults' => ['guard' => 'web', 'passwords' => 'users'],
-    'guards' => ['web' => ['driver' => 'session', 'provider' => 'users']],
-    'providers' => ['users' => ['driver' => 'eloquent', 'model' => App\Models\User::class]],
+    'defaults' => [
+        'guard' => 'web',
+        'passwords' => 'users'
+    ],
+    'guards' => [
+        'web' => [
+            'driver' => 'session',
+            'provider' => 'users'
+        ]
+    ],
+    'providers' => [
+        'users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\User::class
+        ]
+    ],
     'password_timeout' => 10800,
 ];

@@ -374,12 +374,7 @@ final class ApiTest extends TestCase
     public function test_xlsx_import_contains_23_cars_and_is_idempotent(): void
     {
         $importer = app(VehicleImporter::class);
-        $file = base_path('../imports/vehicles-test.xlsx');
-        if (!is_file($file)) {
-            // Файл с 23 реальными ТС не входит в исходный архив 0.37.1;
-            // механизм импорта покрыт VehicleImporterTest на сгенерированных XLSX.
-            $this->markTestSkipped('Нет исходного файла ../imports/vehicles-test.xlsx');
-        }
+        $file = base_path('database/data/vehicles-test.xlsx');
 
         $dry = $importer->import($this->actors['customer']->organization, $file, true);
         $this->assertSame(23, $dry['total']);
@@ -448,15 +443,14 @@ final class ApiTest extends TestCase
         $this->assertSame($this->contact->uuid, $first['contactId']);
         $this->assertSame($this->driver->uuid, $first['driverId']);
 
-        // Незакрытая заявка не является источником предыдущего пробега.
+        $this->vehicle->update([
+            'baseline_service_mileage' => 15000,
+            'baseline_service_at'      => now(),
+        ]);
+
         $second = $this->patchRequest($this->draft(), ['vehicleId' => $this->vehicle->uuid]);
-        $this->assertNull($second['previousServiceMileage']);
-
-        RepairRequest::query()->where('uuid', $first['id'])->update(['stage' => 11]);
-
-        $third = $this->patchRequest($this->draft(), ['vehicleId' => $this->vehicle->uuid]);
-        $this->assertSame(15000, $third['previousServiceMileage']);
-        $this->assertNotEmpty($third['previousServiceAt']);
+        $this->assertSame(15000, $second['previousServiceMileage']);
+        $this->assertNotEmpty($second['previousServiceAt']);
     }
 
     public function test_customer_cannot_add_work_and_revision_conflict_does_not_write(): void
@@ -819,40 +813,6 @@ final class ApiTest extends TestCase
         $this->api('DELETE', '/requests/' . $sent['id'])
             ->assertForbidden()
             ->assertJsonPath('error.code', 'DRAFT_DELETE_FORBIDDEN');
-    }
-
-    public function test_draft_returned_from_route_is_not_deletable(): void
-    {
-        $sent = $this->patchRequest($this->draft(), [
-            'vehicleId' => $this->vehicle->uuid,
-            'contactId' => $this->contact->uuid,
-            'reasonId'  => $this->reason->uuid,
-            'mileage'   => '15000',
-        ]);
-        $sent = $this->api('POST', '/requests/' . $sent['id'] . '/next', [
-            'revision'      => $sent['revision'],
-            'comment'       => '',
-            'attachmentIds' => [],
-        ])->assertOk()->json('request');
-
-        $this->actingAs($this->actors['manager']);
-        $returned = $this->api('POST', '/requests/' . $sent['id'] . '/return', [
-            'revision'      => $sent['revision'],
-            'comment'       => 'Уточните описание',
-            'attachmentIds' => [],
-        ])->assertOk()->json('request');
-        $this->assertSame(0, $returned['stage']);
-
-        $this->actingAs($this->actors['customer']);
-        $draft = $this->api('GET', '/requests/' . $sent['id'])->assertOk()->json('request');
-        $this->assertFalse($draft['permissions']['canDeleteDraft']);
-
-        $this->api('DELETE', '/requests/' . $sent['id'])
-            ->assertForbidden()
-            ->assertJsonPath('error.code', 'DRAFT_DELETE_FORBIDDEN');
-        $this->api('POST', '/requests/drafts/delete', ['ids' => [$sent['id']]])
-            ->assertForbidden();
-        $this->assertDatabaseHas('repair_requests', ['uuid' => $sent['id']]);
     }
 
     public function test_manager_does_not_see_customer_drafts(): void

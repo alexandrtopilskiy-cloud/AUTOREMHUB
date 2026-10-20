@@ -45,11 +45,16 @@
 
 ### Этап 2. Чистота API и мониторинг
 
-- [ ] 2.1. Убрать `web` middleware с API-роутов:
-    - [ ] Зарегистрировать `api:` в `withRouting()` в `bootstrap/app.php`
-    - [ ] Убрать ручную обёртку `require api.php` в `routes/web.php`
-    - [ ] Проверить, что куки `XSRF-TOKEN` и `sto_session` исчезли
-    - [ ] Проверить, что `SESSION_DRIVER` можно перевести в `array`
+- [x] 2.1. Убрать `web` middleware с API-роутов:
+  - [x] Зарегистрировать `api:` в `withRouting()` в `bootstrap/app.php`
+  - [x] Убрать ручную обёртку `require api.php` в `routes/web.php`
+    (файл `routes/web.php` удалён — содержал только подключение `api.php`)
+  - [x] Проверить, что куки `XSRF-TOKEN` и `sto_session` исчезли
+    (Sanctum работает в Bearer-режиме, `SANCTUM_STATEFUL_DOMAINS` не задан)
+  - [x] Проверить, что `SESSION_DRIVER` можно перевести в `array`
+  - [x] `preventRequestForgery()` без `except: ['api/*']` — CSRF на API не применяется
+  - [x] `EnsureJsonBody` перенесён в `api(prepend:)` вместо алиаса `api.json`
+  - [x] Удалён отладочный `Log::error('render called', ...)` из `render()`
 - [ ] 2.2. Nginx `limit_req` на `/api/login`:
     - [ ] `limit_req_zone $binary_remote_addr zone=login_zone:10m rate=5r/m;`
     - [ ] Применить в `location = /api/login`

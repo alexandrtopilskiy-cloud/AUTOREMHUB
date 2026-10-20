@@ -142,4 +142,24 @@ abstract class TestCase extends BaseTestCase
             json_encode((object) $body, JSON_THROW_ON_ERROR),
         );
     }
+
+    /**
+     * Формирует HTTP-ответ в кодировке ЭДО.Поток (Windows-1251).
+     *
+     * Возвращаемый тип — PromiseInterface, потому что Http::response()
+     * возвращает именно его. Тип Illuminate\Http\Client\Response здесь
+     * невозможен (это уже результат выполнения запроса, не «заготовка»).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return \GuzzleHttp\Promise\PromiseInterface
+     */
+    protected function edoRuResponse(array $payload, int $status = 200): \GuzzleHttp\Promise\PromiseInterface
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+
+        return \Illuminate\Support\Facades\Http::response(
+            mb_convert_encoding($json, 'windows-1251', 'UTF-8'),
+            $status,
+        );
+    }
 }

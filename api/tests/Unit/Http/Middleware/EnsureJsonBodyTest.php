@@ -102,8 +102,9 @@ final class EnsureJsonBodyTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
-    public function test_post_with_json_array_is_rejected_with_422(): void
+    public function test_post_with_empty_json_array_is_passed_through(): void
     {
+        // [] — эквивалент пустого тела: POST без данных (например, /api/edo/documents/{uuid}/sync).
         $request = Request::create(
             '/api/test',
             'POST',
@@ -112,6 +113,23 @@ final class EnsureJsonBodyTest extends TestCase
             [],
             ['CONTENT_TYPE' => 'application/json'],
             '[]',
+        );
+
+        $response = $this->invoke($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function test_post_with_non_empty_json_array_is_rejected_with_422(): void
+    {
+        $request = Request::create(
+            '/api/test',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            '[1,2,3]',
         );
 
         try {
