@@ -9,3 +9,4 @@ front/.env
 e2e/shots/
 e2e/probe-results.json
 __pycache__/
+.idea
