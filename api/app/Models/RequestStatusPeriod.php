@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\RepairStage;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 /**
  * @property RepairStage $stage
@@ -14,6 +15,8 @@ use Carbon\CarbonImmutable;
  */
 final class RequestStatusPeriod extends Entity
 {
+    use HasFactory;
+
     /**
      * @return array<string, string>
      */

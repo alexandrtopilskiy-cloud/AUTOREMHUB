@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Models;
 
 /**
+ * @property string $name
+ * @property string $vehicle_model
  * @property int|null $interval_km
  * @property int|null $interval_months
+ * @property string $source
  * @property bool $active
  */
 final class MaintenanceRegulation extends Entity

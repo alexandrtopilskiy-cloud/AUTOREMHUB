@@ -14,6 +14,7 @@ use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationPersonController;
 use App\Http\Controllers\PartController;
+use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\RequestChatController;
 use App\Http\Controllers\RepairRequestController;
 use App\Http\Controllers\TimeNormController;

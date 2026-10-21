@@ -6,20 +6,22 @@ namespace App\Enums;
 
 enum AttachmentPurpose: string
 {
-    case Evidence = 'evidence';
-    case Diagnostic = 'diagnostic';
+    case Evidence      = 'evidence';
+    case Diagnostic    = 'diagnostic';
     case IssuedInvoice = 'issued_invoice';
-    case PaidInvoice = 'paid_invoice';
+    case PaidInvoice   = 'paid_invoice';
     case AcceptanceAct = 'acceptance_act';
+    case EdoPayload    = 'edo_payload';
 
     public function label(): string
     {
         return match ($this) {
-            self::Evidence => 'Фото, видео и документы',
-            self::Diagnostic => 'Материалы диагностики',
+            self::Evidence      => 'Фото, видео и документы',
+            self::Diagnostic    => 'Материалы диагностики',
             self::IssuedInvoice => 'Выставленный счёт',
-            self::PaidInvoice => 'Закрытый счёт',
+            self::PaidInvoice   => 'Закрытый счёт',
             self::AcceptanceAct => 'Акт приёмки ТС',
+            self::EdoPayload    => 'XML для ЭДО',
         };
     }
 
@@ -38,6 +40,10 @@ enum AttachmentPurpose: string
                 AttachmentMime::Png,
                 AttachmentMime::Webp,
                 AttachmentMime::Pdf,
+            ],
+            self::EdoPayload => [
+                AttachmentMime::Xml,
+                AttachmentMime::XmlAlt,
             ],
         };
     }
@@ -62,14 +68,28 @@ enum AttachmentPurpose: string
         return in_array($this, [self::IssuedInvoice, self::PaidInvoice], true);
     }
 
+    public function isEdoPayload(): bool
+    {
+        return $this === self::EdoPayload;
+    }
+
+    /**
+     * Системные purpose (создаются бэкендом, не пользователем).
+     */
+    public function isSystem(): bool
+    {
+        return $this === self::EdoPayload;
+    }
+
     public function requiredStage(): ?RepairStage
     {
         return match ($this) {
-            self::Diagnostic => RepairStage::RepairInProgress,
+            self::Diagnostic    => RepairStage::RepairInProgress,
             self::IssuedInvoice => RepairStage::ClosingDocuments,
-            self::PaidInvoice => RepairStage::AwaitingPayment,
+            self::PaidInvoice   => RepairStage::AwaitingPayment,
             self::AcceptanceAct => RepairStage::WaitingVehicle,
-            self::Evidence => null,
+            self::Evidence      => null,
+            self::EdoPayload    => null,   // этап проверяет EdoService
         };
     }
 

@@ -6,24 +6,27 @@ namespace App\Enums;
 
 enum AttachmentMime: string
 {
-    case Jpeg = 'image/jpeg';
-    case Png = 'image/png';
-    case Webp = 'image/webp';
-    case Mp4 = 'video/mp4';
-    case Webm = 'video/webm';
+    case Jpeg      = 'image/jpeg';
+    case Png       = 'image/png';
+    case Webp      = 'image/webp';
+    case Mp4       = 'video/mp4';
+    case Webm      = 'video/webm';
     case Quicktime = 'video/quicktime';
-    case Pdf = 'application/pdf';
+    case Pdf       = 'application/pdf';
+    case Xml       = 'text/xml';
+    case XmlAlt    = 'application/xml';
 
     public function extension(): string
     {
         return match ($this) {
-            self::Jpeg => 'jpg',
-            self::Png => 'png',
-            self::Webp => 'webp',
-            self::Mp4 => 'mp4',
-            self::Webm => 'webm',
+            self::Jpeg      => 'jpg',
+            self::Png       => 'png',
+            self::Webp      => 'webp',
+            self::Mp4       => 'mp4',
+            self::Webm      => 'webm',
             self::Quicktime => 'mov',
-            self::Pdf => 'pdf',
+            self::Pdf       => 'pdf',
+            self::Xml, self::XmlAlt => 'xml',
         };
     }
 
@@ -45,6 +48,11 @@ enum AttachmentMime: string
     public function isPdf(): bool
     {
         return $this === self::Pdf;
+    }
+
+    public function isXml(): bool
+    {
+        return in_array($this, [self::Xml, self::XmlAlt], true);
     }
 
     /**

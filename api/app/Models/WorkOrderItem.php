@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\WorkOrderItemKind;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 /**
  * @property string $quantity
@@ -16,6 +17,8 @@ use App\Enums\WorkOrderItemKind;
  */
 final class WorkOrderItem extends Entity
 {
+    use HasFactory;
+
     /**
      * @return array<string, string>
      */

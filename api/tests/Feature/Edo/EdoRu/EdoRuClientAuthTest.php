@@ -32,7 +32,13 @@ final class EdoRuClientAuthTest extends TestCase
             'edoru.example.test/api/edo/v1/clients/auth-global' => Http::response(
                 json_encode([
                     'status' => ['code' => 0, 'message' => 'OK'],
-                    'result' => 'c698a3c9-d22f-4a93-9a8d-d8310cac326a',
+                    'result' => [
+                        [
+                            'token' => 'c698a3c9-d22f-4a93-9a8d-d8310cac326a',
+                            'organization' => ['edoId' => '2BM-1'],
+                            'staffId' => 57401,
+                        ],
+                    ],
                 ], JSON_UNESCAPED_UNICODE),
                 200,
             ),
@@ -98,7 +104,12 @@ final class EdoRuClientAuthTest extends TestCase
             'edoru.example.test/api/edo/v1/clients/auth-global' => Http::response(
                 json_encode([
                     'status' => ['code' => 0, 'message' => 'OK'],
-                    'result' => 'fresh-token',
+                    'result' => [
+                        [
+                            'token' => 'fresh-token',
+                            'organization' => ['edoId' => '2BM-1'],
+                        ],
+                    ],
                 ], JSON_UNESCAPED_UNICODE),
                 200,
             ),

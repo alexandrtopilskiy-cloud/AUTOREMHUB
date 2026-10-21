@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 /**
  * @property int $vehicle_make_id
@@ -29,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 final class VehicleModel extends Entity
 {
+    use HasFactory;
+
     protected function casts(): array
     {
         return [
@@ -40,21 +43,25 @@ final class VehicleModel extends Entity
         ];
     }
 
+    /** @return BelongsTo<VehicleMake, $this> */
     public function make(): BelongsTo
     {
         return $this->belongsTo(VehicleMake::class, 'vehicle_make_id');
     }
 
+    /** @return HasMany<Vehicle, $this> */
     public function vehicles(): HasMany
     {
         return $this->hasMany(Vehicle::class);
     }
 
+    /** @return HasMany<VehicleGeneration, $this> */
     public function generations(): HasMany
     {
         return $this->hasMany(VehicleGeneration::class);
     }
 
+    /** @return HasMany<VehicleEngineVariant, $this> */
     public function engines(): HasMany
     {
         return $this->hasMany(VehicleEngineVariant::class);
