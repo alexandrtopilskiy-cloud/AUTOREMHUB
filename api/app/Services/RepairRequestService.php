@@ -15,6 +15,7 @@ use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
 use App\Exceptions\ApiException;
 use App\Models\Attachment;
+use App\Models\Recommendation;
 use App\Models\RepairRequest;
 use App\Models\RequestApproval;
 use App\Models\RequestEvent;
@@ -34,6 +35,7 @@ use App\Models\VehicleServiceRecord;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Models\WorkType;
+use App\Services\Edo\EdoActService;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
@@ -62,6 +64,7 @@ final class RepairRequestService
         private readonly WorkCostService $workCost,
         private readonly ApiPresenter $apiPresenter,
         private readonly DocumentLockService $documentLocks,
+        private readonly EdoActService $edoActService,
     ) {
     }
 
@@ -259,7 +262,7 @@ final class RepairRequestService
         ]);
     }
 
-    public function createFromRecommendation(User $user, \App\Models\Recommendation $doc): RepairRequest
+    public function createFromRecommendation(User $user, Recommendation $doc): RepairRequest
     {
         $vehicle = Vehicle::query()->where('tenant_id', $user->tenantId())->findOrFail($doc->vehicle_id);
         $uuid = (string) Str::uuid();
@@ -309,7 +312,14 @@ final class RepairRequestService
     public function notifyRecommendationReview(RepairRequest $request, User $user, RequestEvent $event): void
     {
         if ($user->role === UserRole::Customer && $request->stage === RepairStage::ManagerRouting) {
-            $this->notifyUsers($this->managerUsers($request), $request, $event, 'manager_review_required', 'Добавлены рекомендации', 'Заказчик добавил работы или запчасти из рекомендаций. Требуется согласование сметы.');
+            $this->notifyUsers(
+                $this->managerUsers($request),
+                $request,
+                $event,
+                'manager_review_required',
+                'Добавлены рекомендации',
+                'Заказчик добавил работы или запчасти из рекомендаций. Требуется согласование сметы.'
+            );
         }
     }
 
@@ -361,7 +371,7 @@ final class RepairRequestService
             }
 
             if (array_key_exists('works', $patch) || array_key_exists('laborRateType', $patch)) {
-                $works = $patch['works'] ?? app(\App\Support\ApiPresenter::class)->document($request, $user)['works'];
+                $works = $patch['works'] ?? app(ApiPresenter::class)->document($request, $user)['works'];
                 $this->replaceWorks($request, $works);
             }
             if (array_key_exists('works', $patch) || array_key_exists('laborRateType', $patch) || array_key_exists('parts', $patch)) {
@@ -953,11 +963,8 @@ final class RepairRequestService
     /**
      * @param array<int, int> $workingDays
      */
-    private function nextStationWorkday(
-        CarbonImmutable $date,
-        array $workingDays,
-        int $workdayStart,
-    ): CarbonImmutable {
+    private function nextStationWorkday(CarbonImmutable $date, array $workingDays, int $workdayStart, ): CarbonImmutable
+    {
         $candidate = $date->addDay()->startOfDay();
 
         for ($attempt = 0; $attempt < 7; $attempt++) {
@@ -971,10 +978,8 @@ final class RepairRequestService
         return $this->atMinuteOfDay($candidate, $workdayStart);
     }
 
-    private function atMinuteOfDay(
-        CarbonImmutable $date,
-        int $minuteOfDay,
-    ): CarbonImmutable {
+    private function atMinuteOfDay(CarbonImmutable $date, int $minuteOfDay): CarbonImmutable
+    {
         return $date->setTime(
             intdiv($minuteOfDay, 60),
             $minuteOfDay % 60,
@@ -2392,6 +2397,13 @@ final class RepairRequestService
 
         $this->createWorkOrderItemsFromWorks($request, $order);
         $this->createWorkOrderItemsFromParts($request, $order);
+
+        try {
+            $this->edoActService->sendAct($order);
+        } catch (\Throwable $e) {
+            // Логируем ошибку, но не ломаем бизнес-процесс
+            report($e);
+        }
     }
 
     private function snapshotWorkOrder(WorkOrder $order): void

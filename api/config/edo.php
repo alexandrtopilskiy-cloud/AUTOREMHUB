@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\Edo\EdoProvider;
-use App\Services\Edo\Providers\EdoRu\EdoRuProvider;
-use App\Services\Edo\Providers\SberKorus\SberKorusProvider;
+use App\Services\Edo\Drivers\EdoRu\EdoRuProvider;
+use App\Services\Edo\Drivers\Taxcom\TaxcomProvider;
 
 return [
     'default' => env('EDO_PROVIDER', EdoProvider::None->value),
@@ -45,6 +45,21 @@ return [
                 'timeout'         => (int) env('EDO_EDORU_TIMEOUT', 30),
                 'connect_timeout' => (int) env('EDO_EDORU_CONNECT_TIMEOUT', 10),
             ],
+        ],
+
+        EdoProvider::Taxcom->value => [
+            'class' => TaxcomProvider::class,
+            'base_url' => env('TAXCOM_BASE_URL', 'https://api.taxcom.ru/v1.0'),
+            'integrator_id' => env('TAXCOM_INTEGRATOR_ID'),
+            'http' => [
+                'timeout' => 30,
+                'connect_timeout' => 10,
+            ],
+        ],
+        EdoProvider::Diadoc->value => [
+            'base_url' => env('DIADOC_BASE_URL', 'https://diadoc-api.kontur.ru'),
+            'client_id' => env('DIADOC_CLIENT_ID'),
+            'client_secret' => env('DIADOC_CLIENT_SECRET'),
         ],
     ],
 

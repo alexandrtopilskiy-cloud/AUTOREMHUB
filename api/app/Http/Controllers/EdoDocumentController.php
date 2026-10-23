@@ -17,8 +17,8 @@ use App\Http\Requests\Edo\PrepareUcdRequest;
 use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\RepairRequest;
-use App\Services\Edo\Dto\EdoSignature;
-use App\Services\Edo\Dto\EdoSignerInfo;
+use App\DTO\EdoSignature;
+use App\DTO\EdoSignerInfo;
 use App\Services\Edo\EdoService;
 use App\Services\MediaService;
 use Illuminate\Http\JsonResponse;
@@ -90,7 +90,7 @@ final class EdoDocumentController
         );
 
         return (new EdoPreparedDocumentResource($prepared))
-        ->response()
+            ->response()
             ->setStatusCode(201);
     }
 
@@ -99,7 +99,8 @@ final class EdoDocumentController
         $document = EdoDocument::resolveForUser($request->user(), $uuid);
 
         $signature = new EdoSignature(
-            content: (string) $request->string('signature_base64'),
+            content: $request->validated('signature_base64'),
+            certificateFingerprint: $request->input('certificateFingerprint', ''),
         );
 
         $this->service->signAndSend(

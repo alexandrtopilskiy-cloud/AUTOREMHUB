@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Services\Edo\Providers\EdoRu\EdoRuClient;
+use App\Services\Edo\Drivers\EdoRu\EdoRuClient;
 use Illuminate\Http\JsonResponse;
+use App\Services\Edo\EdoActService;
 
 final class EdoTestController
 {
     public function __construct(
         private readonly EdoRuClient $client,
+        private readonly EdoActService $actService,
     ) {
     }
 
@@ -37,5 +39,12 @@ final class EdoTestController
         ]);
 
         return response()->json($result);
+    }
+
+    public function docTypes(): JsonResponse
+    {
+        $type = $this->actService->getActDocTypeId($this->client);
+
+        return response()->json($type);
     }
 }

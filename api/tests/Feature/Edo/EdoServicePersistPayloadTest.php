@@ -6,12 +6,11 @@ namespace Tests\Feature\Edo;
 
 use App\Enums\AttachmentMime;
 use App\Enums\AttachmentPurpose;
-use App\Models\Attachment;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Services\Edo\Dto\EdoFile;
+use App\DTO\EdoFile;
 use App\Services\Edo\EdoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;

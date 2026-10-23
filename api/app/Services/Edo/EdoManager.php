@@ -7,7 +7,7 @@ namespace App\Services\Edo;
 use App\Contracts\Edo\EdoProviderInterface;
 use App\Enums\Edo\EdoProvider as EdoProviderEnum;
 use App\Exceptions\EdoException;
-use App\Services\Edo\Providers\Null\NullEdoProvider;
+use App\Services\Edo\Drivers\Null\NullEdoProvider;
 use Illuminate\Contracts\Container\Container;
 
 final class EdoManager

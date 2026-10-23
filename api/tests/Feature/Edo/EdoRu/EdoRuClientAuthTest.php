@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Edo\EdoRu;
 
 use App\Exceptions\EdoException;
-use App\Services\Edo\Providers\EdoRu\EdoRuClient;
+use App\Services\Edo\Drivers\EdoRu\EdoRuClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;

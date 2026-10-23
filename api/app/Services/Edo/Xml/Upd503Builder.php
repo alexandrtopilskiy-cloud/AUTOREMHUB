@@ -6,10 +6,10 @@ namespace App\Services\Edo\Xml;
 
 use App\Enums\Edo\UpdFunction;
 use App\Exceptions\EdoException;
-use App\Services\Edo\Dto\EdoInvoicePayload;
-use App\Services\Edo\Dto\EdoInvoiceRow;
-use App\Services\Edo\Dto\EdoPartyInfo;
-use App\Services\Edo\Dto\EdoSignerDto;
+use App\DTO\EdoInvoicePayload;
+use App\DTO\EdoInvoiceRow;
+use App\DTO\EdoPartyInfo;
+use App\DTO\EdoSignerDto;
 
 /**
  * Генератор XML УПД 5.03 (КНД 1115131, часть 997, версия 01 или 04).

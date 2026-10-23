@@ -211,4 +211,5 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     // ВРЕМЕННО ДЛЯ ТЕСТА ЭДО
     Route::get('/edo-test/auth', [\App\Http\Controllers\EdoTestController::class, 'auth']);
     Route::get('/edo-test/documents', [\App\Http\Controllers\EdoTestController::class, 'documents']);
+    Route::get('/edo-test/doc-types', [\App\Http\Controllers\EdoTestController::class, 'docTypes']);
 });

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Providers\Edo;
 
 use App\Enums\Edo\EdoProvider;
-use App\Services\Edo\Providers\EdoRu\EdoRuClient;
-use App\Services\Edo\Providers\EdoRu\EdoRuMapper;
-use App\Services\Edo\Providers\EdoRu\EdoRuProvider;
+use App\Services\Edo\Drivers\EdoRu\EdoRuClient;
+use App\Services\Edo\Drivers\EdoRu\EdoRuMapper;
+use App\Services\Edo\Drivers\EdoRu\EdoRuProvider;
 use App\Services\Edo\Xml\Upd503Builder;
 use App\Services\Edo\Xml\XsdValidator;
 use Illuminate\Contracts\Container\Container;
