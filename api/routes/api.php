@@ -208,6 +208,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::post('/requests/{id}/edo/prepare-manager-invoice', [EdoDocumentController::class, 'prepareManagerInvoice'])->name('edo.prepare-manager-invoice');
     Route::post('/requests/{id}/edo/prepare-ucd', [EdoDocumentController::class, 'prepareUcd'])->name('edo.prepare-ucd');
 
+    Route::prefix('organizations')->name('organizations.')->group(function (): void {
+        Route::post('/{id}/send-agent-contract', [OrganizationController::class, 'sendAgentContract'])->whereUuid('id')->name('send-agent-contract');
+    });
+
     // ВРЕМЕННО ДЛЯ ТЕСТА ЭДО
     Route::get('/edo-test/auth', [\App\Http\Controllers\EdoTestController::class, 'auth']);
     Route::get('/edo-test/documents', [\App\Http\Controllers\EdoTestController::class, 'documents']);

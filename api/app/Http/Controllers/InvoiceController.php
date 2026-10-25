@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AttachmentPurpose;
 use App\Enums\InvoiceStatus;
+use App\Events\RepairRequests\InvoiceIssued;
 use App\Http\Requests\IssueInvoiceRequest;
 use App\Http\Requests\SubmitInvoicePaymentRequest;
 use App\Http\Requests\VerifyInvoicePaymentRequest;
@@ -17,6 +18,7 @@ use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 final class InvoiceController
 {
@@ -74,7 +76,13 @@ final class InvoiceController
 
                 return [
                     'comment' => 'Выставлен счёт ' . $number,
-                    'after'   => fn ($event) => $file->update(['request_event_id' => $event->id]),
+                    'after' => function ($event) use ($file, $repairRequest, $invoice): void {
+                        $file->update(['request_event_id' => $event->id]);
+
+                        DB::afterCommit(function () use ($repairRequest, $invoice): void {
+                            InvoiceIssued::dispatch($repairRequest, $invoice);
+                        });
+                    },
                 ];
             },
         );

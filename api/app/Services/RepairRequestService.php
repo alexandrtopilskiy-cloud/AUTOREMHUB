@@ -13,6 +13,10 @@ use App\Enums\RequestPartStatus;
 use App\Enums\TransitionAction;
 use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
+use App\Events\RepairRequests\RepairRequestWaitingVehicle;
+use App\Events\RepairRequests\ReadyForIssue;
+use App\Events\RepairRequests\VehicleAccepted;
+use App\Events\RepairRequests\WorkOrderCompleted;
 use App\Exceptions\ApiException;
 use App\Models\Attachment;
 use App\Models\Recommendation;
@@ -35,7 +39,6 @@ use App\Models\VehicleServiceRecord;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Models\WorkType;
-use App\Services\Edo\EdoActService;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
@@ -64,7 +67,6 @@ final class RepairRequestService
         private readonly WorkCostService $workCost,
         private readonly ApiPresenter $apiPresenter,
         private readonly DocumentLockService $documentLocks,
-        private readonly EdoActService $edoActService,
     ) {
     }
 
@@ -1313,6 +1315,10 @@ final class RepairRequestService
 
                         if ($to === RepairStage::WaitingVehicle) {
                             $this->notifyVehicleExpected($request, $event);
+
+                            DB::afterCommit(function () use ($request): void {
+                                RepairRequestWaitingVehicle::dispatch($request);
+                            });
                         } else {
                             $this->notifyManagerReviewRequired(
                                 $request,
@@ -1434,6 +1440,10 @@ final class RepairRequestService
                         }
 
                         $this->notifyWorkStarted($request, $event);
+
+                        DB::afterCommit(function () use ($request, $act): void {
+                            VehicleAccepted::dispatch($request, $act);
+                        });
                     },
                 ];
             },
@@ -1470,24 +1480,7 @@ final class RepairRequestService
             $revision,
             $transition->value,
             function (RepairRequest $request) use ($user, $transition, $body): array {
-                $this->flag(
-                    $request,
-                    $user,
-                    $transition === TransitionAction::Next ? 'canAdvance' : 'canReturn',
-                );
-                $isInitialSubmission = $transition === TransitionAction::Next
-                    && $request->stage === RepairStage::Draft
-                    && $user->role === UserRole::Customer;
-                $isManagerDecision = $user->role === UserRole::Manager;
-                $requiresComment = (!$isInitialSubmission && !$isManagerDecision) || ($isManagerDecision && $request->review_context === self::REVIEW_STATION_CHANGES && $transition === TransitionAction::Return);
-
-                if ($requiresComment && trim((string) $body['comment']) === '') {
-                    Input::fail('Укажите комментарий к решению');
-                }
-
-                if ($isManagerDecision && $body['attachmentIds'] !== []) {
-                    Input::fail('Для решения УК вложения не используются');
-                }
+                $this->assertTransitionAllowed($request, $user, $transition, $body);
 
                 $files = $this->attachmentIds(
                     $request,
@@ -1504,11 +1497,9 @@ final class RepairRequestService
                 }
 
                 $to = $this->transitionTarget($request, $from, $transition);
-                if ($transition === TransitionAction::Next && $from === RepairStage::ManagerRouting && $to === RepairStage::StationApproval
-                    && in_array($request->stationRecord?->uuid, $request->data['declinedStationIds'] ?? [], true)
-                    && !($body['confirmDeclinedStation'] ?? false)) {
-                    throw new ApiException(409, 'STATION_PREVIOUSLY_DECLINED', 'Это СТО ранее отказалось от выполнения данной заявки. Подтвердите повторное направление.');
-                }
+
+                $this->assertStationNotDeclined($request, $from, $to, $transition, $body);
+
                 $reviewContext = $request->review_context;
                 $changes = $from === RepairStage::ManagerRouting
                     ? $this->estimateChanges($request)
@@ -1517,34 +1508,18 @@ final class RepairRequestService
                 $this->prepareStationSchedule($request, $transition, $from, $to);
                 $this->completeOrderIfNeeded($request, $transition, $from, (string) $body['comment']);
 
-                if (
-                    $from === RepairStage::ManagerRouting
-                    && $to === RepairStage::StationApproval
-                ) {
-                    $managerChangedEstimate = $reviewContext === self::REVIEW_STATION_CHANGES;
-                    $context = $managerChangedEstimate
-                        ? self::REVIEW_MANAGER_CHANGES
-                        : self::REVIEW_INITIAL;
+                $this->handleReviewContext($request, $from, $to, $transition, $reviewContext);
 
-                    $this->captureReviewBaseline($request, $context);
-                }
-
-                if (
-                    $transition === TransitionAction::Next
-                    && $from === RepairStage::ManagerRouting
-                    && $to === RepairStage::CustomerApproval
-                ) {
-                    $request->review_context = self::REVIEW_INITIAL;
-                }
+                // 👇 ИСПРАВЛЕННЫЙ ТРИГГЕР: Проверяем переход Ready -> VehicleIssue
+                $isReadyForIssue = $transition === TransitionAction::Next
+                    && $from === RepairStage::Ready
+                    && $to === RepairStage::VehicleIssue;
 
                 $this->moveToStage($request, $user, $to);
 
                 $request->data = array_replace($request->data, ['routeComment' => '']);
 
-                if (
-                    $transition === TransitionAction::Return
-                    && $request->stage->value <= RepairStage::VehicleIssue->value
-                ) {
+                if ($transition === TransitionAction::Return && $request->stage->value <= RepairStage::VehicleIssue->value) {
                     $request->repair_completed_at = null;
                 }
 
@@ -1568,10 +1543,84 @@ final class RepairRequestService
                         $files,
                         $changes,
                         $reviewContext,
+                        $isReadyForIssue,
                     ),
                 ];
             },
         );
+    }
+
+    private function assertTransitionAllowed(
+        RepairRequest $request,
+        User $user,
+        TransitionAction $transition,
+        array $body,
+    ): void {
+        $this->flag(
+            $request,
+            $user,
+            $transition === TransitionAction::Next ? 'canAdvance' : 'canReturn',
+        );
+
+        $isInitialSubmission = $transition === TransitionAction::Next
+            && $request->stage === RepairStage::Draft
+            && $user->role === UserRole::Customer;
+
+        $isManagerDecision = $user->role === UserRole::Manager;
+
+        $requiresComment = (!$isInitialSubmission && !$isManagerDecision)
+            || ($isManagerDecision && $request->review_context === self::REVIEW_STATION_CHANGES && $transition === TransitionAction::Return);
+
+        if ($requiresComment && trim((string) $body['comment']) === '') {
+            Input::fail('Укажите комментарий к решению');
+        }
+
+        if ($isManagerDecision && $body['attachmentIds'] !== []) {
+            Input::fail('Для решения УК вложения не используются');
+        }
+    }
+
+    private function assertStationNotDeclined(
+        RepairRequest $request,
+        RepairStage $from,
+        RepairStage $to,
+        TransitionAction $transition,
+        array $body,
+    ): void {
+        if (
+            $transition === TransitionAction::Next
+            && $from === RepairStage::ManagerRouting
+            && $to === RepairStage::StationApproval
+            && in_array($request->stationRecord?->uuid, $request->data['declinedStationIds'] ?? [], true)
+            && !($body['confirmDeclinedStation'] ?? false)
+        ) {
+            throw new ApiException(
+                409,
+                'STATION_PREVIOUSLY_DECLINED',
+                'Это СТО ранее отказалось от выполнения данной заявки. Подтвердите повторное направление.'
+            );
+        }
+    }
+
+    private function handleReviewContext(
+        RepairRequest $request,
+        RepairStage $from,
+        RepairStage $to,
+        TransitionAction $transition,
+        string $reviewContext,
+    ): void {
+        if ($from === RepairStage::ManagerRouting && $to === RepairStage::StationApproval) {
+            $managerChangedEstimate = $reviewContext === self::REVIEW_STATION_CHANGES;
+            $context = $managerChangedEstimate
+                ? self::REVIEW_MANAGER_CHANGES
+                : self::REVIEW_INITIAL;
+
+            $this->captureReviewBaseline($request, $context);
+        }
+
+        if ($transition === TransitionAction::Next && $from === RepairStage::ManagerRouting && $to === RepairStage::CustomerApproval) {
+            $request->review_context = self::REVIEW_INITIAL;
+        }
     }
 
     private function transitionTarget(
@@ -1707,6 +1756,7 @@ final class RepairRequestService
         array $files,
         array $changes,
         string $reviewContext,
+        bool $isReadyForIssue,
     ): callable {
         return function (RequestEvent $event) use (
             $request,
@@ -1718,15 +1768,14 @@ final class RepairRequestService
             $files,
             $changes,
             $reviewContext,
+            $isReadyForIssue,
         ): void {
             $this->createApproval(
                 $request,
                 $event,
                 $user,
                 $from,
-                $action === TransitionAction::Next
-                    ? ApprovalDecision::Approved
-                    : ApprovalDecision::Returned,
+                $action === TransitionAction::Next ? ApprovalDecision::Approved : ApprovalDecision::Returned,
                 $comment,
                 $snapshot,
             );
@@ -1741,12 +1790,15 @@ final class RepairRequestService
                 if ($request->stage === RepairStage::CustomerApproval) {
                     $this->notifyStationEstimateApproved($request, $event);
                     $this->notifyCustomerFinalApproval($request, $event);
-                } elseif (
-                    $request->stage === RepairStage::StationApproval
-                    && $reviewContext === self::REVIEW_STATION_CHANGES
-                ) {
+                } elseif ($request->stage === RepairStage::StationApproval && $reviewContext === self::REVIEW_STATION_CHANGES) {
                     $this->notifyStationEstimateChanged($request, $event, [...$changes, 'Комментарий УК: ' . $comment]);
                 }
+            }
+
+            if ($isReadyForIssue) {
+                DB::afterCommit(function () use ($request): void {
+                    ReadyForIssue::dispatch($request);
+                });
             }
         };
     }
@@ -1792,8 +1844,7 @@ final class RepairRequestService
                             ->where('role', UserRole::Manager->value)
                             ->whereHas(
                                 'organization',
-                                fn ($organization) => $organization
-                                    ->where('tenant_id', $request->tenant_id),
+                                fn ($organization) => $organization->where('tenant_id', $request->tenant_id),
                             );
                     });
             })
@@ -2385,8 +2436,7 @@ final class RepairRequestService
         $order->fill([
             'vehicle_id'       => $request->vehicle_id,
             'station_id'       => $request->assigned_station_id,
-            'mileage'          => $request->acceptanceAct?->mileage
-                ?? (int) $request->data['mileage'],
+            'mileage'          => $request->acceptanceAct?->mileage ?? (int) $request->data['mileage'],
             'completed_at'     => $request->repair_completed_at,
             'total'            => $this->repairRequestCalculator->total($request),
             'conclusion'       => $conclusion,
@@ -2398,12 +2448,9 @@ final class RepairRequestService
         $this->createWorkOrderItemsFromWorks($request, $order);
         $this->createWorkOrderItemsFromParts($request, $order);
 
-        try {
-            $this->edoActService->sendAct($order);
-        } catch (\Throwable $e) {
-            // Логируем ошибку, но не ломаем бизнес-процесс
-            report($e);
-        }
+        DB::afterCommit(function () use ($request, $order): void {
+            WorkOrderCompleted::dispatch($request, $order);
+        });
     }
 
     private function snapshotWorkOrder(WorkOrder $order): void

@@ -4,43 +4,62 @@ declare(strict_types=1);
 
 namespace App\Services\Edo;
 
+use App\Enums\Edo\EdoDocumentType;
+use App\Models\EdoDocument;
+use App\Models\RepairRequest;
 use App\Models\WorkOrder;
-use App\Services\Edo\Providers\EdoRu\EdoRuClient;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Database\Eloquent\Collection;
+use App\Services\Edo\Builders\WorkOrderActBuilder;
+use Illuminate\Support\Facades\DB;
 
 final class EdoActService
 {
-    /**
-     * Отправляет Акт выполненных работ в ЭДО.Поток.
-     * Пока это заглушка: логируем факт вызова и данные заказ-наряда.
-     */
-    public function sendAct(WorkOrder $order): void
+    public function __construct(
+        private readonly WorkOrderActBuilder $builder,
+        private readonly EdoDispatcher $dispatcher,
+    ) {}
+
+    public function sendAct(RepairRequest $request, WorkOrder $workOrder): EdoDocument
     {
-        // TODO: Здесь будет формирование XML, подпись и вызов API ЭДО.
-        // Пока просто фиксируем, что триггер сработал.
+        return DB::transaction(function () use ($request, $workOrder) {
+            $stationOrg = $request->stationRecord?->organization; // СТО
+            $ukOrg = $request->tenant; // УК
 
-        Log::info('EdoActService: готов к отправке Акта выполненных работ', [
-            'work_order_id' => $order->id,
-            'work_order_uuid' => $order->uuid,
-            'repair_request_id' => $order->repair_request_id,
-            'total' => $order->total,
-            'completed_at' => $order->completed_at?->toIso8601String(),
-            'station_id' => $order->station_id,
-        ]);
+            if (!$stationOrg) {
+                throw new \RuntimeException("У заявки {$request->number} не назначена СТО");
+            }
 
-        // Позже здесь будет:
-        // 1. $xml = $this->buildXml($order);
-        // 2. $signature = $this->signXml($xml); // или отправка без подписи
-        // 3. $this->edoClient->sendDocument($order->repairRequest->customer_organization, $xml, $signature);
-    }
+            // Отправитель - СТО, получатель - УК
+            $provider = $this->dispatcher->forOrganization($stationOrg);
 
-    public function getActDocTypeId(EdoRuClient $client)
-    {
-        $response = $client->get('/dictionary/get-document-type');
-        $types = new Collection($response['result'] ?? []);
-        $list = $types->whereIn('id', [7, 8, 14, 15, 46]);
+            $document = $request->edoDocuments()
+                ->firstOrCreate(
+                ['document_type' => EdoDocumentType::ActWorks->value],
+                [
+                    'tenant_id'         => $request->tenant_id,
+                    'organization_id'   => $stationOrg->id,
+                    'counterparty_id'   => $ukOrg->id,
+                    'provider'          => $stationOrg->edo_provider,
+                    'number'            => 'ACT-' . $workOrder->number,
+                    'document_date'     => now()->toDateString(),
+                    'status'            => 'draft',
+                    'source_type'       => RepairRequest::class,
+                    'source_id'         => $request->id,
+                ]
+            );
 
-        return $list;
+            $structuredRequest = $this->builder->build($request, $workOrder, $document, $stationOrg, $ukOrg);
+            $result = $provider->sendDocument($structuredRequest);
+
+            $document->update([
+                'status'        => 'sent',
+                'external_id'   => $result->documentId ?? null,
+                'sent_at'       => now(),
+                'meta'          => array_merge($document->meta ?? [], [
+                    'provider_response' => $result->rawResponse ?? [],
+                ]),
+            ]);
+
+            return $document->refresh();
+        });
     }
 }
