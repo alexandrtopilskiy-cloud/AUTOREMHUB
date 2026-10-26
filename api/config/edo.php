@@ -7,6 +7,7 @@ use App\Services\Edo\Drivers\EdoRu\EdoRuProvider;
 use App\Services\Edo\Drivers\Taxcom\TaxcomProvider;
 
 return [
+    'mock' => env('EDO_MOCK', true),
     'default' => env('EDO_PROVIDER', EdoProvider::None->value),
     'providers' => [
         /*

@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Edo;
 
-use App\Models\Attachment;
-use App\Enums\AttachmentMime;
-use App\Enums\AttachmentPurpose;
+use App\DTO\EdoFile;
+use App\DTO\EdoSignature;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\Tenant;
 use App\Services\Edo\Builders\AgentContractBuilder;
+use App\Traits\SendsEdoDocuments;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 final class EdoAgentContractService
 {
+    use SendsEdoDocuments;
+
     public function __construct(
         private readonly AgentContractBuilder $builder,
         private readonly EdoDispatcher $dispatcher,
@@ -25,11 +26,8 @@ final class EdoAgentContractService
     public function sendContract(Organization $customer): EdoDocument
     {
         return DB::transaction(function () use ($customer) {
-            // Предполагаем, что у customer есть tenant_id
-            $ukOrg = Tenant::findOrFail($customer->tenant_id);
-
-            // Отправитель - УК, получатель - Заказчик
-            $provider = $this->dispatcher->forOrganization($ukOrg);
+            $ukTenant = Tenant::findOrFail($customer->tenant_id);
+            $provider = $this->dispatcher->forOrganization($ukTenant);
 
             $document = EdoDocument::query()->firstOrCreate(
                 [
@@ -38,9 +36,9 @@ final class EdoAgentContractService
                 ],
                 [
                     'tenant_id'         => $customer->tenant_id,
-                    'organization_id'   => $ukOrg->id,
-                    'provider'          => $ukOrg->edo_provider,
-                    'number'            => 'AG-' . $customer->id, // Или генератор номеров
+                    'organization_id'   => $ukTenant->id,
+                    'provider'          => $ukTenant->edo_provider,
+                    'number'            => 'AG-' . $customer->id,
                     'document_date'     => now()->toDateString(),
                     'status'            => 'draft',
                     'source_type'       => Organization::class,
@@ -48,32 +46,27 @@ final class EdoAgentContractService
                 ]
             );
 
-            $structuredRequest = $this->builder->build($customer, $document, $ukOrg);
-            $result = $provider->sendDocument($structuredRequest);
-
-            $attachment = Attachment::query()->create([
-                'repair_request_id' => null, // если это не заявка, а организация, возможно, нужно другое поле
-                'disk' => 'local',
-                'object_key' => 'edo/temp_' . $document->uuid . '.pdf',
-                'original_name' => $structuredRequest->meta['file_name'],
-                'mime_type' => AttachmentMime::Pdf,
-                'size' => strlen(base64_decode($structuredRequest->meta['file_content'])),
-                'purpose' => AttachmentPurpose::EdoPayload, // Создайте такой Enum
-                'organization_id' => $customer->id,
-                'created_by' => auth()->id() ?? 1,
-            ]);
-            Storage::disk('local')->put(
-                $attachment->object_key,
-                base64_decode($structuredRequest->meta['file_content'])
+            $structuredRequest = $this->builder->build($customer, $document, $ukTenant);
+            // 👇 ИЗВЛЕКАЕМ ФАЙЛ ИЗ META И СОЗДАЕМ DTO
+            $fileDto = new EdoFile(
+                name: $structuredRequest->meta['file_name'],
+                content: base64_decode($structuredRequest->meta['file_content']),
+                mimeType: 'application/pdf'
             );
 
+            // Создаем фейковую подпись (для реального ЭДО здесь будут данные УКЭП)
+            $signatureDto = new EdoSignature(
+                base64: 'mock-signature',
+                certificate: null
+            );
+
+            // 👇 ВЫЗЫВАЕМ НАШ ОРКЕСТРАТОР
+            $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
+
             $document->update([
-                'status'        => 'sent',
-                'external_id'   => $result->documentId ?? null,
-                'sent_at'       => now(),
-                'meta'          => array_merge($document->meta ?? [], [
-                    'provider_response' => $result->rawResponse ?? [],
-                ]),
+                'status'      => 'sent',
+                'external_id' => $result->documentId,
+                'sent_at'     => now(),
             ]);
 
             return $document->refresh();

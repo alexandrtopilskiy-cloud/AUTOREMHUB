@@ -56,6 +56,8 @@ final class WorkOrderActBuilder
             vatSum: bcdiv(bcmul((string)$workOrder->total, '20', 2), '120', 2),
             vatIncluded: true,
             meta: [
+                'file_name'    => "Документ_{$document->number}.pdf",
+                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
                 'work_order_id' => $workOrder->id,
                 'work_order_number' => $workOrder->number,
                 'mileage' => $workOrder->mileage,

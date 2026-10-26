@@ -42,6 +42,8 @@ final class AcceptanceActBuilder
             vatSum: '0.00',
             vatIncluded: false,
             meta: [
+                'file_name'    => "Документ_{$document->number}.pdf",
+                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
                 'act_number' => $act->number,
                 'mileage'    => $act->mileage,
                 'fuel_level' => $act->fuel_level,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\Edo\EdoDocumentType;
+use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
@@ -191,6 +192,12 @@ final class RepairRequest extends Entity
     public function customerOrganization(): BelongsTo
     {
         return $this->belongsTo(Organization::class, 'customer_organization_id');
+    }
+
+    public function ukOrganization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class, 'tenant_id', 'tenant_id')
+            ->where('kind', OrganizationKind::Manager);
     }
 
     public static function forUser(User $user): Builder

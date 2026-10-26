@@ -13,12 +13,14 @@ use App\Enums\RequestPartStatus;
 use App\Enums\TransitionAction;
 use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
+use App\Events\RepairRequests\InvoiceIssued;
 use App\Events\RepairRequests\RepairRequestWaitingVehicle;
 use App\Events\RepairRequests\ReadyForIssue;
 use App\Events\RepairRequests\VehicleAccepted;
 use App\Events\RepairRequests\WorkOrderCompleted;
 use App\Exceptions\ApiException;
 use App\Models\Attachment;
+use App\Models\Invoice;
 use App\Models\Recommendation;
 use App\Models\RepairRequest;
 use App\Models\RequestApproval;
@@ -47,6 +49,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
+use Illuminate\Support\Facades\Log;
 
 final class RepairRequestService
 {
@@ -488,11 +491,8 @@ final class RepairRequestService
      */
     private function validateMileage(array $patch): void
     {
-        if (
-            isset($patch['mileage'])
-            && $patch['mileage'] !== ''
-            && !preg_match('/^\d{1,9}$/', (string) $patch['mileage'])
-        ) {
+        $mileage = isset($patch['mileage']) && $patch['mileage'] !== '' ? (string)$patch['mileage'] : false;
+        if ($mileage && !preg_match('/^\d{1,9}$/', $mileage)) {
             Input::fail('Пробег должен быть целым числом', 'mileage');
         }
     }
@@ -990,8 +990,10 @@ final class RepairRequestService
 
     private function minutesFromTime(string $value): int
     {
-        return ((int) substr($value, 0, 2) * 60)
-            + (int) substr($value, 3, 2);
+        $num1 = ((int) substr($value, 0, 2) * 60);
+        $num2 = (int) substr($value, 3, 2);
+
+        return $num1 + $num2;
     }
 
     /* ─────────────────── Вложения ─────────────────── */
@@ -1493,6 +1495,18 @@ final class RepairRequestService
                 $snapshot = $this->buildTransitionSnapshot($request);
 
                 if ($transition === TransitionAction::Next) {
+                    if ($from === RepairStage::VehicleIssue) {
+                        $this->ensureInvoiceExists($request, $user);
+                    }
+
+                    if ($from === RepairStage::AwaitingPayment) {
+                        $this->ensurePaymentSubmitted($request, $user);
+                    }
+
+                    if ($from === RepairStage::PaymentReview) {
+                        $this->ensurePaymentVerified($request, $user);
+                    }
+
                     $this->validateNext($request);
                 }
 
@@ -1548,6 +1562,146 @@ final class RepairRequestService
                 ];
             },
         );
+    }
+
+    /**
+     * Автоматически генерирует счёт и отправляет его в ЭДО,
+     * если УК переводит заявку в закрывающие документы.
+     */
+    private function ensureInvoiceExists(RepairRequest $request, User $user): void
+    {
+        if ($request->invoice()->exists()) {
+            return;
+        }
+
+        if (!$request->workOrder) {
+            throw new ApiException(422, 'VALIDATION_ERROR', 'Заказ-наряд ещё не сформирован');
+        }
+
+        $number = 'INV-' . $request->number;
+        $invoiceUuid = (string) Str::uuid();
+
+        // 1. СНАЧАЛА Генерируем файл и создаем Attachment
+        $fileContent = base64_encode("Счет на оплату по заявке {$request->number}. Сумма: {$request->workOrder->total}");
+        $objectKey = 'invoices/' . $invoiceUuid . '.pdf';
+        Storage::disk('local')->put($objectKey, $fileContent);
+
+        // Получаем ID текущего периода заявки (обязательное поле)
+        $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
+
+        if (!$currentPeriodId) {
+            throw new \RuntimeException("Не найден активный период для заявки {$request->number}");
+        }
+
+        $attachment = new Attachment();
+        $attachment->uuid = (string) Str::uuid();
+
+        // Явно перечисляем ВСЕ поля, включая обязательные
+        $attachment->repair_request_id = $request->id;
+        $attachment->uploaded_by = $user->id; // 👈 Исправлено (добавлено)
+        $attachment->request_status_period_id = $currentPeriodId; // 👈 Исправлено (добавлено)
+        $attachment->disk = 'local';
+        $attachment->object_key = $objectKey;
+        $attachment->original_name = "Счет_{$number}.pdf";
+        $attachment->mime_type = 'application/pdf';
+        $attachment->size = strlen($fileContent);
+        $attachment->sha256 = hash('sha256', $fileContent); // 👈 Исправлено (добавлено)
+        $attachment->purpose = AttachmentPurpose::IssuedInvoice;
+        $attachment->save();
+
+        // 2. ТЕПЕРЬ Создаем счет
+        $invoice = new Invoice();
+        $invoice->uuid = $invoiceUuid;
+        $invoice->repair_request_id = $request->id;
+        $invoice->number = $number;
+        $invoice->amount = $request->workOrder->total;
+        $invoice->status = InvoiceStatus::Issued;
+        $invoice->document_attachment_id = $attachment->id;
+        $invoice->save();
+
+        // 3. ТРИГГЕР ДЛЯ ЭДО
+        DB::afterCommit(function () use ($request, $invoice): void {
+            InvoiceIssued::dispatch($request, $invoice);
+        });
+    }
+
+    /**
+     * Автоматически прикрепляет чек об оплате, если УК переводит заявку
+     * на проверку оплаты.
+     */
+    private function ensurePaymentSubmitted(RepairRequest $request, User $user): void
+    {
+        $invoice = $request->invoice;
+
+        // Если счета нет или он уже проверен — ничего не делаем
+        if (!$invoice || $invoice->status === InvoiceStatus::Paid) {
+            return;
+        }
+
+        // Если чек уже прикреплен, но статус не Submitted — обновляем статус
+        if ($invoice->status === InvoiceStatus::Submitted) {
+            return;
+        }
+
+        // 1. Генерируем файл-заглушку (чек)
+        $fileContent = base64_encode("Чек об оплате по заявке {$request->number}. Сумма: {$invoice->amount}");
+        $objectKey = 'payments/' . $invoice->uuid . '_paid.pdf';
+        Storage::disk('local')->put($objectKey, $fileContent);
+
+        // 2. Получаем текущий период
+        $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
+
+        if (!$currentPeriodId) {
+            throw new \RuntimeException("Не найден активный период для заявки {$request->number}");
+        }
+
+        // 3. Создаем Attachment
+        $attachment = new Attachment();
+        $attachment->uuid = (string) Str::uuid();
+        $attachment->repair_request_id = $request->id;
+        $attachment->uploaded_by = $user->id;
+        $attachment->request_status_period_id = $currentPeriodId;
+        $attachment->disk = 'local';
+        $attachment->object_key = $objectKey;
+        $attachment->original_name = "Чек_об_оплате_{$invoice->number}.pdf";
+        $attachment->mime_type = 'application/pdf';
+        $attachment->size = strlen($fileContent);
+        $attachment->sha256 = hash('sha256', $fileContent);
+        $attachment->purpose = AttachmentPurpose::PaidInvoice;
+        $attachment->save();
+
+        // 4. Обновляем счет
+        $invoice->update([
+            'status'                      => InvoiceStatus::Submitted,
+            'paid_amount'                 => $invoice->amount,
+            'paid_at'                     => now(),
+            'paid_document_attachment_id' => $attachment->id,
+        ]);
+    }
+
+    /**
+     * Автоматически подтверждает оплату, чтобы закрыть заявку.
+     */
+    private function ensurePaymentVerified(RepairRequest $request, User $user): void
+    {
+        $invoice = $request->invoice;
+
+        if (!$invoice || $invoice->status === InvoiceStatus::Paid) {
+            return;
+        }
+
+        // Если чек об оплате не прикреплен (хотя мы его генерировали на прошлом шаге),
+        // на всякий случай создадим его.
+        if (!$invoice->paid_document_attachment_id) {
+            $this->ensurePaymentSubmitted($request, $user);
+            $invoice->refresh();
+        }
+
+        $invoice->update([
+            'status'      => InvoiceStatus::Paid,
+            'verified_by' => $user->id,
+            'verified_at' => now(),
+        ]);
     }
 
     private function assertTransitionAllowed(

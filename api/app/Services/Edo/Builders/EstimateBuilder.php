@@ -78,6 +78,8 @@ final class EstimateBuilder
             vatSum: $vatSum,
             vatIncluded: true,
             meta: [
+                'file_name'    => "Документ_{$document->number}.pdf",
+                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
                 'diagnostic_report_id' => $request->diagnoses()->latest('id')->first()?->id,
                 'vehicle_info' => $request->vehicleRecord?->toArray(),
             ],

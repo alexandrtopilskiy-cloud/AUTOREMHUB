@@ -57,6 +57,8 @@ final class InvoiceBuilder
             vatSum: $vatAmount,
             vatIncluded: true,
             meta: [
+                'file_name'    => "Документ_{$document->number}.pdf",
+                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
                 'repair_request_id' => $request->id,
                 'work_order_number' => $request->workOrder?->number,
                 'vehicle_info' => $request->vehicleRecord?->toArray(),

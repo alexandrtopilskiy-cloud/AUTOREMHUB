@@ -52,6 +52,8 @@ final class AgentReportBuilder
             vatSum: bcdiv(bcmul((string)$request->workOrder?->total, '20', 2), '120', 2),
             vatIncluded: true,
             meta: [
+                'file_name'    => "Документ_{$document->number}.pdf",
+                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
                 'work_order_number' => $request->workOrder?->number,
                 'vehicle_info' => $request->vehicleRecord?->toArray(),
                 'report_type' => 'agent_report'
