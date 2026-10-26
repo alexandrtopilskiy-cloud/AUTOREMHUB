@@ -11,9 +11,14 @@ use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use DateTimeImmutable;
+use App\Services\DocumentGeneratorService;
 
 final class PowerOfAttorneyBuilder
 {
+    public function __construct(
+        private readonly DocumentGeneratorService $generator,
+    ) {}
+
     public function build(
         RepairRequest $request,
         EdoDocument $document,
@@ -21,9 +26,7 @@ final class PowerOfAttorneyBuilder
         Organization $station
     ): EdoStructuredRequest {
 
-        // TODO: Здесь должен быть вызов сервиса генерации PDF (например, через DomPDF)
-        // Пока передаем заглушку.
-        $pdfContent = base64_encode('dummy pdf content');
+        $pdfContent = $this->generator->generatePowerOfAttorney($request);
 
         return new EdoStructuredRequest(
             type: EdoDocumentType::PowerOfAttorney,
@@ -44,9 +47,9 @@ final class PowerOfAttorneyBuilder
             vatSum: '0.00',
             vatIncluded: false,
             meta: [
-                'file_name' => "Доверенность_{$document->number}.pdf",
-                'file_content' => $pdfContent,
-                'vehicle_vin' => $request->vehicleRecord?->vin,
+                'file_name'     => "Доверенность_{$document->number}.pdf",
+                'file_content'  => base64_encode($pdfContent),
+                'vehicle_vin'   => $request->vehicleRecord?->vin,
                 'vehicle_plate' => $request->vehicleRecord?->plate,
             ],
         );

@@ -11,10 +11,15 @@ use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\VehicleAcceptanceAct;
+use App\Services\DocumentGeneratorService;
 use DateTimeImmutable;
 
 final class AcceptanceActBuilder
 {
+    public function __construct(
+        private readonly DocumentGeneratorService $generator
+    ) {}
+
     public function build(
         RepairRequest $request,
         VehicleAcceptanceAct $act,
@@ -22,6 +27,7 @@ final class AcceptanceActBuilder
         Organization $sender, // СТО
         Organization $receiver // УК
     ): EdoStructuredRequest {
+        $pdfContent = $this->generator->generateAcceptanceAct($request, $act);
 
         return new EdoStructuredRequest(
             type: EdoDocumentType::AcceptanceAct,
@@ -42,14 +48,14 @@ final class AcceptanceActBuilder
             vatSum: '0.00',
             vatIncluded: false,
             meta: [
-                'file_name'    => "Документ_{$document->number}.pdf",
-                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
-                'act_number' => $act->number,
-                'mileage'    => $act->mileage,
-                'fuel_level' => $act->fuel_level,
-                'condition'  => $act->condition,
-                'defects'    => $act->defect_types,
-                'vehicle'    => $act->vehicle_snapshot,
+                'file_name'     => "Документ_{$document->number}.pdf",
+                'file_content'  => base64_encode($pdfContent),
+                'act_number'    => $act->number,
+                'mileage'       => $act->mileage,
+                'fuel_level'    => $act->fuel_level,
+                'condition'     => $act->condition,
+                'defects'       => $act->defect_types,
+                'vehicle'       => $act->vehicle_snapshot,
             ],
         );
     }

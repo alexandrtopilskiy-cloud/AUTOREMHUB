@@ -11,10 +11,15 @@ use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\WorkOrder;
+use App\Services\DocumentGeneratorService;
 use DateTimeImmutable;
 
 final class WorkOrderActBuilder
 {
+    public function __construct(
+        private readonly DocumentGeneratorService $generator
+    ) {}
+
     public function build(
         RepairRequest $request,
         WorkOrder $workOrder,
@@ -37,6 +42,8 @@ final class WorkOrderActBuilder
             ];
         }
 
+        $pdfContent = $this->generator->generateAct($request, $workOrder);
+
         return new EdoStructuredRequest(
             type: EdoDocumentType::ActWorks,
             number: $document->number,
@@ -56,12 +63,12 @@ final class WorkOrderActBuilder
             vatSum: bcdiv(bcmul((string)$workOrder->total, '20', 2), '120', 2),
             vatIncluded: true,
             meta: [
-                'file_name'    => "Документ_{$document->number}.pdf",
-                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
-                'work_order_id' => $workOrder->id,
+                'file_name'         => "Акт_{$workOrder->number}.pdf",
+                'file_content'      => base64_encode($pdfContent),
+                'work_order_id'     => $workOrder->id,
                 'work_order_number' => $workOrder->number,
-                'mileage' => $workOrder->mileage,
-                'vehicle_info' => $request->vehicleRecord?->toArray(),
+                'mileage'           => $workOrder->mileage,
+                'vehicle_info'      => $request->vehicleRecord?->toArray(),
             ],
         );
     }

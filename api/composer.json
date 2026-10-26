@@ -12,6 +12,7 @@
     "ext-pdo_pgsql": "*",
     "ext-simplexml": "*",
     "ext-zip": "*",
+    "barryvdh/laravel-dompdf": "^3.1",
     "laravel/framework": "^13.0",
     "laravel/sanctum": "^4.3"
   },

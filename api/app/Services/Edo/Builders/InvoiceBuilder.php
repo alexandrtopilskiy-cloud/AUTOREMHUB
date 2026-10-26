@@ -11,10 +11,15 @@ use App\Models\EdoDocument;
 use App\Models\Invoice;
 use App\Models\Organization;
 use App\Models\RepairRequest;
+use App\Services\DocumentGeneratorService;
 use DateTimeImmutable;
 
 final class InvoiceBuilder
 {
+    public function __construct(
+        private readonly DocumentGeneratorService $generator,
+    ) {}
+
     public function build(
         RepairRequest $request,
         Invoice $invoice,
@@ -23,20 +28,21 @@ final class InvoiceBuilder
         Organization $receiver // Заказчик
     ): EdoStructuredRequest {
 
-        // Предполагаем, что в Invoice хранится сумма вознаграждения
         $amount = (string) $invoice->amount;
         $vatAmount = bcdiv(bcmul($amount, '20', 2), '120', 2);
 
         $items = [
             [
-                'name' => 'Агентское вознаграждение по заявке ' . $request->number,
-                'quantity' => '1',
-                'price' => $amount,
-                'sum' => $amount,
-                'vatRate' => '20',
-                'vatSum' => $vatAmount,
+                'name'      => 'Агентское вознаграждение по заявке ' . $request->number,
+                'quantity'  => '1',
+                'price'     => $amount,
+                'sum'       => $amount,
+                'vatRate'   => '20',
+                'vatSum'    => $vatAmount,
             ]
         ];
+
+        $pdfContent = $this->generator->generateInvoice($request, $invoice);
 
         return new EdoStructuredRequest(
             type: EdoDocumentType::Invoice,
@@ -57,11 +63,11 @@ final class InvoiceBuilder
             vatSum: $vatAmount,
             vatIncluded: true,
             meta: [
-                'file_name'    => "Документ_{$document->number}.pdf",
-                'file_content' => base64_encode("Текст заглушки для документа {$document->number}"), // Пока просто текст
+                'file_name'         => "Документ_{$document->number}.pdf",
+                'file_content'      => base64_encode($pdfContent),
                 'repair_request_id' => $request->id,
                 'work_order_number' => $request->workOrder?->number,
-                'vehicle_info' => $request->vehicleRecord?->toArray(),
+                'vehicle_info'      => $request->vehicleRecord?->toArray(),
             ],
         );
     }

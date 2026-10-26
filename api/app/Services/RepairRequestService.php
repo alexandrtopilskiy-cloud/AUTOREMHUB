@@ -41,6 +41,7 @@ use App\Models\VehicleServiceRecord;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Models\WorkType;
+use App\Services\DocumentGeneratorService;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
@@ -49,7 +50,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
-use Illuminate\Support\Facades\Log;
 
 final class RepairRequestService
 {
@@ -70,6 +70,7 @@ final class RepairRequestService
         private readonly WorkCostService $workCost,
         private readonly ApiPresenter $apiPresenter,
         private readonly DocumentLockService $documentLocks,
+        private readonly DocumentGeneratorService $documentGenerator,
     ) {
     }
 
@@ -1581,45 +1582,42 @@ final class RepairRequestService
         $number = 'INV-' . $request->number;
         $invoiceUuid = (string) Str::uuid();
 
-        // 1. СНАЧАЛА Генерируем файл и создаем Attachment
-        $fileContent = base64_encode("Счет на оплату по заявке {$request->number}. Сумма: {$request->workOrder->total}");
-        $objectKey = 'invoices/' . $invoiceUuid . '.pdf';
-        Storage::disk('local')->put($objectKey, $fileContent);
-
-        // Получаем ID текущего периода заявки (обязательное поле)
-        $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
-
-        if (!$currentPeriodId) {
-            throw new \RuntimeException("Не найден активный период для заявки {$request->number}");
-        }
-
-        $attachment = new Attachment();
-        $attachment->uuid = (string) Str::uuid();
-
-        // Явно перечисляем ВСЕ поля, включая обязательные
-        $attachment->repair_request_id = $request->id;
-        $attachment->uploaded_by = $user->id; // 👈 Исправлено (добавлено)
-        $attachment->request_status_period_id = $currentPeriodId; // 👈 Исправлено (добавлено)
-        $attachment->disk = 'local';
-        $attachment->object_key = $objectKey;
-        $attachment->original_name = "Счет_{$number}.pdf";
-        $attachment->mime_type = 'application/pdf';
-        $attachment->size = strlen($fileContent);
-        $attachment->sha256 = hash('sha256', $fileContent); // 👈 Исправлено (добавлено)
-        $attachment->purpose = AttachmentPurpose::IssuedInvoice;
-        $attachment->save();
-
-        // 2. ТЕПЕРЬ Создаем счет
+        // 1. Создаем Invoice (сначала, чтобы передать в генератор)
         $invoice = new Invoice();
         $invoice->uuid = $invoiceUuid;
         $invoice->repair_request_id = $request->id;
         $invoice->number = $number;
         $invoice->amount = $request->workOrder->total;
         $invoice->status = InvoiceStatus::Issued;
+
+        // 2. Генерируем красивый PDF
+        $pdfContent = $this->documentGenerator->generateInvoice($request, $invoice);
+
+        $objectKey = 'invoices/' . $invoiceUuid . '.pdf';
+        Storage::disk('local')->put($objectKey, $pdfContent);
+
+        // 3. Создаем Attachment
+        $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
+
+        $attachment = new Attachment();
+        $attachment->uuid = (string) Str::uuid();
+        $attachment->repair_request_id = $request->id;
+        $attachment->uploaded_by = $user->id;
+        $attachment->request_status_period_id = $currentPeriodId;
+        $attachment->disk = 'local';
+        $attachment->object_key = $objectKey;
+        $attachment->original_name = "Счет_{$number}.pdf";
+        $attachment->mime_type = 'application/pdf';
+        $attachment->size = strlen($pdfContent);
+        $attachment->sha256 = hash('sha256', $pdfContent);
+        $attachment->purpose = AttachmentPurpose::IssuedInvoice;
+        $attachment->save();
+
+        // 4. Обновляем счет и сохраняем
         $invoice->document_attachment_id = $attachment->id;
         $invoice->save();
 
-        // 3. ТРИГГЕР ДЛЯ ЭДО
+        // 5. Отправляем в ЭДО
         DB::afterCommit(function () use ($request, $invoice): void {
             InvoiceIssued::dispatch($request, $invoice);
         });

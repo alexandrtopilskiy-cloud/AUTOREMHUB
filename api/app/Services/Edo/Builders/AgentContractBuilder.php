@@ -10,18 +10,18 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\Tenant;
+use App\Services\DocumentGeneratorService;
 use DateTimeImmutable;
 
 final class AgentContractBuilder
 {
-    public function build(
-        Organization $customer,
-        EdoDocument $document,
-        Tenant $ukTenant // Или Organization, если УК тоже организация
-    ): EdoStructuredRequest {
+    public function __construct(
+        private readonly DocumentGeneratorService $generator
+    ) {}
 
-        // Генерация PDF договора (заглушка)
-        $pdfContent = base64_encode('dummy agent contract pdf');
+    public function build(Organization $customer, EdoDocument $document, Tenant $ukTenant): EdoStructuredRequest
+    {
+        $pdfContent = $this->generator->generateAgentContract($customer, $ukTenant);
 
         return new EdoStructuredRequest(
             type: EdoDocumentType::AgencyContract,
@@ -42,9 +42,9 @@ final class AgentContractBuilder
             vatSum: '0.00',
             vatIncluded: false,
             meta: [
-                'file_name' => "Агентский_договор_{$customer->name}.pdf",
-                'file_content' => $pdfContent,
-                'organization_id' => $customer->id,
+                'file_name'         => "Агентский_договор_{$customer->name}.pdf",
+                'file_content'      => base64_encode($pdfContent),
+                'organization_id'   => $customer->id,
             ],
         );
     }
