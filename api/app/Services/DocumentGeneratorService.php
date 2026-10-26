@@ -13,6 +13,10 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 final class DocumentGeneratorService
 {
+    private const PDF_OPTION_ATTRIBUTE_NAME = 'defaultFont';
+    private const PDF_OPTION_FONT_VALUE = 'DejaVu Sans';
+    private const PDF_PAPER_NAME = 'a4';
+    private const PDF_PAPER_ORIENTATION = 'portrait';
     /**
      * Генерирует PDF счёта.
      * Возвращает бинарное содержимое файла (string).
@@ -28,10 +32,10 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.invoice', $data);
 
-        // Настройки (A4, портретная ориентация)
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.act', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -49,8 +53,9 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.act', $data);
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.act', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -60,8 +65,9 @@ final class DocumentGeneratorService
      */
     public function generateSimpleDocument(string $title, array $data): string
     {
-        $pdf = Pdf::loadView('pdf.simple', array_merge($data, ['title' => $title]));
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.simple', array_merge($data, ['title' => $title]))
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -81,8 +87,9 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.estimate', $data);
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.estimate', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -102,8 +109,9 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.acceptance_act', $data);
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.acceptance_act', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -122,8 +130,9 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.power_of_attorney', $data);
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.power_of_attorney', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -141,8 +150,9 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.agent_report', $data);
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.agent_report', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
@@ -158,8 +168,9 @@ final class DocumentGeneratorService
             'date' => now()->format('d.m.Y'),
         ];
 
-        $pdf = Pdf::loadView('pdf.agent_contract', $data);
-        $pdf->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('pdf.agent_contract', $data)
+            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
