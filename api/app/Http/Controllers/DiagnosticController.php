@@ -50,12 +50,11 @@ final class DiagnosticController
                     AttachmentPurpose::Diagnostic,
                 );
 
-                DiagnosticReport::create([
+                $report = DiagnosticReport::create([
                     'repair_request_id' => $repairRequest->id,
                     'station_id'        => $repairRequest->assigned_station_id,
                     'author_id'         => $request->user()->id,
-                    'mileage'           => $repairRequest->acceptanceAct?->mileage
-                        ?? (int) ($repairRequest->data['mileage'] ?? 0),
+                    'mileage'           => $repairRequest->acceptanceAct?->mileage ?? (int)($repairRequest->data['mileage'] ?? 0),
                     'conclusion'        => $conclusion,
                     'attachment_ids'    => $attachmentIds,
                 ]);
@@ -63,7 +62,7 @@ final class DiagnosticController
                 return [
                     'comment' => 'Сохранено заключение диагностики',
                     'details' => ['conclusion' => $conclusion],
-                    'after'   => function ($event) use ($files): void {
+                    'after'   => function ($event) use ($files, $repairRequest, $report): void {
                         Attachment::query()
                             ->whereIn('id', array_map(static fn ($file) => $file->id, $files))
                             ->update(['request_event_id' => $event->id]);

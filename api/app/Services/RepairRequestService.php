@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\ApprovalDto;
+use App\DTO\NotificationDto;
+use App\DTO\RequestEventDto;
+use App\DTO\TransitionContext;
 use App\Enums\ApprovalDecision;
 use App\Enums\AttachmentPurpose;
 use App\Enums\InvoiceStatus;
@@ -13,14 +17,12 @@ use App\Enums\RequestPartStatus;
 use App\Enums\TransitionAction;
 use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
-use App\Events\RepairRequests\InvoiceIssued;
 use App\Events\RepairRequests\RepairRequestWaitingVehicle;
 use App\Events\RepairRequests\ReadyForIssue;
 use App\Events\RepairRequests\VehicleAccepted;
 use App\Events\RepairRequests\WorkOrderCompleted;
 use App\Exceptions\ApiException;
 use App\Models\Attachment;
-use App\Models\Invoice;
 use App\Models\Recommendation;
 use App\Models\RepairRequest;
 use App\Models\RequestApproval;
@@ -42,6 +44,7 @@ use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Models\WorkType;
 use App\Services\DocumentGeneratorService;
+use App\Services\InvoiceService;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
@@ -56,12 +59,6 @@ final class RepairRequestService
     private const DB_DEADLOCK_RETRIES = 3;
     private const QUANTITY_SCALE = 3;
 
-    private const REVIEW_INITIAL = 'initial';
-    private const REVIEW_STATION_CHANGES = 'station_changes';
-    private const REVIEW_MANAGER_CHANGES = 'manager_changes';
-    private const REVIEW_STATION_DECLINED = 'station_declined';
-    private const REVIEW_CUSTOMER_SLOT = 'customer_slot';
-
     public function __construct(
         private readonly VehicleService $vehicleService,
         private readonly Workflow $workflow,
@@ -71,19 +68,17 @@ final class RepairRequestService
         private readonly ApiPresenter $apiPresenter,
         private readonly DocumentLockService $documentLocks,
         private readonly DocumentGeneratorService $documentGenerator,
-    ) {
-    }
+        private readonly InvoiceService $invoiceService,
+    ) {}
 
     /* ─────────────────── Создание ─────────────────── */
 
     public function create(User $user): RepairRequest
     {
-        if ($user->role !== UserRole::Customer) {
-            throw new ApiException(403, 'FORBIDDEN', 'Заявку создаёт Заказчик');
-        }
+        $this->validateRole($user);
 
         return DB::transaction(function () use ($user): RepairRequest {
-            $uuid = (string) Str::uuid();
+            $uuid = (string)Str::uuid();
 
             $request = RepairRequest::query()->create([
                 'uuid'                     => $uuid,
@@ -96,7 +91,7 @@ final class RepairRequestService
                 'history'                  => [],
                 'stage'                    => RepairStage::Draft,
                 'revision'                 => 0,
-                'review_context'           => self::REVIEW_INITIAL,
+                'review_context'           => ApprovalDecision::ReviewInitial,
                 'review_baseline_version'  => 0,
             ]);
 
@@ -107,10 +102,24 @@ final class RepairRequestService
                 'actor_id'          => $user->id,
             ]);
 
-            $this->event($request, $user, 'create', 'Создан пустой черновик');
+            $dto = RequestEventDto::fromRequest(
+                request: $request,
+                user: $user,
+                action: 'create',
+                comment: 'Создан пустой черновик'
+            );
+
+            $this->event($dto);
 
             return $request->refresh();
         });
+    }
+
+    private function validateRole(User $user): void
+    {
+        if ($user->role !== UserRole::Customer) {
+            throw new ApiException(403, 'FORBIDDEN', 'Заявку создаёт Заказчик');
+        }
     }
 
     /**
@@ -229,13 +238,15 @@ final class RepairRequestService
             $request->revision++;
             $request->save();
 
-            $event = $this->event(
+            $dto = RequestEventDto::fromRequest(
                 $request,
                 $user,
                 $action,
                 $result['comment'] ?? $action,
                 $result['details'] ?? [],
             );
+
+            $event = $this->event($dto);
 
             if (isset($result['after'])) {
                 ($result['after'])($event);
@@ -245,32 +256,26 @@ final class RepairRequestService
         }, self::DB_DEADLOCK_RETRIES);
     }
 
-    /**
-     * @param array<string, mixed> $details
-     */
-    public function event(
-        RepairRequest $request,
-        User $user,
-        string $action,
-        string $comment,
-        array $details = [],
-    ): RequestEvent {
+    public function event(RequestEventDto $dto): RequestEvent
+    {
         return RequestEvent::query()->create([
-            'repair_request_id' => $request->id,
-            'actor_id'          => $user->id,
-            'actor_label'       => $user->roleLabel(),
-            'action'            => $action,
-            'comment'           => $comment,
-            'details'           => $details,
-            'stage'             => $request->stage->value,
-            'revision'          => $request->revision,
+            'repair_request_id' => $dto->requestId,
+            'actor_id'          => $dto->userId,
+            'actor_label'       => $dto->actorLabel,
+            'action'            => $dto->action,
+            'comment'           => $dto->comment,
+            'details'           => $dto->details,
+            'stage'             => $dto->stage,
+            'revision'          => $dto->revision,
             'occurred_at'       => now(),
         ]);
     }
 
     public function createFromRecommendation(User $user, Recommendation $doc): RepairRequest
     {
-        $vehicle = Vehicle::query()->where('tenant_id', $user->tenantId())->findOrFail($doc->vehicle_id);
+        $vehicle = Vehicle::query()
+            ->where('tenant_id', $user->tenantId())
+            ->findOrFail($doc->vehicle_id);
         $uuid = (string) Str::uuid();
         $data = array_fill_keys(Workflow::TEXT_FIELDS, '');
         $data['recommendationVehicleLocked'] = true;
@@ -286,18 +291,44 @@ final class RepairRequestService
         if ($user->role !== UserRole::Customer && $previous['mileage'] !== null) {
             $data['mileage'] = (string) max((int) ($data['mileage'] ?: 0), $previous['mileage']);
         }
+        $assignedStationId = $user->role === UserRole::Station
+            ? Station::query()->where('organization_id', $user->organization_id)->value('id')
+            : null;
+
         $request = RepairRequest::query()->create([
-            'uuid' => $uuid, 'public_id' => $uuid, 'tenant_id' => $user->tenantId(),
-            'customer_organization_id' => $doc->customer_organization_id,
-            'vehicle_id' => $vehicle->id, 'created_by' => $user->id,
-            'assigned_station_id' => $user->role === UserRole::Station ? Station::query()->where('organization_id', $user->organization_id)->value('id') : null,
-            'data' => $data, 'works' => [], 'history' => [],
-            'previous_service_mileage' => $previous['mileage'], 'previous_service_at' => $previous['recordedAt'],
-            'stage' => RepairStage::Draft, 'revision' => 0, 'review_context' => self::REVIEW_INITIAL,
-            'review_baseline_version' => 0,
+            'uuid'                      => $uuid,
+            'public_id'                 => $uuid,
+            'tenant_id'                 => $user->tenantId(),
+            'customer_organization_id'  => $doc->customer_organization_id,
+            'vehicle_id'                => $vehicle->id,
+            'created_by'                => $user->id,
+            'assigned_station_id'       => $assignedStationId,
+            'data'                      => $data,
+            'works'                     => [],
+            'history'                   => [],
+            'previous_service_mileage'  => $previous['mileage'],
+            'previous_service_at'       => $previous['recordedAt'],
+            'stage'                     => RepairStage::Draft,
+            'revision'                  => 0,
+            'review_context'            => ApprovalDecision::ReviewInitial,
+            'review_baseline_version'   => 0,
         ]);
-        RequestStatusPeriod::query()->create(['repair_request_id' => $request->id, 'stage' => 0, 'entered_at' => now(), 'actor_id' => $user->id]);
-        $this->event($request, $user, 'create', 'Черновик создан из рекомендаций ' . $doc->number);
+
+        RequestStatusPeriod::query()->create([
+            'repair_request_id' => $request->id,
+            'stage'             => 0,
+            'entered_at'        => now(),
+            'actor_id'          => $user->id,
+        ]);
+
+        $dto = RequestEventDto::fromRequest(
+            request: $request,
+            user: $user,
+            action: 'create',
+            comment: 'Черновик создан из рекомендаций ' . $doc->number
+        );
+        $this->event($dto);
+
         return $request;
     }
 
@@ -307,25 +338,30 @@ final class RepairRequestService
             $request->data = array_replace($request->data, ['recommendationVehicleLocked' => true]);
         }
         $request->estimate_version++;
-        RequestPart::query()->where('repair_request_id', $request->id)->update(['approved_version' => null]);
+
+        RequestPart::query()
+            ->where('repair_request_id', $request->id)
+            ->update(['approved_version' => null]);
+
         $this->recalculatePlannedCompletion($request);
         if ($restored && $user->role === UserRole::Customer && $request->stage === RepairStage::CustomerApproval) {
             $this->moveToStage($request, $user, RepairStage::ManagerRouting);
-            $this->captureReviewBaseline($request, self::REVIEW_INITIAL);
+            $this->captureReviewBaseline($request, ApprovalDecision::ReviewInitial);
         }
     }
 
-    public function notifyRecommendationReview(RepairRequest $request, User $user, RequestEvent $event): void
+    public function notifyRecommendationReview(RepairRequest $request, User $user, int $eventId): void
     {
         if ($user->role === UserRole::Customer && $request->stage === RepairStage::ManagerRouting) {
-            $this->notifyUsers(
-                $this->managerUsers($request),
-                $request,
-                $event,
+            $dto = NotificationDto::fromRequest(
+                $this->managerUsers($request->tenant_id),
+                $request->id,
+                $eventId,
                 'manager_review_required',
                 'Добавлены рекомендации',
                 'Заказчик добавил работы или запчасти из рекомендаций. Требуется согласование сметы.'
             );
+            $this->notifyUsers($dto);
         }
     }
 
@@ -401,9 +437,6 @@ final class RepairRequestService
         });
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function assertPatchFieldsAllowed(RepairRequest $request, User $user, array $patch): void
     {
         if (array_diff(array_keys($patch), Workflow::FIELDS)) {
@@ -417,9 +450,6 @@ final class RepairRequestService
         }
     }
 
-    /**
-     * @return array<string, array<int, mixed>>
-     */
     private function updateRules(): array
     {
         $rules = [];
@@ -428,23 +458,25 @@ final class RepairRequestService
             $rules[$field] = ['sometimes', 'string', 'max:10000'];
         }
 
-        foreach (
-            ['vehicleId', 'contactId', 'driverId', 'stationId', 'reasonId', 'reasonSubtypeId'] as $field
-        ) {
+        $fields = [
+            'vehicleId',
+            'contactId',
+            'driverId',
+            'stationId',
+            'reasonId',
+            'reasonSubtypeId',
+        ];
+        foreach ($fields as $field) {
             $rules[$field] = Input::uuidOrEmpty();
         }
 
         $rules['laborRateType'] = ['sometimes', 'in:general,official,other'];
-
         $rules['works'] = ['sometimes', 'array', 'list', 'max:200'];
         $rules['parts'] = ['sometimes', 'array', 'list', 'max:200'];
 
         return $rules;
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function validateLocalTimeFields(array $patch): void
     {
         $minimum = now()->addMinutes(30)->startOfMinute();
@@ -455,41 +487,35 @@ final class RepairRequestService
         }
 
         foreach (['slot', 'stationSlot'] as $field) {
-            if (isset($patch[$field])) {
-                $date = Input::localTime($patch[$field]);
+            // Guard Clause 1: если поля нет в патче, сразу идем к следующему
+            if (!isset($patch[$field])) {
+                continue;
+            }
 
-                if ($date !== null && $date->lt($minimum)) {
-                    Input::fail(
-                        'Дата и время должны быть не ранее текущего времени '
-                            . 'плюс 30 минут',
-                        $field,
-                    );
-                }
+            $date = Input::localTime($patch[$field]);
 
-                if ($date !== null) {
-                    $localTime = $date
-                        ->setTimezone((string) config('sto.service_timezone'))
-                        ->format('H:i');
-                    $visitTimeStart = (string) config('sto.visit_time_start');
-                    $visitTimeEnd = (string) config('sto.visit_time_end');
+            // Guard Clause 2: если дата не распарсилась, делать нечего
+            if ($date === null) {
+                continue;
+            }
 
-                    if ($localTime < $visitTimeStart || $localTime > $visitTimeEnd) {
-                        Input::fail(
-                            'Время визита должно быть с '
-                                . $visitTimeStart
-                                . ' до '
-                                . $visitTimeEnd,
-                            $field,
-                        );
-                    }
-                }
+            // Guard Clause 3: проверка минимального времени
+            if ($date->lt($minimum)) {
+                Input::fail('Дата и время должны быть не ранее текущего времени плюс 30 минут', $field);
+            }
+
+            // Проверяем время визита
+            $tz = (string) config('sto.service_timezone');
+            $localTime = $date->setTimezone($tz)->format('H:i');
+            $visitTimeStart = (string) config('sto.visit_time_start');
+            $visitTimeEnd = (string) config('sto.visit_time_end');
+
+            if ($localTime < $visitTimeStart || $localTime > $visitTimeEnd) {
+                Input::fail("Время визита должно быть с {$visitTimeStart} до {$visitTimeEnd}", $field);
             }
         }
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function validateMileage(array $patch): void
     {
         $mileage = isset($patch['mileage']) && $patch['mileage'] !== '' ? (string)$patch['mileage'] : false;
@@ -498,9 +524,6 @@ final class RepairRequestService
         }
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function applyVehicleChange(RepairRequest $request, User $user, array $patch): void
     {
         if (!array_key_exists('vehicleId', $patch)) {
@@ -510,10 +533,10 @@ final class RepairRequestService
         $vehicle = $patch['vehicleId'] === ''
             ? null
             : Vehicle::query()
-            ->where('tenant_id', $request->tenant_id)
-            ->where('organization_id', $request->customer_organization_id)
-            ->where('uuid', $patch['vehicleId'])
-            ->first();
+                ->where('tenant_id', $request->tenant_id)
+                ->where('organization_id', $request->customer_organization_id)
+                ->where('uuid', $patch['vehicleId'])
+                ->first();
 
         if ($patch['vehicleId'] !== '' && !$vehicle) {
             Input::fail('Автомобиль не входит в перечень организации', 'vehicleId');
@@ -535,9 +558,6 @@ final class RepairRequestService
         }
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function applyContactChange(RepairRequest $request, array $patch): void
     {
         if (!array_key_exists('contactId', $patch)) {
@@ -575,9 +595,6 @@ final class RepairRequestService
         );
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function applyDriverChange(RepairRequest $request, array $patch): void
     {
         if (!array_key_exists('driverId', $patch)) {
@@ -610,9 +627,6 @@ final class RepairRequestService
         $request->driver_snapshot = $driver->snapshot();
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function applyStationChange(RepairRequest $request, array $patch): void
     {
         if (!array_key_exists('stationId', $patch)) {
@@ -622,10 +636,10 @@ final class RepairRequestService
         $station = $patch['stationId'] === ''
             ? null
             : Station::query()
-            ->where('tenant_id', $request->tenant_id)
-            ->where('active', true)
-            ->where('uuid', $patch['stationId'])
-            ->first();
+                ->where('tenant_id', $request->tenant_id)
+                ->where('active', true)
+                ->where('uuid', $patch['stationId'])
+                ->first();
 
         if ($patch['stationId'] !== '' && !$station) {
             Input::fail('Выберите доступную СТО');
@@ -634,14 +648,8 @@ final class RepairRequestService
         $request->assigned_station_id = $station?->id;
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
-    private function applyReasonChange(
-        RepairRequest $request,
-        User $user,
-        array $patch,
-    ): void {
+    private function applyReasonChange(RepairRequest $request, User $user, array $patch, ): void
+    {
         if (!array_key_exists('reasonId', $patch)) {
             return;
         }
@@ -649,15 +657,15 @@ final class RepairRequestService
         $reason = $patch['reasonId'] === ''
             ? null
             : ServiceReason::query()
-            ->where('tenant_id', $request->tenant_id)
-            ->whereNull('parent_id')
-            ->where('active', true)
-            ->when(
-                $user->role === UserRole::Customer,
-                fn ($query) => $query->whereIn('code', ['maintenance', 'diagnostics']),
-            )
-            ->where('uuid', $patch['reasonId'])
-            ->first();
+                ->where('tenant_id', $request->tenant_id)
+                ->whereNull('parent_id')
+                ->where('active', true)
+                ->when(
+                    $user->role === UserRole::Customer,
+                    fn ($query) => $query->whereIn('code', ['maintenance', 'diagnostics']),
+                )
+                ->where('uuid', $patch['reasonId'])
+                ->first();
 
         if ($patch['reasonId'] !== '' && !$reason) {
             Input::fail('Выберите причину из справочника');
@@ -670,9 +678,6 @@ final class RepairRequestService
         $request->reason_id = $reason?->id;
     }
 
-    /**
-     * @param array<string, mixed> $patch
-     */
     private function applyReasonSubtypeChange(RepairRequest $request, array $patch): void
     {
         if (!array_key_exists('reasonSubtypeId', $patch)) {
@@ -682,11 +687,11 @@ final class RepairRequestService
         $subtype = $patch['reasonSubtypeId'] === ''
             ? null
             : ServiceReason::query()
-            ->where('tenant_id', $request->tenant_id)
-            ->where('parent_id', $request->reason_id)
-            ->where('active', true)
-            ->where('uuid', $patch['reasonSubtypeId'])
-            ->first();
+                ->where('tenant_id', $request->tenant_id)
+                ->where('parent_id', $request->reason_id)
+                ->where('active', true)
+                ->where('uuid', $patch['reasonSubtypeId'])
+                ->first();
 
         if ($patch['reasonSubtypeId'] !== '' && (!$request->reason_id || !$subtype)) {
             Input::fail('Подвид не относится к выбранной причине');
@@ -698,21 +703,15 @@ final class RepairRequestService
     private function assertMileageNotLessThanPrevious(RepairRequest $request): void
     {
         $mileage = $request->data['mileage'] ?? '';
+        $prev_mil = $request->previous_service_mileage;
 
-        if (
-            $mileage !== ''
-            && $request->previous_service_mileage !== null
-            && (int) $mileage < $request->previous_service_mileage
-        ) {
+        if ($mileage !== '' && $prev_mil !== null && (int)$mileage < $prev_mil) {
             Input::fail('Пробег меньше пробега на прошлом ТО');
         }
     }
 
     /* ─────────────────── Работы ─────────────────── */
 
-    /**
-     * @param array<int, mixed> $works
-     */
     private function replaceWorks(RepairRequest $request, array $works): void
     {
         $works = array_values(array_filter(
@@ -784,11 +783,7 @@ final class RepairRequestService
             /** @var TimeNorm|null $norm */
             $norm = $selection['norm'];
             if (!empty($work['timeNormId']) && $norm?->uuid !== $work['timeNormId']) {
-                Input::fail(
-                    'Выбранная норма не является наиболее узкой '
-                    . 'для автомобиля',
-                    'works',
-                );
+                Input::fail('Выбранная норма не является наиболее узкой для автомобиля', 'works');
             }
 
             $providedNorm = $work['normHours'] ?? null;
@@ -843,9 +838,6 @@ final class RepairRequestService
         }
     }
 
-    /**
-     * @param array<string, mixed> $work
-     */
     private function resolveWorkType(RepairRequest $request, array $work): ?WorkType
     {
         if (empty($work['workTypeId'])) {
@@ -921,29 +913,19 @@ final class RepairRequestService
      * Если результат достиг времени закрытия, используется начало следующего
      * рабочего дня. Выходные дни пропускаются.
      */
-    private function applyStationSchedule(
-        CarbonImmutable $completion,
-        Station $station,
-    ): CarbonImmutable {
+    private function applyStationSchedule(CarbonImmutable $completion, Station $station, ): CarbonImmutable
+    {
         $timezone = (string) config('sto.service_timezone');
         $local = $completion->setTimezone($timezone);
         $workingDays = array_values(array_unique(array_map(
             static fn (mixed $day): int => (int) $day,
             $station->working_days ?? range(1, 7),
         )));
-        $workdayStart = $this->minutesFromTime(
-            (string) ($station->workday_start ?? '10:00'),
-        );
-        $workdayEnd = $this->minutesFromTime(
-            (string) ($station->workday_end ?? '20:00'),
-        );
+        $workdayStart = $this->minutesFromTime((string) ($station->workday_start ?? '10:00'), );
+        $workdayEnd = $this->minutesFromTime((string) ($station->workday_end ?? '20:00'), );
 
         if (!in_array($local->dayOfWeekIso, $workingDays, true)) {
-            return $this->nextStationWorkday(
-                $local,
-                $workingDays,
-                $workdayStart,
-            )->utc();
+            return $this->nextStationWorkday($local, $workingDays, $workdayStart)->utc();
         }
 
         $minutes = ($local->hour * 60) + $local->minute;
@@ -953,19 +935,12 @@ final class RepairRequestService
         }
 
         if ($minutes >= $workdayEnd) {
-            return $this->nextStationWorkday(
-                $local,
-                $workingDays,
-                $workdayStart,
-            )->utc();
+            return $this->nextStationWorkday($local, $workingDays, $workdayStart, )->utc();
         }
 
         return $local->utc();
     }
 
-    /**
-     * @param array<int, int> $workingDays
-     */
     private function nextStationWorkday(CarbonImmutable $date, array $workingDays, int $workdayStart, ): CarbonImmutable
     {
         $candidate = $date->addDay()->startOfDay();
@@ -983,10 +958,7 @@ final class RepairRequestService
 
     private function atMinuteOfDay(CarbonImmutable $date, int $minuteOfDay): CarbonImmutable
     {
-        return $date->setTime(
-            intdiv($minuteOfDay, 60),
-            $minuteOfDay % 60,
-        );
+        return $date->setTime(intdiv($minuteOfDay, 60), $minuteOfDay % 60);
     }
 
     private function minutesFromTime(string $value): int
@@ -1145,11 +1117,11 @@ final class RepairRequestService
                     $this->captureReviewBaseline(
                         $request,
                         $estimateChanged
-                            ? self::REVIEW_STATION_CHANGES
-                            : self::REVIEW_STATION_DECLINED,
+                            ? ApprovalDecision::ReviewStationChanges->value
+                            : ApprovalDecision::ReviewStationDeclined->value,
                     );
                 } else {
-                    $request->review_context = self::REVIEW_INITIAL;
+                    $request->review_context = ApprovalDecision::ReviewInitial;
                 }
 
                 $this->moveToStage($request, $user, $to);
@@ -1175,7 +1147,7 @@ final class RepairRequestService
                         $to,
                         $changes,
                     ): void {
-                        $this->createApproval(
+                        $dto = ApprovalDto::fromRequest(
                             $request,
                             $event,
                             $user,
@@ -1184,23 +1156,16 @@ final class RepairRequestService
                             $comment,
                             $snapshot,
                         );
+                        $this->createApproval($dto);
 
                         if ($to === RepairStage::ManagerRouting) {
-                            $this->notifyManagerReviewRequired(
-                                $request,
-                                $event,
-                                $decision,
-                                $changes,
-                            );
+                            $this->notifyManagerReviewRequired($request, $event->id, $decision, $changes);
                         } else {
-                            $this->notifyCustomerFinalApproval($request, $event);
+                            $this->notifyCustomerFinalApproval($request, $event->id);
                         }
 
-                        if (
-                            $decision === ApprovalDecision::Rescheduled
-                            && $to === RepairStage::CustomerApproval
-                        ) {
-                            $this->notifySlotChanged($request, $event);
+                        if ($decision === ApprovalDecision::Rescheduled && $to === RepairStage::CustomerApproval) {
+                            $this->notifySlotChanged($request, $event->id);
                         }
                     },
                 ];
@@ -1279,7 +1244,7 @@ final class RepairRequestService
                 if ($decision === ApprovalDecision::Accepted) {
                     $this->approveCurrentEstimate($request);
                 } else {
-                    $this->captureReviewBaseline($request, self::REVIEW_CUSTOMER_SLOT);
+                    $this->captureReviewBaseline($request, ApprovalDecision::ReviewCustomerSlot);
                 }
 
                 $this->moveToStage($request, $user, $to);
@@ -1306,7 +1271,7 @@ final class RepairRequestService
                         $snapshot,
                         $to,
                     ): void {
-                        $this->createApproval(
+                        $dto = ApprovalDto::fromRequest(
                             $request,
                             $event,
                             $user,
@@ -1315,20 +1280,16 @@ final class RepairRequestService
                             $comment,
                             $snapshot,
                         );
+                        $this->createApproval($dto);
 
                         if ($to === RepairStage::WaitingVehicle) {
-                            $this->notifyVehicleExpected($request, $event);
+                            $this->notifyVehicleExpected($request, $event->id);
 
                             DB::afterCommit(function () use ($request): void {
                                 RepairRequestWaitingVehicle::dispatch($request);
                             });
                         } else {
-                            $this->notifyManagerReviewRequired(
-                                $request,
-                                $event,
-                                self::REVIEW_CUSTOMER_SLOT,
-                                [],
-                            );
+                            $this->notifyManagerReviewRequired($request, $event->id, ApprovalDecision::ReviewCustomerSlot);
                         }
                     },
                 ];
@@ -1437,12 +1398,12 @@ final class RepairRequestService
                         'to'              => RepairStage::RepairInProgress->value,
                         'acceptanceActId' => $act->uuid,
                     ],
-                    'after' => function (RequestEvent $event) use ($request, $attachment): void {
+                    'after' => function (RequestEvent $event) use ($request, $attachment, $act): void {
                         if ($attachment !== null) {
                             $attachment->update(['request_event_id' => $event->id]);
                         }
 
-                        $this->notifyWorkStarted($request, $event);
+                        $this->notifyWorkStarted($request, $event->id);
 
                         DB::afterCommit(function () use ($request, $act): void {
                             VehicleAccepted::dispatch($request, $act);
@@ -1453,11 +1414,6 @@ final class RepairRequestService
         );
     }
 
-    /**
-     * @param array<string, mixed> $body
-     *
-     * @throws Throwable
-     */
     public function transition(
         User $user,
         string $key,
@@ -1497,7 +1453,7 @@ final class RepairRequestService
 
                 if ($transition === TransitionAction::Next) {
                     if ($from === RepairStage::VehicleIssue) {
-                        $this->ensureInvoiceExists($request, $user);
+                        $this->invoiceService->generateAndIssue($request, $user);
                     }
 
                     if ($from === RepairStage::AwaitingPayment) {
@@ -1538,6 +1494,19 @@ final class RepairRequestService
                     $request->repair_completed_at = null;
                 }
 
+                $context = new TransitionContext(
+                    from: $from,
+                    to: $to,
+                    action: $transition,
+                    decision: $transition === TransitionAction::Next ? ApprovalDecision::Approved : ApprovalDecision::Returned,
+                    comment: (string) $body['comment'],
+                    snapshot: $snapshot,
+                    files: $files,
+                    changes: $changes,
+                    reviewContext: $request->review_context,
+                    isReadyForIssue: $isReadyForIssue,
+                );
+
                 return [
                     'comment' => $transition->label() . ': '
                         . Workflow::STAGES[$from->value] . ' → '
@@ -1548,79 +1517,10 @@ final class RepairRequestService
                         'to'      => $request->stage->value,
                         'changes' => $changes,
                     ],
-                    'after'   => $this->transitionAfter(
-                        $request,
-                        $user,
-                        $from,
-                        $transition,
-                        (string) $body['comment'],
-                        $snapshot,
-                        $files,
-                        $changes,
-                        $reviewContext,
-                        $isReadyForIssue,
-                    ),
+                    'after'   => $this->transitionAfter($request, $user, $context),
                 ];
             },
         );
-    }
-
-    /**
-     * Автоматически генерирует счёт и отправляет его в ЭДО,
-     * если УК переводит заявку в закрывающие документы.
-     */
-    private function ensureInvoiceExists(RepairRequest $request, User $user): void
-    {
-        if ($request->invoice()->exists()) {
-            return;
-        }
-
-        if (!$request->workOrder) {
-            throw new ApiException(422, 'VALIDATION_ERROR', 'Заказ-наряд ещё не сформирован');
-        }
-
-        $number = 'INV-' . $request->number;
-        $invoiceUuid = (string) Str::uuid();
-
-        // 1. Создаем Invoice (сначала, чтобы передать в генератор)
-        $invoice = new Invoice();
-        $invoice->uuid = $invoiceUuid;
-        $invoice->repair_request_id = $request->id;
-        $invoice->number = $number;
-        $invoice->amount = $request->workOrder->total;
-        $invoice->status = InvoiceStatus::Issued;
-
-        // 2. Генерируем красивый PDF
-        $pdfContent = $this->documentGenerator->generateInvoice($request, $invoice);
-
-        $objectKey = 'invoices/' . $invoiceUuid . '.pdf';
-        Storage::disk('local')->put($objectKey, $pdfContent);
-
-        // 3. Создаем Attachment
-        $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
-
-        $attachment = new Attachment();
-        $attachment->uuid = (string) Str::uuid();
-        $attachment->repair_request_id = $request->id;
-        $attachment->uploaded_by = $user->id;
-        $attachment->request_status_period_id = $currentPeriodId;
-        $attachment->disk = 'local';
-        $attachment->object_key = $objectKey;
-        $attachment->original_name = "Счет_{$number}.pdf";
-        $attachment->mime_type = 'application/pdf';
-        $attachment->size = strlen($pdfContent);
-        $attachment->sha256 = hash('sha256', $pdfContent);
-        $attachment->purpose = AttachmentPurpose::IssuedInvoice;
-        $attachment->save();
-
-        // 4. Обновляем счет и сохраняем
-        $invoice->document_attachment_id = $attachment->id;
-        $invoice->save();
-
-        // 5. Отправляем в ЭДО
-        DB::afterCommit(function () use ($request, $invoice): void {
-            InvoiceIssued::dispatch($request, $invoice);
-        });
     }
 
     /**
@@ -1720,8 +1620,7 @@ final class RepairRequestService
 
         $isManagerDecision = $user->role === UserRole::Manager;
 
-        $requiresComment = (!$isInitialSubmission && !$isManagerDecision)
-            || ($isManagerDecision && $request->review_context === self::REVIEW_STATION_CHANGES && $transition === TransitionAction::Return);
+        $requiresComment = (!$isInitialSubmission && !$isManagerDecision) || ($isManagerDecision && $request->review_context === ApprovalDecision::ReviewStationChanges && $transition === TransitionAction::Return);
 
         if ($requiresComment && trim((string) $body['comment']) === '') {
             Input::fail('Укажите комментарий к решению');
@@ -1762,16 +1661,16 @@ final class RepairRequestService
         string $reviewContext,
     ): void {
         if ($from === RepairStage::ManagerRouting && $to === RepairStage::StationApproval) {
-            $managerChangedEstimate = $reviewContext === self::REVIEW_STATION_CHANGES;
+            $managerChangedEstimate = $reviewContext === ApprovalDecision::ReviewStationChanges;
             $context = $managerChangedEstimate
-                ? self::REVIEW_MANAGER_CHANGES
-                : self::REVIEW_INITIAL;
+                ? ApprovalDecision::ReviewManagerChanges->value
+                : ApprovalDecision::ReviewInitial->value;
 
             $this->captureReviewBaseline($request, $context);
         }
 
         if ($transition === TransitionAction::Next && $from === RepairStage::ManagerRouting && $to === RepairStage::CustomerApproval) {
-            $request->review_context = self::REVIEW_INITIAL;
+            $request->review_context = ApprovalDecision::ReviewInitial;
         }
     }
 
@@ -1782,14 +1681,12 @@ final class RepairRequestService
     ): RepairStage {
         if ($from === RepairStage::ManagerRouting) {
             if ($action === TransitionAction::Return) {
-                return $request->review_context === self::REVIEW_STATION_CHANGES
+                return $request->review_context === ApprovalDecision::ReviewStationChanges
                     ? RepairStage::StationApproval
                     : RepairStage::Draft;
             }
 
-            if (
-                $request->review_context === self::REVIEW_STATION_CHANGES
-            ) {
+            if ($request->review_context === ApprovalDecision::ReviewStationChanges) {
                 return RepairStage::CustomerApproval;
             }
 
@@ -1898,56 +1795,40 @@ final class RepairRequestService
      *
      * @return callable(RequestEvent): void
      */
-    private function transitionAfter(
-        RepairRequest $request,
-        User $user,
-        RepairStage $from,
-        TransitionAction $action,
-        string $comment,
-        array $snapshot,
-        array $files,
-        array $changes,
-        string $reviewContext,
-        bool $isReadyForIssue,
-    ): callable {
-        return function (RequestEvent $event) use (
-            $request,
-            $user,
-            $from,
-            $action,
-            $comment,
-            $snapshot,
-            $files,
-            $changes,
-            $reviewContext,
-            $isReadyForIssue,
-        ): void {
-            $this->createApproval(
-                $request,
-                $event,
-                $user,
-                $from,
-                $action === TransitionAction::Next ? ApprovalDecision::Approved : ApprovalDecision::Returned,
-                $comment,
-                $snapshot,
+    private function transitionAfter(RepairRequest $request, User $user, TransitionContext $context): callable
+    {
+        return function (RequestEvent $event) use ($request, $user, $context): void {
+            $dto = ApprovalDto::fromRequest(
+                request: $request,
+                event: $event,
+                user: $user,
+                from: $context->from,
+                action: $context->action === TransitionAction::Next ? ApprovalDecision::Approved : ApprovalDecision::Returned,
+                comment: $context->comment,
+                snapshot: $context->snapshot,
             );
+            $this->createApproval($dto);
 
-            $ids = array_map(static fn (Attachment $file) => $file->id, $files);
+            $ids = array_map(static fn (Attachment $file) => $file->id, $context->files);
 
             Attachment::query()
                 ->whereIn('id', $ids)
                 ->update(['request_event_id' => $event->id]);
 
-            if ($from === RepairStage::ManagerRouting) {
+            if ($context->from === RepairStage::ManagerRouting) {
                 if ($request->stage === RepairStage::CustomerApproval) {
-                    $this->notifyStationEstimateApproved($request, $event);
-                    $this->notifyCustomerFinalApproval($request, $event);
-                } elseif ($request->stage === RepairStage::StationApproval && $reviewContext === self::REVIEW_STATION_CHANGES) {
-                    $this->notifyStationEstimateChanged($request, $event, [...$changes, 'Комментарий УК: ' . $comment]);
+                    $this->notifyStationEstimateApproved($request, $event->id);
+                    $this->notifyCustomerFinalApproval($request, $event->id);
+                } elseif ($request->stage === RepairStage::StationApproval && $context->reviewContext === ApprovalDecision::ReviewStationChanges) {
+                    $this->notifyStationEstimateChanged(
+                        $request,
+                        $event->id,
+                        [...$context->changes, 'Комментарий УК: ' . $context->comment]
+                    );
                 }
             }
 
-            if ($isReadyForIssue) {
+            if ($context->isReadyForIssue) {
                 DB::afterCommit(function () use ($request): void {
                     ReadyForIssue::dispatch($request);
                 });
@@ -1955,31 +1836,21 @@ final class RepairRequestService
         };
     }
 
-    /**
-     * @param array<string, mixed> $snapshot
-     */
-    private function createApproval(
-        RepairRequest $request,
-        RequestEvent $event,
-        User $user,
-        RepairStage $stage,
-        ApprovalDecision $decision,
-        string $comment,
-        array $snapshot,
-    ): void {
+    private function createApproval(ApprovalDto $dto): void
+    {
         RequestApproval::query()->create([
-            'repair_request_id' => $request->id,
-            'request_event_id'  => $event->id,
-            'actor_id'          => $user->id,
-            'stage'             => $stage->value,
-            'decision'          => $decision,
-            'comment'           => $comment,
-            'estimate_version'  => $request->estimate_version,
-            'snapshot'          => $snapshot,
+            'repair_request_id' => $dto->requestId,
+            'request_event_id'  => $dto->eventId,
+            'actor_id'          => $dto->actorId,
+            'stage'             => $dto->stage->value,
+            'decision'          => $dto->decision,
+            'comment'           => $dto->comment,
+            'estimate_version'  => $dto->estimateVersion,
+            'snapshot'          => $dto->snapshot,
         ]);
     }
 
-    private function notifyWorkStarted(RepairRequest $request, RequestEvent $event): void
+    private function notifyWorkStarted(RepairRequest $request, int $eventId): void
     {
         $recipients = User::query()
             ->where('active', true)
@@ -2013,7 +1884,7 @@ final class RepairRequestService
             RequestNotification::query()->firstOrCreate(
                 [
                     'user_id'          => $recipient->id,
-                    'request_event_id' => $event->id,
+                    'request_event_id' => $eventId,
                     'kind'             => 'work_started',
                 ],
                 [
@@ -2025,7 +1896,7 @@ final class RepairRequestService
         }
     }
 
-    private function notifySlotChanged(RepairRequest $request, RequestEvent $event): void
+    private function notifySlotChanged(RepairRequest $request, int $eventId): void
     {
         $recipients = User::query()
             ->where('active', true)
@@ -2039,14 +1910,13 @@ final class RepairRequestService
             RequestNotification::query()->firstOrCreate(
                 [
                     'user_id'          => $recipient->id,
-                    'request_event_id' => $event->id,
+                    'request_event_id' => $eventId,
                     'kind'             => 'station_slot_changed',
                 ],
                 [
                     'repair_request_id' => $request->id,
                     'title'             => 'Время посещения СТО изменено',
-                    'message'           => 'По заявке ' . $request->number
-                        . ' СТО предложила новое время: ' . $slot,
+                    'message'           => "По заявке {$request->number} СТО предложила новое время: $slot",
                 ],
             );
         }
@@ -2200,98 +2070,86 @@ final class RepairRequestService
     /**
      * @param array<int, string> $changes
      */
-    private function notifyManagerReviewRequired(
-        RepairRequest $request,
-        RequestEvent $event,
-        ApprovalDecision|string $reason,
-        array $changes,
-    ): void {
-        $reasonLabel = match ($reason) {
-            ApprovalDecision::Declined,
-            self::REVIEW_STATION_DECLINED => 'СТО отказалась от заявки',
-            self::REVIEW_CUSTOMER_SLOT => 'Заказчик предложил другое время',
-            default => 'СТО изменила работы или запчасти',
-        };
-        $message = $reasonLabel . ' по заявке ' . $request->number . '.';
+    private function notifyManagerReviewRequired(RepairRequest $request, int $eventId, ApprovalDecision $decision, array $changes = []): void
+    {
+        $reasonLabel = $decision->label() ?? 'СТО изменила работы или запчасти';
+
+        $message = "$reasonLabel по заявке {$request->number}.";
 
         if ($changes !== []) {
             $message .= ' Изменения: ' . implode('; ', $changes);
         }
 
-        $this->notifyUsers(
-            $this->managerUsers($request),
-            $request,
-            $event,
+        $dto = NotificationDto::fromRequest(
+            $this->managerUsers($request->tenant_id),
+            $request->id,
+            $eventId,
             'manager_review_required',
             'Требуется согласование УК',
             $message,
         );
+        $this->notifyUsers($dto);
     }
 
-    private function notifyCustomerFinalApproval(
-        RepairRequest $request,
-        RequestEvent $event,
-    ): void {
-        $this->notifyUsers(
+    private function notifyCustomerFinalApproval(RepairRequest $request, int $eventId): void {
+        $dto = NotificationDto::fromRequest(
             $this->customerUsers($request),
-            $request,
-            $event,
+            $request->id,
+            $eventId,
             'customer_final_approval',
             'СТО готова принять автомобиль',
-            'Работы, запчасти и время визита по заявке ' . $request->number
-                . ' согласованы. Подтвердите финальную заявку.',
+            "Работы, запчасти и время визита по заявке {$request->number} согласованы. Подтвердите финальную заявку.",
         );
+
+        $this->notifyUsers($dto);
     }
 
-    private function notifyVehicleExpected(RepairRequest $request, RequestEvent $event): void
+    private function notifyVehicleExpected(RepairRequest $request, int $eventId): void
     {
-        $this->notifyUsers(
+        $dto = NotificationDto::fromRequest(
             $this->stationUsers($request),
-            $request,
-            $event,
+            $request->id,
+            $eventId,
             'vehicle_expected',
             'Ожидается автомобиль',
-            'Заказчик подтвердил заявку ' . $request->number
-                . '. После прибытия оформите акт приёма ТС.',
+            "Заказчик подтвердил заявку {$request->number}. После прибытия оформите акт приёма ТС.",
         );
+        $this->notifyUsers($dto);
     }
 
-    private function notifyStationEstimateApproved(
-        RepairRequest $request,
-        RequestEvent $event,
-    ): void {
-        $this->notifyUsers(
+    private function notifyStationEstimateApproved(RepairRequest $request, int $eventId): void
+    {
+        $dto = NotificationDto::fromRequest(
             $this->stationUsers($request),
-            $request,
-            $event,
+            $request->id,
+            $eventId,
             'station_estimate_approved',
             'Изменения согласованы УК',
-            'УК согласовала работы и запчасти по заявке ' . $request->number . '.',
+            "УК согласовала работы и запчасти по заявке {$request->number}.",
         );
+        $this->notifyUsers($dto);
     }
 
     /**
      * @param array<int, string> $changes
      */
-    private function notifyStationEstimateChanged(
-        RepairRequest $request,
-        RequestEvent $event,
-        array $changes,
-    ): void {
-        $this->notifyUsers(
+    private function notifyStationEstimateChanged(RepairRequest $request, int $eventId, array $changes): void
+    {
+        $dto = NotificationDto::fromRequest(
             $this->stationUsers($request),
-            $request,
-            $event,
+            $request->id,
+            $eventId,
             'station_estimate_changed',
             'УК изменила работы или запчасти',
-            'По заявке ' . $request->number . ' изменено: ' . implode('; ', $changes),
+            "По заявке {$request->number} изменено: " . implode('; ', $changes),
         );
+        $this->notifyUsers($dto);
     }
 
     /**
      * @return \Illuminate\Database\Eloquent\Collection<int, User>
      */
-    private function managerUsers(RepairRequest $request): Collection
+    private function managerUsers(int $tenantId): Collection
     {
         return User::query()
             ->where('active', true)
@@ -2299,7 +2157,7 @@ final class RepairRequestService
             ->where('role', UserRole::Manager->value)
             ->whereHas(
                 'organization',
-                fn ($query) => $query->where('tenant_id', $request->tenant_id),
+                fn ($query) => $query->where('tenant_id', $tenantId),
             )
             ->get();
     }
@@ -2335,25 +2193,19 @@ final class RepairRequestService
     /**
      * @param iterable<int, User> $recipients
      */
-    private function notifyUsers(
-        iterable $recipients,
-        RepairRequest $request,
-        RequestEvent $event,
-        string $kind,
-        string $title,
-        string $message,
-    ): void {
-        foreach ($recipients as $recipient) {
+    private function notifyUsers(NotificationDto $dto): void
+    {
+        foreach ($dto->recipients as $recipient) {
             RequestNotification::query()->firstOrCreate(
                 [
                     'user_id'          => $recipient->id,
-                    'request_event_id' => $event->id,
-                    'kind'             => $kind,
+                    'request_event_id' => $dto->eventId,
+                    'kind'             => $dto->kind,
                 ],
                 [
-                    'repair_request_id' => $request->id,
-                    'title'             => $title,
-                    'message'           => $message,
+                    'repair_request_id' => $dto->requestId,
+                    'title'             => $dto->title,
+                    'message'           => $dto->message,
                 ],
             );
         }

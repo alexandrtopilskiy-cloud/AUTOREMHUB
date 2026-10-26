@@ -12,6 +12,11 @@ enum ApprovalDecision: string
     case Rescheduled = 'rescheduled';
     case Declined = 'declined';
     case Accepted = 'accepted';
+    case ReviewStationDeclined = 'station_declined';
+    case ReviewCustomerSlot = 'customer_slot';
+    case ReviewStationChanges = 'station_changes';
+    case ReviewManagerChanges = 'manager_changes';
+    case ReviewInitial = 'initial';
 
     public function label(): string
     {
@@ -22,6 +27,8 @@ enum ApprovalDecision: string
             self::Rescheduled => 'Предложено другое время',
             self::Declined => 'СТО отказалась от выполнения',
             self::Accepted => 'Принято Заказчиком',
+            self::ReviewStationDeclined => 'СТО отказалась от заявки',
+            self::ReviewCustomerSlot => 'Заказчик предложил другое время',
         };
     }
 
