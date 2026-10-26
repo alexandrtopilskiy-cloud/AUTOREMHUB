@@ -23,11 +23,14 @@ use App\Http\Resources\WorkOrderResource;
 use App\Models\RepairRequest;
 use App\Services\RepairRequestService;
 use App\Support\ApiPresenter;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 final class RepairRequestController
 {
+    use AuthorizesRequests;
+
     public function __construct(
         private readonly RepairRequestService $service,
         private readonly ApiPresenter $apiPresenter,
@@ -35,9 +38,10 @@ final class RepairRequestController
 
     public function index(Request $request): RepairRequestCollection
     {
+        $this->authorize('viewAny', RepairRequest::class);
+
         $user = $request->user();
         $requests = RepairRequest::forUser($user)->latest('id')->get();
-
         $this->apiPresenter->preloadRecommendations($requests, $user);
 
         return new RepairRequestCollection($requests);
@@ -46,12 +50,14 @@ final class RepairRequestController
     public function show(Request $request, string $id): RepairRequestResource
     {
         $document = RepairRequest::resolveFor($request->user(), $id);
+        $this->authorize('view', $document);
 
         return new RepairRequestResource($document);
     }
 
     public function store(Request $request): JsonResponse
     {
+        $this->authorize('create', RepairRequest::class);
         $document = $this->service->create($request->user());
 
         return (new RepairRequestResource($document))
@@ -61,8 +67,11 @@ final class RepairRequestController
 
     public function update(UpdateRepairRequestRequest $request, string $id): RepairRequestResource
     {
+        $document = RepairRequest::resolveFor(user: $request->user(), key: $id);
+        $this->authorize('update', $document);
+
         $dto = UpdateRepairRequestDto::fromRequest($request, $id);
-        $document = $this->service->update($request->user(), $dto);
+        $document = $this->service->update(user: $request->user(), dto: $dto);
 
         return new RepairRequestResource($document);
     }
@@ -70,7 +79,9 @@ final class RepairRequestController
     public function destroy(Request $request, string $id): JsonResponse
     {
         $document = RepairRequest::resolveFor($request->user(), $id);
-        $deleted = $this->service->deleteDrafts($request->user(), [$document->uuid]);
+        $this->authorize('delete', $document);
+
+        $deleted = $this->service->deleteDrafts(user: $request->user(), ids:[$document->uuid]);
 
         return response()->json(['deletedIds' => $deleted]);
     }
@@ -130,6 +141,7 @@ final class RepairRequestController
     public function history(Request $request, string $id): RepairRequestHistoryResource
     {
         $document = RepairRequest::resolveFor($request->user(), $id);
+        $this->authorize('view', $document);
 
         return new RepairRequestHistoryResource($document);
     }
@@ -137,6 +149,7 @@ final class RepairRequestController
     public function workOrder(Request $request, string $id): WorkOrderResource
     {
         $document = RepairRequest::resolveFor($request->user(), $id);
+        $this->authorize('view', $document);
 
         return new WorkOrderResource($document);
     }

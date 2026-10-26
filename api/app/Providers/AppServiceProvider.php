@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Models\RepairRequest;
+use App\Policies\RepairRequestPolicy;
+use Illuminate\Auth\Access\Gate;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -24,24 +27,22 @@ final class AppServiceProvider extends ServiceProvider
 
             return [
                 // 30/мин с одного IP — классический брутфорс.
-                Limit::perMinute(self::LOGIN_PER_IP_PER_MINUTE)
-                ->by('login-ip:' . $request->ip()),
+                Limit::perMinute(self::LOGIN_PER_IP_PER_MINUTE)->by('login-ip:' . $request->ip()),
 
                 // 5/мин на пару IP+login — перебор одного аккаунта и password spraying.
-                Limit::perMinute(self::LOGIN_PER_ACCOUNT_PER_MINUTE)
-                ->by('login:' . hash('sha256', $loginKey . '|' . $request->ip())),
+                Limit::perMinute(self::LOGIN_PER_ACCOUNT_PER_MINUTE)->by('login:' . hash('sha256', $loginKey . '|' . $request->ip())),
 
                 // 20/мин на login со всех IP — распределённая атака через ботнет.
-                Limit::perMinute(self::LOGIN_PER_ACCOUNT_GLOBAL_PER_MINUTE)
-                ->by('login-global:' . hash('sha256', $loginKey)),
+                Limit::perMinute(self::LOGIN_PER_ACCOUNT_GLOBAL_PER_MINUTE)->by('login-global:' . hash('sha256', $loginKey)),
             ];
         });
 
         RateLimiter::for('api', function (Request $request): Limit {
             $key = $request->user()?->id ?? $request->ip();
 
-            return Limit::perMinute(self::API_PER_USER_PER_MINUTE)
-            ->by((string) $key);
+            return Limit::perMinute(self::API_PER_USER_PER_MINUTE)->by((string) $key);
         });
+
+        Gate::policy(RepairRequest::class, RepairRequestPolicy::class);
     }
 }
