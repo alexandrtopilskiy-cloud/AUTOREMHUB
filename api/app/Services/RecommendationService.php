@@ -216,7 +216,7 @@ final class RecommendationService
                         'recommendationIds' => $docs->pluck('uuid')->all(),
                         'items' => $items->pluck('uuid')->all(),
                     ],
-                    'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $user, $event->id)
+                    'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $user->role, $event->id)
                 ];
             });
 

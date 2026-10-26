@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\TransitionDto;
+use App\DTO\UpdateRepairRequestDto;
 use App\Enums\RepairStage;
 use App\Enums\TransitionAction;
 use App\Exceptions\ApiException;
@@ -15,14 +17,17 @@ use App\Models\RequestPart;
 use App\Models\RequestStatusPeriod;
 use App\Models\RequestNotification;
 use App\Models\RequestWork;
+use App\Models\ServiceReason;
 use App\Models\Station;
 use App\Models\Supplier;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehicleContact;
 use App\Services\RecommendationService;
 use App\Services\RepairRequestService;
 use App\Services\VehicleReferenceService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -72,7 +77,12 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_common_save_persists_parts_and_request_fields_once(): void
     {
-        $result = app(RepairRequestService::class)->update($this->manager, $this->request->uuid, 0, ['routeComment' => 'test', 'parts' => [$this->partPayload()]]);
+        $dto = new UpdateRepairRequestDto(
+            requestKey: $this->request->uuid,
+            revision: 0,
+            rawPatch: ['routeComment' => 'test', 'parts' => [$this->partPayload()]]
+        );
+        $result = app(RepairRequestService::class)->update($this->manager, $dto);
         $this->assertSame(1, $result->revision);
         $this->assertSame('test', $result->data['routeComment']);
         $this->assertSame('300.00', $result->parts()->first()->price);
@@ -84,9 +94,14 @@ final class RecommendationAndEstimateTest extends TestCase
         $invalid = $this->partPayload();
         $invalid['supplierId'] = Str::uuid()->toString();
         try {
-            app(RepairRequestService::class)->update($this->manager, $this->request->uuid, 0, ['routeComment' => 'unsaved', 'parts' => [$this->partPayload(), $invalid]]);
+            $dto = new UpdateRepairRequestDto(
+                requestKey: $this->request->uuid,
+                revision: 0,
+                rawPatch: ['routeComment' => 'unsaved', 'parts' => [$this->partPayload(), $invalid]]
+            );
+            app(RepairRequestService::class)->update($this->manager, $dto);
             $this->fail('Invalid supplier must fail');
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+        } catch (ModelNotFoundException) {
             $this->assertSame(0, $this->request->fresh()->revision);
             $this->assertSame(0, $this->request->parts()->count());
             $this->assertArrayNotHasKey('routeComment', $this->request->fresh()->data);
@@ -135,8 +150,21 @@ final class RecommendationAndEstimateTest extends TestCase
         $this->request->update(['stage' => RepairStage::StationApproval]);
         $work = $this->work();
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->station, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []])['recommendation'];
-        $result = $service->restore($this->station, $doc['id'], 0, array_column($doc['items'], 'id'), null, null);
+        $doc = $service->defer(
+            user: $this->station,
+            key: $this->request->uuid,
+            revision: 0,
+            selection: ['workIds' => [$work->uuid], 'partIds' => []]
+        )['recommendation'];
+        $result = $service->restore(
+            user: $this->station,
+            id: $doc['id'],
+            revision: 0,
+            itemIds: array_column($doc['items'], 'id'),
+            requestId: null,
+            requestRevision: null
+        );
+
         $this->assertSame(0, $result['request']['stage']);
         $this->assertTrue($result['request']['permissions']['canAdvance']);
         $this->assertSame($this->vehicle->uuid, $result['request']['vehicleId']);
@@ -144,10 +172,36 @@ final class RecommendationAndEstimateTest extends TestCase
         $this->assertSame('1000', $result['request']['mileage']);
         $this->assertNotContains('mileage', $result['request']['permissions']['editableFields']);
         $this->assertNotContains('vehicleId', $result['request']['permissions']['editableFields']);
-        $contact = \App\Models\VehicleContact::query()->create(['vehicle_id' => $this->vehicle->id, 'kind' => 'contact', 'first_name' => 'Иван', 'last_name' => 'Петров', 'phone' => '+79991234567', 'active' => true]);
-        $reason = \App\Models\ServiceReason::query()->create(['tenant_id' => $this->vehicle->tenant_id, 'name' => 'Диагностика', 'code' => 'diagnostics', 'active' => true]);
-        $draft = app(RepairRequestService::class)->update($this->station, $result['request']['id'], $result['request']['revision'], ['contactId' => $contact->uuid, 'reasonId' => $reason->uuid]);
-        $routed = app(RepairRequestService::class)->transition($this->station, $draft->uuid, $draft->revision, TransitionAction::Next, ['comment' => 'Новая заявка из рекомендаций']);
+
+        $contact = VehicleContact::query()->create([
+            'vehicle_id' => $this->vehicle->id,
+            'kind' => 'contact',
+            'first_name' => 'Иван',
+            'last_name' => 'Петров',
+            'phone' => '+79991234567',
+            'active' => true,
+        ]);
+        $reason = ServiceReason::query()->create([
+            'tenant_id' => $this->vehicle->tenant_id,
+            'name' => 'Диагностика',
+            'code' => 'diagnostics',
+            'active' => true,
+        ]);
+        $dto = new UpdateRepairRequestDto(
+            requestKey: $result['request']['id'],
+            revision: $result['request']['revision'],
+            rawPatch: ['contactId' => $contact->uuid, 'reasonId' => $reason->uuid]
+        );
+        $draft = app(RepairRequestService::class)->update($this->station, $dto);
+
+        $dto = new TransitionDto(
+            requestKey: $draft->uuid,
+            revision: $draft->revision,
+            action: TransitionAction::Next,
+            comment: ['comment' => 'Новая заявка из рекомендаций']
+        );
+        $routed = app(RepairRequestService::class)->transition($this->station, $dto);
+
         $this->assertSame(RepairStage::ManagerRouting, $routed->stage);
         $this->assertSame($routed->id, RepairRequest::resolveFor($this->manager, $routed->uuid)->id);
     }

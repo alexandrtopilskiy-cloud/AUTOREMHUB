@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UpdateRepairRequestDto;
 use App\Enums\RepairStage;
 use App\Exceptions\ApiException;
 use App\Models\CatalogPart;
@@ -383,10 +384,24 @@ final class SupplierAndRecommendationsTest extends TestCase
     public function test_part_snapshot_keeps_original_values_after_catalog_edit(): void
     {
         $service = app(RepairRequestService::class);
-        $this->catalog->update(['manufacturer' => 'Original', 'purchase_price' => 100]);
-        $service->update($this->manager, $this->request->uuid, 0, ['parts' => [$this->partPayload()]]);
-        $this->catalog->update(['manufacturer' => 'Changed', 'purchase_price' => 500]);
+        $this->catalog->update([
+            'manufacturer' => 'Original',
+            'purchase_price' => 100,
+        ]);
+
+        $dto = new UpdateRepairRequestDto(
+            requestKey: $this->request->uuid,
+            revision: 0,
+            rawPatch: ['parts' => [$this->partPayload()]]
+        );
+        $service->update($this->manager, $dto);
+
+        $this->catalog->update([
+            'manufacturer' => 'Changed',
+            'purchase_price' => 500,
+        ]);
         $shown = app(ApiPresenter::class)->document($this->request->fresh(), $this->manager);
+
         $this->assertSame('Original', $shown['parts'][0]['manufacturer']);
         $this->assertSame(100.0, $shown['parts'][0]['purchasePrice']);
         $this->assertSame(300.0, $shown['parts'][0]['price']);

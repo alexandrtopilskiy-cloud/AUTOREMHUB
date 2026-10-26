@@ -4,222 +4,140 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\AcceptVehicleDto;
+use App\DTO\CustomerSlotDecisionDto;
+use App\DTO\StationDecisionDto;
+use App\DTO\TransitionDto;
+use App\DTO\UpdateRepairRequestDto;
 use App\Enums\TransitionAction;
+use App\Http\Requests\AcceptVehicleRequest;
+use App\Http\Requests\CustomerSlotDecisionRequest;
+use App\Http\Requests\DestroyDraftsRequest;
+use App\Http\Requests\StationDecisionRequest;
+use App\Http\Requests\TransitionRequest;
 use App\Http\Requests\UpdateRepairRequestRequest;
+use App\Http\Resources\RepairRequestCollection;
+use App\Http\Resources\RepairRequestHistoryResource;
+use App\Http\Resources\RepairRequestResource;
+use App\Http\Resources\WorkOrderResource;
 use App\Models\RepairRequest;
 use App\Services\RepairRequestService;
-use App\Support\ApiInput;
 use App\Support\ApiPresenter;
-use App\Support\DomainInput as Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 
 final class RepairRequestController
 {
     public function __construct(
         private readonly RepairRequestService $service,
         private readonly ApiPresenter $apiPresenter,
-    ) {
-    }
+    ) {}
 
-    public function index(Request $request): JsonResponse
+    public function index(Request $request): RepairRequestCollection
     {
         $user = $request->user();
+        $requests = RepairRequest::forUser($user)->latest('id')->get();
 
-        $requests = RepairRequest::forUser($user)
-            ->latest('id')
-            ->get();
         $this->apiPresenter->preloadRecommendations($requests, $user);
-        $requests = $requests
-            ->map(fn (RepairRequest $document) => $this->apiPresenter->document($document, $user))
-            ->values();
 
-        return response()->json(['requests' => $requests]);
+        return new RepairRequestCollection($requests);
     }
 
-    public function show(Request $request, string $id): JsonResponse
+    public function show(Request $request, string $id): RepairRequestResource
     {
-        $user = $request->user();
-        $document = RepairRequest::resolveFor($user, $id);
+        $document = RepairRequest::resolveFor($request->user(), $id);
 
-        return response()->json([
-            'request' => $this->apiPresenter->document($document, $user),
-        ]);
+        return new RepairRequestResource($document);
     }
 
     public function store(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $document = $this->service->create($request->user());
 
-        $document = $this->service->create($user);
-
-        return response()->json(
-            ['request' => $this->apiPresenter->document($document, $user)],
-            201,
-        );
+        return (new RepairRequestResource($document))
+            ->response()
+            ->setStatusCode(201);
     }
 
-    public function update(UpdateRepairRequestRequest $request, string $id): JsonResponse
+    public function update(UpdateRepairRequestRequest $request, string $id): RepairRequestResource
     {
-        $user = $request->user();
+        $dto = UpdateRepairRequestDto::fromRequest($request, $id);
+        $document = $this->service->update($request->user(), $dto);
 
-        $document = $this->service->update(
-            $user,
-            $id,
-            ApiInput::revision($request),
-            ApiInput::patch($request),
-        );
-
-        return response()->json([
-            'request' => $this->apiPresenter->document($document, $user),
-        ]);
+        return new RepairRequestResource($document);
     }
 
     public function destroy(Request $request, string $id): JsonResponse
     {
         $document = RepairRequest::resolveFor($request->user(), $id);
-        $deleted = $this->service->deleteDrafts(
-            $request->user(),
-            [$document->uuid],
-        );
+        $deleted = $this->service->deleteDrafts($request->user(), [$document->uuid]);
 
         return response()->json(['deletedIds' => $deleted]);
     }
 
-    public function destroyDrafts(Request $request): JsonResponse
+    public function destroyDrafts(DestroyDraftsRequest $request): JsonResponse
     {
-        $payload = Input::validate($request->json()->all(), [
-            'ids'   => ['required', 'array', 'list', 'min:1', 'max:100'],
-            'ids.*' => ['required', 'uuid', 'distinct'],
-        ]);
-
         return response()->json([
-            'deletedIds' => $this->service->deleteDrafts($request->user(), $payload['ids']),
+            'deletedIds' => $this->service->deleteDrafts(
+                $request->user(),
+                $request->validated('ids')
+            ),
         ]);
     }
 
-    public function next(Request $request, string $id): JsonResponse
+    public function next(TransitionRequest $request, string $id): RepairRequestResource
     {
         return $this->transition($request, $id, TransitionAction::Next);
     }
 
-    public function returnBack(Request $request, string $id): JsonResponse
+    public function returnBack(TransitionRequest $request, string $id): RepairRequestResource
     {
         return $this->transition($request, $id, TransitionAction::Return);
     }
 
-    public function stationDecision(Request $request, string $id): JsonResponse
+    private function transition(TransitionRequest $request, string $id, TransitionAction $action): RepairRequestResource
     {
-        ApiInput::only($request, ['revision', 'decision', 'comment', 'stationSlot']);
+        $dto = TransitionDto::fromRequest($request, $id, $action);
+        $document = $this->service->transition($request->user(), $dto);
 
-        $user = $request->user();
-        $document = $this->service->stationDecision(
-            $user,
-            $id,
-            ApiInput::revision($request),
-            Arr::only(
-                $request->json()->all(),
-                ['decision', 'comment', 'stationSlot'],
-            ),
-        );
-
-        return response()->json([
-            'request' => $this->apiPresenter->document($document, $user),
-        ]);
+        return new RepairRequestResource($document);
     }
 
-    public function customerSlotDecision(Request $request, string $id): JsonResponse
+    public function stationDecision(StationDecisionRequest $request, string $id): RepairRequestResource
     {
-        ApiInput::only($request, ['revision', 'decision', 'slot', 'comment']);
+        $dto = StationDecisionDto::fromRequest($request, $id);
+        $document = $this->service->stationDecision($request->user(), $dto);
 
-        $user = $request->user();
-        $document = $this->service->customerSlotDecision(
-            $user,
-            $id,
-            ApiInput::revision($request),
-            Arr::only(
-                $request->json()->all(),
-                ['decision', 'slot', 'comment'],
-            ),
-        );
-
-        return response()->json([
-            'request' => $this->apiPresenter->document($document, $user),
-        ]);
+        return new RepairRequestResource($document);
     }
 
-    public function acceptVehicle(Request $request, string $id): JsonResponse
+    public function customerSlotDecision(CustomerSlotDecisionRequest $request, string $id): RepairRequestResource
     {
-        ApiInput::only($request, [
-            'revision',
-            'mode',
-            'attachmentId',
-            'mileage',
-            'fuelLevel',
-            'condition',
-            'defectTypes',
-            'diagramMarks',
-        ]);
+        $dto = CustomerSlotDecisionDto::fromRequest($request, $id);
+        $document = $this->service->customerSlotDecision($request->user(), $dto);
 
-        $user = $request->user();
-        $document = $this->service->acceptVehicle(
-            $user,
-            $id,
-            ApiInput::revision($request),
-            Arr::except($request->json()->all(), ['revision']),
-        );
-
-        return response()->json([
-            'request' => $this->apiPresenter->document($document, $user),
-        ]);
+        return new RepairRequestResource($document);
     }
 
-    public function history(Request $request, string $id): JsonResponse
+    public function acceptVehicle(AcceptVehicleRequest $request, string $id): RepairRequestResource
     {
-        $user = $request->user();
-        $document = $this->apiPresenter->document(RepairRequest::resolveFor($user, $id), $user);
+        $dto = AcceptVehicleDto::fromRequest($request, $id);
+        $document = $this->service->acceptVehicle($request->user(), $dto);
 
-        return response()->json([
-            'history'       => $document['history'] ?? [],
-            'statusPeriods' => $document['statusPeriods'] ?? [],
-            'approvals'     => $document['approvals'] ?? [],
-        ]);
+        return new RepairRequestResource($document);
     }
 
-    public function workOrder(Request $request, string $id): JsonResponse
+    public function history(Request $request, string $id): RepairRequestHistoryResource
     {
-        $user = $request->user();
-        $document = RepairRequest::resolveFor($user, $id);
+        $document = RepairRequest::resolveFor($request->user(), $id);
 
-        return response()->json([
-            'workOrder' => $this->apiPresenter->workOrder($document),
-        ]);
+        return new RepairRequestHistoryResource($document);
     }
 
-    /**
-     * Выполняет переход заявки (next / return).
-     */
-    private function transition(
-        Request $request,
-        string $id,
-        TransitionAction $action,
-    ): JsonResponse {
-        ApiInput::only($request, ['revision', 'comment', 'attachmentIds', 'confirmDeclinedStation']);
+    public function workOrder(Request $request, string $id): WorkOrderResource
+    {
+        $document = RepairRequest::resolveFor($request->user(), $id);
 
-        $body = Arr::except($request->json()->all(), ['revision']);
-        $user = $request->user();
-
-        $document = $this->service->transition(
-            $user,
-            $id,
-            ApiInput::revision($request),
-            $action,
-            $body,
-        );
-
-        return response()->json([
-            'request' => $this->apiPresenter->document($document, $user),
-        ]);
+        return new WorkOrderResource($document);
     }
 }
