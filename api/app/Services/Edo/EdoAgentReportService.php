@@ -6,6 +6,8 @@ namespace App\Services\Edo;
 
 use App\DTO\EdoFile;
 use App\DTO\EdoSignature;
+use App\Enums\AttachmentMime;
+use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\RepairRequest;
@@ -58,19 +60,22 @@ final class EdoAgentReportService
 
             $fileContent = base64_decode($structuredRequest->meta['file_content']);
             $fileDto = new EdoFile(
-                name: $structuredRequest->meta['file_name'],
+                filename: $structuredRequest->meta['file_name'],
                 content: $fileContent,
-                mimeType: 'application/pdf'
+                mimeType: AttachmentMime::Pdf->value
             );
             $objectKey = 'edo/' . $document->uuid . '.pdf';
             Storage::disk('local')->put($objectKey, $fileContent);
 
-            $signatureDto = new EdoSignature(base64: 'mock-signature', certificate: 'mock-cert');
+            $signatureDto = new EdoSignature(
+                content: 'mock-signature',
+                certificateFingerprint : 'mock-cert',
+            );
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
 
             $document->update([
-                'status'      => 'sent',
-                'external_id' => $result->documentId,
+                'status'      => EdoDocumentStatus::Sended,
+                'external_id' => $result->externalId,
                 'sent_at'     => now(),
                 'meta'        => array_merge($document->meta ?? [], ['local_file' => $objectKey]),
             ]);

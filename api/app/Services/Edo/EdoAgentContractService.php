@@ -6,6 +6,8 @@ namespace App\Services\Edo;
 
 use App\DTO\EdoFile;
 use App\DTO\EdoSignature;
+use App\Enums\AttachmentMime;
+use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\Organization;
@@ -49,23 +51,23 @@ final class EdoAgentContractService
             $structuredRequest = $this->builder->build($customer, $document, $ukTenant);
             // 👇 ИЗВЛЕКАЕМ ФАЙЛ ИЗ META И СОЗДАЕМ DTO
             $fileDto = new EdoFile(
-                name: $structuredRequest->meta['file_name'],
+                filename: $structuredRequest->meta['file_name'],
                 content: base64_decode($structuredRequest->meta['file_content']),
-                mimeType: 'application/pdf'
+                mimeType: AttachmentMime::Pdf->value
             );
 
             // Создаем фейковую подпись (для реального ЭДО здесь будут данные УКЭП)
             $signatureDto = new EdoSignature(
-                base64: 'mock-signature',
-                certificate: null
+                content: 'mock-signature',
+                certificateFingerprint : null
             );
 
             // 👇 ВЫЗЫВАЕМ НАШ ОРКЕСТРАТОР
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
 
             $document->update([
-                'status'      => 'sent',
-                'external_id' => $result->documentId,
+                'status'      => EdoDocumentStatus::Sended,
+                'external_id' => $result->externalId,
                 'sent_at'     => now(),
             ]);
 

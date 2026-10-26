@@ -10,9 +10,9 @@ final readonly class EdoOrganizationDto
         public string $id,
         public string $name,
         public string $inn,
-        public ?string $kpp,
-        public ?string $ogrn,
-        public ?string $ediCode,
+        public ?string $kpp = '',
+        public ?string $ogrn = '',
+        public ?string $ediCode = null,
         public ?string $operatorCode = null,
     ) {
     }

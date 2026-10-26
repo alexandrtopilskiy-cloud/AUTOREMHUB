@@ -34,14 +34,16 @@ final class AcceptanceActBuilder
             number: $document->number,
             date: new DateTimeImmutable($document->document_date->format('Y-m-d')),
             sender: new EdoOrganizationDto(
+                id: $sender->uuid,
+                name: $sender->name,
                 inn: $sender->inn,
                 kpp: $sender->kpp ?? '',
-                name: $sender->name,
             ),
             receiver: new EdoOrganizationDto(
+                id: $receiver->uuid,
+                name: $receiver->name,
                 inn: $receiver->inn,
                 kpp: $receiver->kpp ?? '',
-                name: $receiver->name,
             ),
             items: [], // У акта нет товарных позиций
             totalSum: '0.00',

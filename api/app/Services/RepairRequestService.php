@@ -1148,13 +1148,13 @@ final class RepairRequestService
                         $changes,
                     ): void {
                         $dto = ApprovalDto::fromRequest(
-                            $request,
-                            $event,
-                            $user,
-                            $from,
-                            $decision,
-                            $comment,
-                            $snapshot,
+                            request: $request,
+                            eventId: $event->id,
+                            userId: $user->id,
+                            stage: $from,
+                            decision: $decision,
+                            comment: $comment,
+                            snapshot: $snapshot,
                         );
                         $this->createApproval($dto);
 
@@ -1272,13 +1272,13 @@ final class RepairRequestService
                         $to,
                     ): void {
                         $dto = ApprovalDto::fromRequest(
-                            $request,
-                            $event,
-                            $user,
-                            $from,
-                            $decision,
-                            $comment,
-                            $snapshot,
+                            request: $request,
+                            eventId: $event->id,
+                            userId: $user->id,
+                            stage: $from,
+                            decision: $decision,
+                            comment: $comment,
+                            snapshot: $snapshot,
                         );
                         $this->createApproval($dto);
 
@@ -1800,10 +1800,10 @@ final class RepairRequestService
         return function (RequestEvent $event) use ($request, $user, $context): void {
             $dto = ApprovalDto::fromRequest(
                 request: $request,
-                event: $event,
-                user: $user,
-                from: $context->from,
-                action: $context->action === TransitionAction::Next ? ApprovalDecision::Approved : ApprovalDecision::Returned,
+                eventId: $event->id,
+                userId: $user->id,
+                stage: $context->from,
+                decision: $context->action === TransitionAction::Next ? ApprovalDecision::Approved : ApprovalDecision::Returned,
                 comment: $context->comment,
                 snapshot: $context->snapshot,
             );

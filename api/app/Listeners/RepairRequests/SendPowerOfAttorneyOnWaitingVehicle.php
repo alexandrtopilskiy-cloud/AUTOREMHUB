@@ -34,7 +34,7 @@ final class SendPowerOfAttorneyOnWaitingVehicle implements ShouldQueue
         }
 
         try {
-            $this->edoPowerOfAttorneyService->send($request);
+            $this->edoPowerOfAttorneyService->sendPowerOfAttorney($request);
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки доверенности', [
                 'request_id' => $request->id,

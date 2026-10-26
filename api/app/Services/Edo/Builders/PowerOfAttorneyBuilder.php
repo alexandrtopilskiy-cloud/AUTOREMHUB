@@ -33,16 +33,18 @@ final class PowerOfAttorneyBuilder
             number: $document->number,
             date: new DateTimeImmutable($document->document_date->format('Y-m-d')),
             sender: new EdoOrganizationDto(
+                id: $customer->uuid,
+                name: $customer->name,
                 inn: $customer->inn,
                 kpp: $customer->kpp ?? '',
-                name: $customer->name,
             ),
             receiver: new EdoOrganizationDto(
+                id: $station->uuid,
+                name: $station->name,
                 inn: $station->inn,
                 kpp: $station->kpp ?? '',
-                name: $station->name,
             ),
-            items: [],          // У доверенности нет товарных позиций
+            items: [],
             totalSum: '0.00',
             vatSum: '0.00',
             vatIncluded: false,

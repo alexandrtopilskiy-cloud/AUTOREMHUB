@@ -25,13 +25,13 @@ trait SendsEdoDocuments
         $documentDto = $provider->createStructuredDocument($request);
 
         // 2. Добавляем вложение (PDF)
-        $provider->addAttachment($documentDto->documentId, $file);
+        $provider->addAttachment($documentDto->externalId, $file);
 
         // 3. Подписываем
-        $provider->signDocument($documentDto->documentId, $signature);
+        $provider->signDocument($documentDto->externalId, $signature);
 
         // 4. Отправляем
-        $provider->sendDocument($documentDto->documentId);
+        $provider->sendDocument($documentDto->externalId);
 
         return $documentDto;
     }

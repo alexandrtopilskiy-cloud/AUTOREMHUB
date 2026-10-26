@@ -17,8 +17,7 @@ final class EdoManager
 
     public function __construct(
         private readonly Container $container,
-    ) {
-    }
+    ) {}
 
     /**
      * Резолвит провайдера по имени. Если не задано — берёт config('edo.default').

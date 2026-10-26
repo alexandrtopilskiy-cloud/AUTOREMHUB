@@ -6,6 +6,7 @@ namespace Tests\Feature\Edo;
 
 use App\Enums\AttachmentMime;
 use App\Enums\AttachmentPurpose;
+use App\Exceptions\ApiException;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\Tenant;
@@ -30,7 +31,7 @@ final class EdoServicePersistPayloadTest extends TestCase
 
         $file = new EdoFile(
             filename: 'upd_123.xml',
-            mimeType: 'text/xml',
+            mimeType: AttachmentMime::Xml->value,
             content:  base64_encode('<xml>test</xml>'),
         );
 
@@ -64,10 +65,10 @@ final class EdoServicePersistPayloadTest extends TestCase
 
         [$tenant, $org, $user, $request] = $this->seedEnvironment(withPeriod: false);
 
-        $this->expectException(\App\Exceptions\ApiException::class);
+        $this->expectException(ApiException::class);
 
         app(EdoService::class)->persistPayloadAsAttachment(
-            file: new EdoFile('upd.xml', 'text/xml', base64_encode('<x/>')),
+            file: new EdoFile('upd.xml', AttachmentMime::Xml->value, base64_encode('<x/>')),
             request: $request,
             uploadedByUserId: $user->id,
         );
@@ -79,10 +80,10 @@ final class EdoServicePersistPayloadTest extends TestCase
 
         [$tenant, $org, $user, $request] = $this->seedEnvironment();
 
-        $this->expectException(\App\Exceptions\ApiException::class);
+        $this->expectException(ApiException::class);
 
         app(EdoService::class)->persistPayloadAsAttachment(
-            file: new EdoFile('upd.pdf', 'application/pdf', base64_encode('%PDF-1.4')),
+            file: new EdoFile('upd.pdf', AttachmentMime::Pdf->value, base64_encode('%PDF-1.4')),
             request: $request,
             uploadedByUserId: $user->id,
         );

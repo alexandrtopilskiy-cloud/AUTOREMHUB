@@ -31,8 +31,8 @@ final class ApprovalDto
      */
     public static function fromRequest(
         RepairRequest $request,
-        RequestEvent $event,
-        User $user,
+        int $eventId,
+        int $userId,
         RepairStage $stage,
         ApprovalDecision $decision,
         string $comment,
@@ -40,8 +40,8 @@ final class ApprovalDto
     ): self {
         return new self(
             requestId: $request->id,
-            eventId: $event->id,
-            actorId: $user->id,
+            eventId: $eventId,
+            actorId: $userId,
             stage: $stage,
             decision: $decision,
             comment: $comment,

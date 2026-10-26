@@ -95,11 +95,11 @@ final class EdoRuMapper
 
         return new EdoOrganizationDto(
             id:           $id,
-            name:         (string) ($row['fullName'] ?? ''),
+            name:         (string)($row['fullName'] ?? ''),
             inn:          $inn,
             kpp:          isset($row['kpp']) && $row['kpp'] !== '' ? (string) $row['kpp'] : null,
             ogrn:         isset($row['ogrn']) && $row['ogrn'] !== '' ? (string) $row['ogrn'] : null,
-            ediCode:      $id, // В ЭДО.Поток clientId и есть ediCode
+            ediCode:      $id,
             operatorCode: isset($row['operatorMnemo']) ? (string) $row['operatorMnemo'] : null,
         );
     }

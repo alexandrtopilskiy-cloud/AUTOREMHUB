@@ -6,6 +6,8 @@ namespace App\Services\Edo;
 
 use App\DTO\EdoFile;
 use App\DTO\EdoSignature;
+use App\Enums\AttachmentMime;
+use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\RepairRequest;
@@ -26,48 +28,57 @@ final class EdoPowerOfAttorneyService
     public function sendPowerOfAttorney(RepairRequest $request): EdoDocument
     {
         return DB::transaction(function () use ($request) {
-            $customer = $request->customerOrganization;
-            $station = $request->stationRecord?->organization;
+            $sender = $request->customerOrganization; // Заказчик
+            $receiver = $request->stationRecord?->organization; // СТО
 
-            if (!$station) {
-                throw new \RuntimeException("У заявки {$request->number} не назначена СТО");
+            if (!$sender) {
+                throw new \RuntimeException("У заявки {$request->number} не найден Заказчик (отправитель)");
+            }
+            if (!$receiver) {
+                throw new \RuntimeException("У заявки {$request->number} не назначена СТО (получатель)");
             }
 
-            $providerOrg = $customer->edo_provider ? $customer : $request->tenant;
-            $provider = $this->dispatcher->forOrganization($providerOrg);
+            $provider = $this->dispatcher->forOrganization($sender);
 
             $document = $request->edoDocuments()
                 ->firstOrCreate(
                 ['document_type' => EdoDocumentType::PowerOfAttorney->value],
                 [
                     'tenant_id'         => $request->tenant_id,
-                    'organization_id'   => $providerOrg->id,
-                    'counterparty_id'   => $station->id,
-                    'provider'          => $providerOrg->edo_provider ?? 'diadoc',
+                    'organization_id'   => $sender->id, // Кто отправляет
+                    'counterparty_id'   => $receiver->id, // Кому отправляем
+                    'provider'          => $sender->edo_provider ?? 'diadoc',
                     'number'            => 'POA-' . $request->number,
                     'document_date'     => now()->toDateString(),
-                    'status'            => 'draft',
+                    'status'            => EdoDocumentStatus::Draft,
                     'source_type'       => RepairRequest::class,
                     'source_id'         => $request->id,
                 ]
             );
 
-            $structuredRequest = $this->builder->build($request, $document, $customer, $station);
+            $structuredRequest = $this->builder->build($request, $document, $sender, $receiver);
 
             $fileContent = base64_decode($structuredRequest->meta['file_content']);
             $fileName = $structuredRequest->meta['file_name'];
 
-            $fileDto = new EdoFile(name: $fileName, content: $fileContent, mimeType: 'application/pdf');
+            $fileDto = new EdoFile(
+                filename: $fileName,
+                content: $fileContent,
+                mimeType: AttachmentMime::Pdf->value,
+            );
             $objectKey = 'edo/' . $document->uuid . '.pdf';
             Storage::disk('local')->put($objectKey, $fileContent);
 
-            $signatureDto = new EdoSignature(base64: 'mock-signature', certificate: 'mock-cert');
+            $signatureDto = new EdoSignature(
+                content: 'mock-signature',
+                certificateFingerprint : 'mock-cert',
+            );
 
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
 
             $document->update([
-                'status'      => 'sent',
-                'external_id' => $result->documentId,
+                'status'      => EdoDocumentStatus::Sended,
+                'external_id' => $result->externalId,
                 'sent_at'     => now(),
                 'meta'        => array_merge($document->meta ?? [], ['local_file' => $objectKey]),
             ]);

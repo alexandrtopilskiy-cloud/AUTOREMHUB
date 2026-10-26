@@ -28,14 +28,16 @@ final class AgentContractBuilder
             number: $document->number,
             date: new DateTimeImmutable($document->document_date->format('Y-m-d')),
             sender: new EdoOrganizationDto(
+                id: $ukTenant->uuid,
+                name: $ukTenant->name,
                 inn: $ukTenant->inn,
                 kpp: $ukTenant->kpp ?? '',
-                name: $ukTenant->name,
             ),
             receiver: new EdoOrganizationDto(
+                id: $customer->uuid,
+                name: $customer->name,
                 inn: $customer->inn,
                 kpp: $customer->kpp ?? '',
-                name: $customer->name,
             ),
             items: [],
             totalSum: '0.00',
