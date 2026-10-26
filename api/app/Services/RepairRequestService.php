@@ -511,7 +511,7 @@ final class RepairRequestService
             $visitTimeEnd = (string) config('sto.visit_time_end');
 
             if ($localTime < $visitTimeStart || $localTime > $visitTimeEnd) {
-                Input::fail("Время визита должно быть с {$visitTimeStart} до {$visitTimeEnd}", $field);
+                Input::fail("Время визита должно быть с $visitTimeStart до $visitTimeEnd", $field);
             }
         }
     }
