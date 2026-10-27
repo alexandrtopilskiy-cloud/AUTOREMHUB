@@ -33,7 +33,7 @@ final class DocumentGeneratorService
         ];
 
 
-        $pdf = Pdf::loadView('pdf.act', $data)
+        $pdf = Pdf::loadView('pdf.invoice', $data)
             ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
@@ -173,5 +173,21 @@ final class DocumentGeneratorService
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
+    }
+
+    public function generatePaymentReceipt(RepairRequest $request, Invoice $invoice): string
+    {
+        $data = [
+            'request' => $request,
+            'invoice' => $invoice,
+            'customer' => $request->customerOrganization,
+            'uk' => $request->ukOrganization ?? $request->tenant,
+            'date' => now()->format('d.m.Y'),
+        ];
+
+        return Pdf::loadView('pdf.payment_receipt', $data)
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE)
+            ->output();
     }
 }

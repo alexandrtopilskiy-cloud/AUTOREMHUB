@@ -269,7 +269,7 @@ export const marketplaceApi = {
     async updateRequest(key, revision, patch) {
         const data = await http.request(`/requests/${encodeId(key)}`, {
             method: "PATCH",
-            body: { revision, patch },
+            body: { revision, ...patch },
         });
 
         return readRequest(data.request);
@@ -340,9 +340,9 @@ export const marketplaceApi = {
      * @returns {Promise<object>}
      */
     async readNotification(id) {
-        const data = await http.request(
-            `/notifications/${encodeId(id)}/read`,
-            { method: "POST", body: {} ,
+        const data = await http.request(`/notifications/${encodeId(id)}/read`, {
+            method: "POST",
+            body: {},
         });
 
         return data.notification;
@@ -569,7 +569,9 @@ export const marketplaceApi = {
      * @returns {Promise<object>}
      */
     async reviewManufacturer(id, decision, revision) {
-        const data = await http.request(`/catalogs/part-manufacturers/${id}/decision`, { method: "POST", body: { decision, revision } },
+        const data = await http.request(
+            `/catalogs/part-manufacturers/${id}/decision`,
+            { method: "POST", body: { decision, revision } },
         );
         return data.record;
     },
@@ -632,13 +634,11 @@ export const marketplaceApi = {
         body.append("file", file);
         body.append("checksum", checksum);
 
-        const data = await http.request(
-            "/catalogs/work-catalog/import/apply",
-            {
-                method: "POST",
-                body,
-                timeoutMs: UPLOAD_TIMEOUT_MS,
-            });
+        const data = await http.request("/catalogs/work-catalog/import/apply", {
+            method: "POST",
+            body,
+            timeoutMs: UPLOAD_TIMEOUT_MS,
+        });
 
         return data.result;
     },
@@ -651,7 +651,11 @@ export const marketplaceApi = {
      * @param {number|string} quantity
      * @returns {Promise<object>}
      */
-    async resolveTimeNorm(workTypeId, vehicleId, quantity = 1, laborRateType = "general",
+    async resolveTimeNorm(
+        workTypeId,
+        vehicleId,
+        quantity = 1,
+        laborRateType = "general",
     ) {
         const query = new URLSearchParams({
             workTypeId,
@@ -696,14 +700,17 @@ export const marketplaceApi = {
                 }
 
                 throw new ApiError(
-                    data?.error?.message || `Не удалось скачать шаблон (HTTP ${response.status})`,
+                    data?.error?.message ||
+                        `Не удалось скачать шаблон (HTTP ${response.status})`,
                     response.status,
                     data,
                 );
             }
 
-            const disposition = response.headers.get("Content-Disposition") || "";
-            const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i,
+            const disposition =
+                response.headers.get("Content-Disposition") || "";
+            const match = disposition.match(
+                /filename\*?=(?:UTF-8''|\")?([^\";]+)/i,
             );
 
             return {
