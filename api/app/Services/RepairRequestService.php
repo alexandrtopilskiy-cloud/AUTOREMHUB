@@ -1426,10 +1426,10 @@ final class RepairRequestService
             return;
         }
 
-        // 1. Генерируем файл-заглушку (чек)
-        $fileContent = base64_encode("Чек об оплате по заявке {$request->number}. Сумма: {$invoice->amount}");
+        // 1. Генерируем красивый PDF через DocumentGeneratorService
+        $pdfContent = $this->documentGenerator->generatePaymentReceipt($request, $invoice);
         $objectKey = 'payments/' . $invoice->uuid . '_paid.pdf';
-        Storage::disk('local')->put($objectKey, $fileContent);
+        Storage::disk('local')->put($objectKey, $pdfContent);
 
         // 2. Получаем текущий период
         $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
@@ -1448,8 +1448,8 @@ final class RepairRequestService
         $attachment->object_key = $objectKey;
         $attachment->original_name = "Чек_об_оплате_{$invoice->number}.pdf";
         $attachment->mime_type = 'application/pdf';
-        $attachment->size = strlen($fileContent);
-        $attachment->sha256 = hash('sha256', $fileContent);
+        $attachment->size = strlen($pdfContent);
+        $attachment->sha256 = hash('sha256', $pdfContent);
         $attachment->purpose = AttachmentPurpose::PaidInvoice;
         $attachment->save();
 
