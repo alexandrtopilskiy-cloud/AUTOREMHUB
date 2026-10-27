@@ -30,6 +30,7 @@ final class Organization extends Entity
             'edo_registered_at' => 'immutable_datetime',
             'markup_percent'    => 'decimal:2',
             'edo_token'         => 'encrypted',
+            'edo_token_expires_at' => 'immutable_datetime',
         ];
     }
 

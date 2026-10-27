@@ -1162,4 +1162,26 @@ export const marketplaceApi = {
 
         return data.url;
     },
+
+    /* ─── ЭДО (Мини-кабинет) ─── */
+
+    /**
+     * @param {object} filters
+     * @returns {Promise<object>}
+     */
+    async listEdoDocuments(filters = {}) {
+        const query = new URLSearchParams()
+        if (filters.search) query.set('search', filters.search)
+        if (filters.status) query.set('status', filters.status)
+
+        return http.request(`/edo/documents?${query}`)
+    },
+
+    /**
+     * @param {string} uuid
+     * @returns {Promise<object>}
+     */
+    retryEdoDocument(uuid) {
+        return http.request(`/edo/documents/${uuid}/retry`, { method: 'POST' })
+    },
 };

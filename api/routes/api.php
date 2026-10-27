@@ -201,19 +201,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::post('/documents/{uuid}/sync', [EdoDocumentController::class, 'sync'])->whereUuid('uuid')->name('documents.sync');
         Route::get('/documents/{uuid}/content', [EdoDocumentController::class, 'content'])->whereUuid('uuid')->name('documents.content');
         Route::get('/documents/{uuid}/pdf', [EdoDocumentController::class, 'pdf'])->whereUuid('uuid')->name('documents.pdf');
+        Route::post('/documents/{uuid}/retry', [EdoDocumentController::class, 'retry'])->whereUuid('uuid')->name('documents.retry');
     });
 
     Route::post('/requests/{id}/edo/prepare', [EdoDocumentController::class, 'prepare'])->name('requests.edo.prepare');
     Route::post('/edo/documents/{uuid}/accept-title', [EdoDocumentController::class, 'acceptTitle'])->name('edo.documents.acceptTitle');
     Route::post('/requests/{id}/edo/prepare-manager-invoice', [EdoDocumentController::class, 'prepareManagerInvoice'])->name('edo.prepare-manager-invoice');
     Route::post('/requests/{id}/edo/prepare-ucd', [EdoDocumentController::class, 'prepareUcd'])->name('edo.prepare-ucd');
-
-    Route::prefix('organizations')->name('organizations.')->group(function (): void {
-        Route::post('/{id}/send-agent-contract', [OrganizationController::class, 'sendAgentContract'])->whereUuid('id')->name('send-agent-contract');
-    });
-
-    // ВРЕМЕННО ДЛЯ ТЕСТА ЭДО
-    Route::get('/edo-test/auth', [\App\Http\Controllers\EdoTestController::class, 'auth']);
-    Route::get('/edo-test/documents', [\App\Http\Controllers\EdoTestController::class, 'documents']);
-    Route::get('/edo-test/doc-types', [\App\Http\Controllers\EdoTestController::class, 'docTypes']);
 });

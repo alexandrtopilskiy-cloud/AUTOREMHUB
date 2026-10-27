@@ -4,67 +4,62 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
-use App\Enums\Edo\EdoDocumentStatus;
+use App\Models\EdoDocument;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/**
- * @mixin \App\Models\EdoDocument
- */
+/** @mixin EdoDocument */
 final class EdoDocumentResource extends JsonResource
 {
-    /**
-     * @return array<string, mixed>
-     */
     public function toArray(Request $request): array
     {
         return [
-            'id'             => $this->uuid,
-            'uuid'           => $this->uuid,
-
-            'documentType'   => $this->document_type->value,
-            'documentLabel'  => $this->document_type->label(),
-
-            'status'         => $this->status->value,
-            'statusLabel'    => $this->status->label(),
-
-            'provider'       => $this->provider->value,
-            'providerLabel'  => $this->provider->label(),
-
-            'number'         => $this->number,
-            'documentDate'   => $this->document_date->toDateString(),
-
-            'externalId'     => $this->external_id,
-            'externalUuid'   => $this->external_uuid,
-
-            'organization'   => $this->whenLoaded('organization', fn () => [
-                'id'   => $this->organization->uuid,
-                'name' => $this->organization->short_name,
-                'inn'  => $this->organization->inn,
-            ]),
-
-            'counterparty'   => $this->whenLoaded('counterparty', fn () => $this->counterparty === null ? null : [
-                'id'   => $this->counterparty->uuid,
-                'name' => $this->counterparty->short_name,
-                'inn'  => $this->counterparty->inn,
-            ]),
-
-            'sourceType'     => $this->source_type,
-            'sourceId'       => $this->source_id,
-
-            'payloadAttachmentId' => $this->payloadAttachment?->uuid,
-            'signedAttachmentId'  => $this->signedAttachment?->uuid,
-            'acceptanceAttachmentUuid' => $this->whenLoaded('acceptanceAttachment', fn () => $this->acceptanceAttachment?->uuid),
-
-            'sentAt'         => $this->sent_at?->toISOString(),
-            'deliveredAt'    => $this->delivered_at?->toISOString(),
-            'signedAt'       => $this->signed_at?->toISOString(),
-            'acceptedAt'     => $this->accepted_at?->toISOString(),
-            'rejectedAt'     => $this->rejected_at?->toISOString(),
-            'lastSyncedAt'   => $this->last_synced_at?->toISOString(),
-
-            'createdAt'      => $this->created_at?->toISOString(),
-            'updatedAt'      => $this->updated_at?->toISOString(),
+            'id'              => $this->uuid,
+            'type'            => $this->document_type,
+            'typeLabel'       => $this->getTypeLabel(),
+            'number'          => $this->number,
+            'date'            => $this->document_date->format('d.m.Y'),
+            'provider'        => $this->provider,
+            'status'          => $this->status,
+            'statusLabel'     => $this->getStatusLabel(),
+            'direction'       => $this->organization_id === $request->user()->organization_id ? 'outgoing' : 'incoming',
+            'counterparty'    => $this->counterparty?->name ?? '—',
+            'source'          => [
+                'type' => $this->source_type,
+                'id'   => $this->source_id,
+            ],
+            'sentAt'          => $this->sent_at?->toISOString(),
+            'deliveredAt'     => $this->delivered_at?->toISOString(),
+            'signedAt'        => $this->signed_at?->toISOString(),
+            'lastSyncedAt'    => $this->last_synced_at?->toISOString(),
+            'canRetry'        => in_array($this->status, ['rejected', 'unknown'], true),
+            'canDownload'     => $this->payload_attachment_id !== null,
+            'pdfUrl'          => $this->payload_attachment_id ? "/api/attachments/{$this->payloadAttachment->uuid}/download" : null,
         ];
+    }
+
+    private function getTypeLabel(): string
+    {
+        return match ($this->document_type) {
+            'upd_sf' => 'УПД (СЧФ)',
+            'invoice' => 'Счёт-фактура',
+            'act_works' => 'Акт выполненных работ',
+            'power_of_attorney' => 'Доверенность',
+            'nonformalized' => 'Неформализованный документ',
+            default => $this->document_type,
+        };
+    }
+
+    private function getStatusLabel(): string
+    {
+        return match ($this->status) {
+            'draft' => 'Черновик',
+            'sended' => 'Отправлен',
+            'delivered' => 'Доставлен',
+            'signed' => 'Подписан',
+            'rejected' => 'Отклонен',
+            'unknown' => 'Неизвестно',
+            default => $this->status,
+        };
     }
 }
