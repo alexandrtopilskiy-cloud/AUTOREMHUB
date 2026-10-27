@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 /**
  * @property string $name
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 final class VehicleMake extends Entity
 {
+    use HasFactory;
+
     protected function casts(): array
     {
         return [
@@ -20,6 +23,7 @@ final class VehicleMake extends Entity
         ];
     }
 
+    /** @return HasMany<VehicleModel, $this> */
     public function models(): HasMany
     {
         return $this->hasMany(VehicleModel::class);

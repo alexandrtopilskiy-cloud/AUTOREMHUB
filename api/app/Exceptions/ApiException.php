@@ -6,7 +6,7 @@ namespace App\Exceptions;
 
 use RuntimeException;
 
-final class ApiException extends RuntimeException
+class ApiException extends RuntimeException
 {
     public function __construct(
         public readonly int $status,

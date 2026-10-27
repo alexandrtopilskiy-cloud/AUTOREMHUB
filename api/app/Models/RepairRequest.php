@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Edo\EdoDocumentType;
+use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -45,12 +48,15 @@ use Illuminate\Support\Str;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Attachment> $attachments
  * @property-read \Illuminate\Database\Eloquent\Collection<int, DiagnosticReport> $diagnoses
  * @property-read \Illuminate\Database\Eloquent\Collection<int, RequestApproval> $approvals
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, EdoDocument> $edoDocuments
  * @property-read WorkOrder|null $workOrder
  * @property-read Invoice|null $invoice
  * @property-read VehicleAcceptanceAct|null $acceptanceAct
+ * @property-read Organization $customerOrganization
  */
 final class RepairRequest extends Entity
 {
+    use HasFactory;
     /**
      * @return array<string, string>
      */
@@ -74,94 +80,124 @@ final class RepairRequest extends Entity
         ];
     }
 
+    /** @return BelongsTo<Vehicle, $this> */
     public function vehicleRecord(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class, 'vehicle_id');
     }
 
+    /** @return BelongsTo<VehicleContact, $this> */
     public function contactRecord(): BelongsTo
     {
         return $this->belongsTo(VehicleContact::class, 'contact_id');
     }
 
+    /** @return BelongsTo<VehicleContact, $this> */
     public function driverRecord(): BelongsTo
     {
         return $this->belongsTo(VehicleContact::class, 'driver_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** @return BelongsTo<Station, $this> */
     public function stationRecord(): BelongsTo
     {
         return $this->belongsTo(Station::class, 'assigned_station_id');
     }
 
+    /** @return BelongsTo<ServiceReason, $this> */
     public function reasonRecord(): BelongsTo
     {
         return $this->belongsTo(ServiceReason::class, 'reason_id');
     }
 
+    /** @return BelongsTo<ServiceReason, $this> */
     public function reasonSubtype(): BelongsTo
     {
         return $this->belongsTo(ServiceReason::class, 'reason_subtype_id');
     }
 
+    /** @return HasMany<RequestWork, $this> */
     public function workLines(): HasMany
     {
         return $this->hasMany(RequestWork::class);
     }
 
+    /** @return HasMany<RequestPart, $this> */
     public function parts(): HasMany
     {
         return $this->hasMany(RequestPart::class);
     }
 
+    /** @return HasMany<RequestEvent, $this> */
     public function events(): HasMany
     {
         return $this->hasMany(RequestEvent::class)->orderBy('id');
     }
 
+    /** @return HasMany<RequestStatusPeriod, $this> */
     public function periods(): HasMany
     {
         return $this->hasMany(RequestStatusPeriod::class)->orderBy('id');
     }
 
+    /** @return HasMany<Attachment, $this> */
     public function attachments(): HasMany
     {
         return $this->hasMany(Attachment::class);
     }
 
+    /** @return HasOne<RequestChat, $this> */
     public function chat(): HasOne
     {
         return $this->hasOne(RequestChat::class);
     }
 
+    /** @return HasMany<DiagnosticReport, $this> */
     public function diagnoses(): HasMany
     {
         return $this->hasMany(DiagnosticReport::class)->orderBy('id');
     }
 
+    /** @return HasMany<RequestApproval, $this> */
     public function approvals(): HasMany
     {
         return $this->hasMany(RequestApproval::class)->orderBy('id');
     }
 
+    /** @return HasOne<WorkOrder, $this> */
     public function workOrder(): HasOne
     {
         return $this->hasOne(WorkOrder::class);
     }
 
+    /** @return HasOne<Invoice, $this> */
     public function invoice(): HasOne
     {
         return $this->hasOne(Invoice::class);
     }
 
+    /** @return HasOne<VehicleAcceptanceAct, $this> */
     public function acceptanceAct(): HasOne
     {
         return $this->hasOne(VehicleAcceptanceAct::class);
+    }
+
+    /** @return BelongsTo<Organization, $this> */
+    public function customerOrganization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class, 'customer_organization_id');
+    }
+
+    public function ukOrganization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class, 'tenant_id', 'tenant_id')
+            ->where('kind', OrganizationKind::Manager);
     }
 
     public static function forUser(User $user): Builder
@@ -262,5 +298,19 @@ final class RepairRequest extends Entity
         }
 
         return $query->firstOrFail();
+    }
+
+    public function edoDocuments(): HasMany
+    {
+        return $this->hasMany(EdoDocument::class, 'source_id')
+            ->where('source_type', self::class);
+    }
+
+    public function edoDocument(EdoDocumentType $type): ?EdoDocument
+    {
+        return $this->edoDocuments()
+            ->where('document_type', $type->value)
+            ->latest('id')
+            ->first();
     }
 }

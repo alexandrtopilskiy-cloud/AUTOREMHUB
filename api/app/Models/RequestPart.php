@@ -8,13 +8,21 @@ use App\Enums\RequestPartStatus;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property int|null $catalog_part_id
+ * @property int|null $supplier_id
+ * @property string $name
+ * @property string $article
+ * @property string $unit
  * @property string $quantity
  * @property string $price
- * @property string $returned_quantity
- * @property string $unit
- * @property int|null $catalog_part_id
+ * @property string $manufacturer_snapshot
+ * @property string|null $purchase_price
+ * @property \App\Enums\RequestPartStatus $status
  * @property int|null $approved_version
- * @property RequestPartStatus $status
+ * @property string $returned_quantity
+ *
+ * @property-read CatalogPart|null $catalogPart
+ * @property-read Supplier|null $supplier
  */
 final class RequestPart extends Entity
 {
@@ -33,8 +41,15 @@ final class RequestPart extends Entity
         ];
     }
 
+    /** @return BelongsTo<CatalogPart, $this> */
     public function catalogPart(): BelongsTo
     {
         return $this->belongsTo(CatalogPart::class);
+    }
+
+    /** @return BelongsTo<Supplier, $this> */
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'supplier_id');
     }
 }

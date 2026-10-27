@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Http\Middleware;
@@ -16,25 +17,24 @@ final class EnsureJsonBody
 
     public function handle(Request $request, Closure $next): Response
     {
+        // 1. OPTIONS всегда пропускаем
         if ($request->isMethod('OPTIONS')) {
             return $next($request);
         }
 
+        // 2. Загрузка файлов (multipart) пропускаем
         if ($this->isMultipartUpload($request)) {
             return $next($request);
         }
 
-        if (in_array($request->method(), ['POST', 'PATCH'], true) && $request->getContent() !== '') {
+        // 3. Проверяем только POST/PATCH с непустым телом
+        if ($this->requiresJsonValidation($request)) {
             $this->validateJsonBody($request);
         }
 
         return $next($request);
     }
 
-    /**
-     * Multipart/form-data — это загрузка файлов, а не JSON.
-     * Покрывает вложения заявок и импорт XLSX/CSV и т.п.
-     */
     private function isMultipartUpload(Request $request): bool
     {
         if (!$request->isMethod('POST')) {
@@ -42,13 +42,18 @@ final class EnsureJsonBody
         }
 
         $contentType = strtolower((string) $request->header('Content-Type'));
-
         if (str_starts_with($contentType, 'multipart/form-data')) {
             return true;
         }
 
-        // Страховка: Content-Type мог быть переопределён, но файлы реально пришли
-        return !empty($request->allFiles());
+        // Страховка: если Content-Type переопределен, но файлы реально пришли
+        return $request->files->count() > 0;
+    }
+
+    private function requiresJsonValidation(Request $request): bool
+    {
+        return in_array($request->method(), ['POST', 'PATCH'], true)
+        && $request->getContent() !== '';
     }
 
     private function validateJsonBody(Request $request): void
@@ -64,6 +69,11 @@ final class EnsureJsonBody
         }
 
         $body = $this->decodeJson($content);
+
+        // Разрешаем пустой массив [] — эквивалент пустого тела
+        if ($body === []) {
+            return;
+        }
 
         if (!$body instanceof stdClass) {
             throw new ApiException(422, 'VALIDATION_ERROR', 'Тело запроса должно быть JSON-объектом');

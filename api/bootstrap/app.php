@@ -2,21 +2,18 @@
 
 declare(strict_types = 1);
 
+use App\Console\Commands\Edo\EdoRuSmokeCommand;
+use App\Console\Commands\Edo\RegisterEdoOrganizationCommand;
 use App\Exceptions\ApiErrorRenderer;
 use App\Exceptions\ApiException;
 use App\Http\Middleware\ApiHeaders;
-use App\Http\Middleware\EnsureApiUser;
 use App\Http\Middleware\EnsureJsonBody;
 use App\Http\Middleware\EnsureLoginOrigin;
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schedule;
 
 return Application::configure(basePath: dirname(__DIR__))
 
@@ -25,21 +22,27 @@ return Application::configure(basePath: dirname(__DIR__))
  ──────────────────────────────────────────────────────────── */
 
     ->withRouting(
-        web: __DIR__ . '/../routes/web.php',
+        api: __DIR__ . '/../routes/api.php',
         commands: __DIR__ . '/../routes/console.php',
+        apiPrefix: 'api',
     )
+
+    ->withCommands([
+        RegisterEdoOrganizationCommand::class,
+        EdoRuSmokeCommand::class,
+    ])
 
 /* ────────────────────────────────────────────────────────────
  | Middleware
  ──────────────────────────────────────────────────────────── */
 
     ->withMiddleware(function (Middleware $middleware): void {
-        // Login не имеет предварительного токена. Origin проверяется
-        // отдельным middleware EnsureLoginOrigin.
-        $middleware->preventRequestForgery(except: ['api/*']);
+        // API — только Bearer-токены. CSRF не применяется.
+        $middleware->preventRequestForgery();
 
         $middleware->redirectGuestsTo(null);
 
+        // Ставит Cache-Control и X-Content-Type-Options для /api/*.
         $middleware->append(ApiHeaders::class);
 
         // Пустая строка значит «очистить поле». Для API это допустимо.
@@ -51,9 +54,12 @@ return Application::configure(basePath: dirname(__DIR__))
             except: [static fn (Request $request) => $request->is('api/*')],
         );
 
+        // JSON-контракт API применяется ко всем маршрутам api-группы.
+        $middleware->api(prepend: [
+            EnsureJsonBody::class,
+        ]);
+
         $middleware->alias([
-            'api.user'     => EnsureApiUser::class,
-            'api.json'     => EnsureJsonBody::class,
             'login.origin' => EnsureLoginOrigin::class,
         ]);
     })
@@ -75,8 +81,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
-            Log::error('render called', ['exception' => get_class($e), 'status' => $e instanceof HttpExceptionInterface ? $e->getStatusCode() : null]);
-
             return ApiErrorRenderer::render($e, $request);
         });
 
@@ -87,6 +91,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return $response;
         });
+    })
+
+    ->withSchedule(function (Schedule $schedule): void {
+        $schedule->command('edo:sync-status')->everyFiveMinutes()->withoutOverlapping();
+        $schedule->command('edo:pull-events')->everyMinute()->withoutOverlapping();
     })
 
     ->create();

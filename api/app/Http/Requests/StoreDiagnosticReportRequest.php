@@ -4,25 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
-use Illuminate\Foundation\Http\FormRequest;
-
-final class StoreDiagnosticReportRequest extends FormRequest
+final class StoreDiagnosticReportRequest extends ApiValidationRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    /**
-     * @return array<string, array<int, string>>
-     */
     public function rules(): array
     {
         return [
             'revision'        => ['required', 'integer'],
-            'conclusion'      => ['required', 'string', 'max:20000'],
-            'attachmentIds'   => ['present', 'array', 'list', 'max:20'],
-            'attachmentIds.*' => ['uuid'],
+            'conclusion'      => ['required', 'string', 'max:10000'],
+            'attachmentIds'   => ['sometimes', 'array', 'list', 'max:20'],
+            'attachmentIds.*' => ['required', 'uuid'],
         ];
     }
 }

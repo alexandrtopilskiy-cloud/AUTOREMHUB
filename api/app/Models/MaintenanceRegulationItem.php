@@ -7,7 +7,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property int $maintenance_regulation_id
+ * @property int $work_type_id
+ * @property int|null $time_norm_id
  * @property string $quantity
+ *
+ * @property-read WorkType $workType
+ * @property-read TimeNorm|null $timeNorm
  */
 final class MaintenanceRegulationItem extends Entity
 {
@@ -21,11 +27,13 @@ final class MaintenanceRegulationItem extends Entity
         ];
     }
 
+    /** @return BelongsTo<WorkType, $this> */
     public function workType(): BelongsTo
     {
         return $this->belongsTo(WorkType::class);
     }
 
+    /** @return BelongsTo<TimeNorm, $this> */
     public function timeNorm(): BelongsTo
     {
         return $this->belongsTo(TimeNorm::class);

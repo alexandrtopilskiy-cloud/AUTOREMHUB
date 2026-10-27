@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\AttachmentMime;
 use App\Enums\AttachmentPurpose;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 /**
  * @property int $size
@@ -14,6 +15,8 @@ use App\Enums\AttachmentPurpose;
  */
 final class Attachment extends Entity
 {
+    use HasFactory;
+
     /**
      * @return array<string, string>
      */

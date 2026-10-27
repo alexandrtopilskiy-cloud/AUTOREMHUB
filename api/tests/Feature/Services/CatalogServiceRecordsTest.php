@@ -23,12 +23,9 @@ use Tests\TestCase;
  * Characterization-тест для CatalogService::records().
  *
  * Проверяет, какие сущности видит каждая роль:
- *   - station  → пусто
+ *   - station  → только parts (+ partManufacturers, если есть)
  *   - customer → только свои vehicle + organizationPerson + pending approvals
  *   - manager  → всё в тенанте: stations, customers, справочники
- *
- * Пока в проекте нет enum'ов — работает со строками.
- * После этапа 0 — переписать на enum-версию.
  */
 final class CatalogServiceRecordsTest extends TestCase
 {
@@ -122,11 +119,32 @@ final class CatalogServiceRecordsTest extends TestCase
         ]);
     }
 
-    public function test_station_gets_shared_parts_and_suppliers(): void
+    /**
+     * Characterization-тест для CatalogService::records().
+     *
+     * Проверяет, какие сущности видит каждая роль:
+     *   - station  → parts + suppliers + partManufacturers
+     *   - customer → только свои vehicle + organizationPerson + pending approvals
+     *   - manager  → всё в тенанте: stations, customers, справочники
+     */
+    public function test_station_sees_parts_and_suppliers(): void
     {
         $records = $this->service()->records($this->station);
 
-        $this->assertEqualsCanonicalizing(['parts', 'suppliers'], array_unique(array_column($records, 'kind')));
+        $kinds = array_values(array_unique(array_column($records, 'kind')));
+
+        sort($kinds);
+        $this->assertSame(['parts', 'suppliers'], $kinds);
+
+        // parts содержат article, suppliers — нет
+        $partArticles = array_column(
+            array_filter(
+                $records,
+                static fn (array $row): bool => $row['kind'] === 'parts',
+            ),
+            'article',
+        );
+        $this->assertContains('F-1', $partArticles);
     }
 
     public function test_customer_sees_only_own_vehicles_and_people(): void

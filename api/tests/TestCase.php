@@ -142,4 +142,48 @@ abstract class TestCase extends BaseTestCase
             json_encode((object) $body, JSON_THROW_ON_ERROR),
         );
     }
+
+    /**
+     * Формирует HTTP-ответ в кодировке ЭДО.Поток (Windows-1251).
+     *
+     * Возвращаемый тип — PromiseInterface, потому что Http::response()
+     * возвращает именно его. Тип Illuminate\Http\Client\Response здесь
+     * невозможен (это уже результат выполнения запроса, не «заготовка»).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return \GuzzleHttp\Promise\PromiseInterface
+     */
+    protected function edoRuResponse(array $payload, int $status = 200): \GuzzleHttp\Promise\PromiseInterface
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+
+        return \Illuminate\Support\Facades\Http::response(
+            mb_convert_encoding($json, 'windows-1251', 'UTF-8'),
+            $status,
+        );
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $edoProvider = env('EDO_PROVIDER', 'sberkorus');
+
+        // Принудительно применяем конфиг
+        config(['edo.default' => $edoProvider]);
+
+        // Подставляем фейковые ключи, чтобы провайдеры не падали на инициализации
+        if ($edoProvider === 'sberkorus') {
+            config([
+                'edo.providers.sberkorus.username' => 'test-user',
+                'edo.providers.sberkorus.password' => 'test-password',
+                'edo.providers.sberkorus.api_key'  => 'test-api-key',
+            ]);
+        } elseif ($edoProvider === 'edoru') {
+            config([
+                'edo.providers.edoru.client_id' => 'test-client',
+                'edo.providers.edoru.password'  => 'test-password',
+            ]);
+        }
+    }
 }

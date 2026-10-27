@@ -8,6 +8,7 @@ use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Models\Attachment;
 use App\Models\PartMovement;
+use App\Models\Recommendation;
 use App\Models\RepairRequest;
 use App\Models\RequestStatusPeriod;
 use App\Models\Supplier;
@@ -24,8 +25,7 @@ final class ApiPresenter
 
     public function __construct(
         private readonly RepairRequestCalculator $repairRequestCalculator,
-    ) {
-    }
+    ) {}
 
     /* ─────────────────── Публичный API ─────────────────── */
 
@@ -37,7 +37,7 @@ final class ApiPresenter
         if ($vehicleIds === []) {
             return;
         }
-        foreach (\App\Models\Recommendation::forUser($user)->whereIn('vehicle_id', $vehicleIds)->orderByDesc('id')->get(['vehicle_id', 'uuid', 'number']) as $doc) {
+        foreach (Recommendation::forUser($user)->whereIn('vehicle_id', $vehicleIds)->orderByDesc('id')->get(['vehicle_id', 'uuid', 'number']) as $doc) {
             $this->recommendationSummaries[$doc->vehicle_id][] = ['id' => $doc->uuid, 'number' => $doc->number];
         }
     }
@@ -48,7 +48,7 @@ final class ApiPresenter
             return [];
         }
         return $this->recommendationSummaries[$request->vehicle_id]
-            ?? \App\Models\Recommendation::forUser($user)->where('vehicle_id', $request->vehicle_id)->orderByDesc('id')->get(['uuid', 'number'])->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])->all();
+            ?? Recommendation::forUser($user)->where('vehicle_id', $request->vehicle_id)->orderByDesc('id')->get(['uuid', 'number'])->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])->all();
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -35,6 +36,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 final class Vehicle extends Entity
 {
+    use HasFactory;
+
     /**
      * Соответствие латинских букв, визуально совпадающих с кириллицей.
      * Используется при нормализации госномеров, чтобы A и А, B и В и т.д.

@@ -109,8 +109,6 @@ final class RepairRequestTransitionTargetTest extends TestCase
 
     public function test_manager_correction_with_next_goes_to_customer(): void
     {
-        // 0.37.1: направление выбирает УК; правка сметы УК сама по себе
-        // не возвращает заявку в СТО (для этого есть явный «Вернуть»).
         $request = $this->managerRequest('station_changes', 5, 4);
 
         $this->assertSame(

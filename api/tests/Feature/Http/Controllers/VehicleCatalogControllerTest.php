@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature\Http\Controllers;
 
 use App\Models\Organization;
-use App\Models\OrganizationPerson;
-use App\Models\RequestNotification;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -14,7 +12,6 @@ use App\Models\VehicleChangeRequest;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
 use App\Services\ReferenceSeeder;
-use App\Services\VehicleReferenceService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -42,6 +39,7 @@ final class VehicleCatalogControllerTest extends TestCase
     private User $customer;
     private User $manager;
     private User $station;
+    private VehicleMake $vehicleMake;
     private VehicleModel $vehicleModel;
 
     protected function setUp(): void
@@ -74,18 +72,9 @@ final class VehicleCatalogControllerTest extends TestCase
 
         app(ReferenceSeeder::class)->seed($this->tenant->id);
 
-        // С 0.37.x карточка ТС создаётся только с выбранным техническим
-        // вариантом внутреннего справочника (vehicleModelId обязателен).
-        $make = VehicleMake::query()->create([
-            'name'            => 'Lada',
-            'normalized_name' => VehicleReferenceService::normalizeName('Lada'),
-        ]);
-        $this->vehicleModel = VehicleModel::query()->create([
-            'vehicle_make_id' => $make->id,
-            'name'            => 'Vesta',
-            'normalized_name' => VehicleReferenceService::normalizeName('Vesta'),
-            'engine_index'    => '',
-            'fingerprint'     => 'fp-' . Str::uuid(),
+        $this->vehicleMake = VehicleMake::factory()->create();
+        $this->vehicleModel = VehicleModel::factory()->create([
+            'vehicle_make_id' => $this->vehicleMake->id,
         ]);
     }
 
@@ -420,13 +409,13 @@ final class VehicleCatalogControllerTest extends TestCase
         return [
             'make'             => 'Lada',
             'model'            => 'Vesta',
-            'vehicleModelId'   => $this->vehicleModel->uuid,
             'vin'              => 'XTA00000000000001',
             'plate'            => 'А001АА77',
             'year'             => 2025,
             'organizationId'   => $this->customerOrg->uuid,
             'contactPersonIds' => [],
             'driverPersonIds'  => [],
+            'vehicleModelId'   => $this->vehicleModel->uuid,
         ];
     }
 

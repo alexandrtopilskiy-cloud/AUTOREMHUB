@@ -9,8 +9,10 @@ use App\Models\CatalogChangeEvent;
 use App\Models\CatalogPart;
 use App\Models\Organization;
 use App\Models\OrganizationPerson;
+use App\Models\PartManufacturer;
 use App\Models\ServiceReason;
 use App\Models\Station;
+use App\Models\Supplier;
 use App\Models\Tenant;
 use App\Models\TimeNorm;
 use App\Models\User;
@@ -363,15 +365,29 @@ final class CatalogControllerTest extends TestCase
     public function test_store_creates_catalog_part(): void
     {
         $this->actingAs($this->manager);
+
+        // ПАДАЕТ когда вызывается фабрика
+        $manufacturer = PartManufacturer::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'status'    => 'approved',
+            'active'    => true,
+        ]);
+
+        $supplier = Supplier::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'active'    => true,
+        ]);
+
         $this->postJson('/api/catalogs/parts', [
             'record' => [
-                'name'         => 'Масляный фильтр',
-                'article'      => 'OF-1',
-                'manufacturerId' => $this->partReferences()['manufacturerId'],
-                'supplierId' => $this->partReferences()['supplierId'],
-                'purchasePrice' => 100, 'salePrice' => 150,
-                'unit'         => 'шт.',
-                'active'       => true,
+                'name'           => 'Масляный фильтр',
+                'article'        => 'OF-1',
+                'unit'           => 'шт.',
+                'active'         => true,
+                'manufacturerId' => $manufacturer->uuid,
+                'supplierId'     => $supplier->uuid,
+                'purchasePrice'  => 100.00,
+                'salePrice'      => 150.00,
             ],
         ])->assertCreated();
 
@@ -629,11 +645,27 @@ final class CatalogControllerTest extends TestCase
     {
         $this->partReferences();
         $this->actingAs($this->manager);
+
+        // Производитель и поставщик, чьи имена — точно как в XLSX.
+        PartManufacturer::factory()
+            ->named('Bosch')
+            ->create([
+                'tenant_id' => $this->tenant->id,
+                'status'    => 'approved',
+                'active'    => true,
+            ]);
+
+        Supplier::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'name'      => 'Поставщик',
+            'active'    => true,
+        ]);
+
         $file = UploadedFile::fake()->createWithContent(
             'parts.xlsx',
             $this->xlsx([
                 ['Наименование', 'Артикул', 'Производитель', 'Поставщик', 'Цена закупа', 'Цена реализации', 'Единица измерения', 'Активна'],
-                ['Масляный фильтр', 'OF-100', 'Тест', 'Поставщик теста', '100', '150', 'шт.', 'Да'],
+                ['Масляный фильтр', 'OF-100', 'Bosch', 'Поставщик', '100.00', '150.00', 'шт.', 'Да'],
             ]),
         );
 
@@ -653,23 +685,39 @@ final class CatalogControllerTest extends TestCase
 
     public function test_generic_import_is_atomic_and_reports_excel_cell(): void
     {
-        $this->partReferences();
+        $this->actingAs($this->manager);
+
+        // Производитель и поставщик — обязательно, иначе первая же строка
+        // упадёт по конфликту, и мы не дойдём до проверки дубликата.
+        PartManufacturer::factory()->create([
+            'tenant_id'       => $this->tenant->id,
+            'name'            => 'Bosch',
+            'normalized_name' => 'bosch',
+            'status'          => 'approved',
+            'active'          => true,
+        ]);
+
+        Supplier::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'name'      => 'Поставщик',
+            'active'    => true,
+        ]);
+
         CatalogPart::query()->create([
             'tenant_id'    => $this->tenant->id,
             'name'         => 'Существующий фильтр',
             'article'      => 'DUP-1',
-            'manufacturer' => 'Тест',
+            'manufacturer' => 'Bosch',
             'unit'         => 'шт.',
             'active'       => true,
         ]);
 
-        $this->actingAs($this->manager);
         $file = UploadedFile::fake()->createWithContent(
             'parts.xlsx',
             $this->xlsx([
                 ['Наименование', 'Артикул', 'Производитель', 'Поставщик', 'Цена закупа', 'Цена реализации', 'Единица измерения', 'Активна'],
-                ['Новая запись', 'NEW-1', 'Тест', 'Поставщик теста', '100', '150', 'шт.', 'Да'],
-                ['Дубликат', 'DUP-1', 'Тест', 'Поставщик теста', '100', '150', 'шт.', 'Да'],
+                ['Новая запись', 'NEW-1', 'Bosch', 'Поставщик', '100.00', '150.00', 'шт.', 'Да'],
+                ['Дубликат', 'DUP-1', 'Bosch', 'Поставщик', '100.00', '150.00', 'шт.', 'Да'],
             ]),
         );
 

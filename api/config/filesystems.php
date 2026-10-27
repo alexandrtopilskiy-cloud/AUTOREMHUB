@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'default' => env('FILESYSTEM_DISK', 'media'),
-
     'disks' => [
         /**
          * Локальный диск для вложений заявок.

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UpdateRepairRequestDto;
 use App\Enums\RepairStage;
 use App\Exceptions\ApiException;
 use App\Models\CatalogPart;
 use App\Models\Organization;
 use App\Models\PartManufacturer;
-use App\Models\Recommendation;
 use App\Models\RecommendationItem;
 use App\Models\RepairRequest;
 use App\Models\RequestPart;
@@ -27,7 +27,6 @@ use App\Models\VehicleGeneration;
 use App\Models\VehicleEngineVariant;
 use App\Models\VehicleTransmissionType;
 use App\Services\CatalogService;
-use App\Services\DocumentLockService;
 use App\Services\RecommendationService;
 use App\Services\RepairRequestService;
 use App\Support\ApiPresenter;
@@ -52,54 +51,184 @@ final class SupplierAndRecommendationsTest extends TestCase
     {
         parent::setUp();
         $tenant = Tenant::query()->create(['name' => 'Recommendations test']);
-        foreach (['manager', 'customer', 'station'] as $role) {
-            $org = Organization::query()->create(['tenant_id' => $tenant->id, 'kind' => $role, 'name' => $role]);
-            $this->{$role} = User::query()->create(['organization_id' => $org->id, 'display_name' => 'Иван ' . $role, 'login' => $role . Str::random(8), 'password' => bcrypt('test'), 'role' => $role, 'active' => true]);
+
+        $roles = ['manager', 'customer', 'station'];
+        foreach ($roles as $role) {
+            $orgData = [
+                'tenant_id' => $tenant->id,
+                'kind' => $role,
+                'name' => $role,
+            ];
+            $org = Organization::query()->create($orgData);
+            $userData = [
+                'organization_id' => $org->id,
+                'display_name' => 'Иван ' . $role,
+                'login' => $role . Str::random(8),
+                'password' => bcrypt('test'),
+                'role' => $role,
+                'active' => true,
+            ];
+            $this->{$role} = User::query()->create($userData);
         }
-        $this->vehicle = Vehicle::query()->create(['tenant_id' => $tenant->id, 'organization_id' => $this->customer->organization_id, 'name' => 'Test Car', 'make' => 'Test', 'model' => 'Car', 'vin' => 'TESTVIN1234567890', 'plate' => 'A111AA78', 'plate_normalized' => 'A111AA78', 'labor_hour_rate' => 1000]);
-        $station = Station::query()->create(['tenant_id' => $tenant->id, 'organization_id' => $this->station->organization_id, 'name' => 'Station']);
-        $this->request = RepairRequest::query()->create(['public_id' => (string) Str::uuid(), 'tenant_id' => $tenant->id, 'customer_organization_id' => $this->customer->organization_id, 'created_by' => $this->customer->id, 'vehicle_id' => $this->vehicle->id, 'assigned_station_id' => $station->id, 'stage' => RepairStage::ManagerRouting, 'revision' => 0, 'data' => ['mileage' => '1000', 'laborRateType' => 'general'], 'works' => [], 'history' => []]);
-        RequestStatusPeriod::query()->create(['repair_request_id' => $this->request->id, 'stage' => 1, 'entered_at' => now(), 'actor_id' => $this->manager->id]);
-        $this->supplier = Supplier::query()->create(['tenant_id' => $tenant->id, 'name' => 'Supplier', 'active' => true]);
-        $this->catalog = CatalogPart::query()->create(['tenant_id' => $tenant->id, 'name' => 'Filter', 'article' => 'F-1', 'unit' => 'шт.', 'manufacturer' => 'Test', 'supplier_id' => $this->supplier->id, 'sale_price' => 200, 'active' => true]);
+
+        $vehicleData = [
+            'tenant_id' => $tenant->id,
+            'organization_id' => $this->customer->organization_id,
+            'name' => 'Test Car',
+            'make' => 'Test',
+            'model' => 'Car',
+            'vin' => 'TESTVIN1234567890',
+            'plate' => 'A111AA78',
+            'plate_normalized' => 'A111AA78',
+            'labor_hour_rate' => 1000,
+        ];
+        $this->vehicle = Vehicle::query()->create($vehicleData);
+
+        $stationData = [
+            'tenant_id' => $tenant->id,
+            'organization_id' => $this->station->organization_id,
+            'name' => 'Station',
+        ];
+        $station = Station::query()->create($stationData);
+
+        $requestData = [
+            'public_id' => (string)Str::uuid(),
+            'tenant_id' => $tenant->id,
+            'customer_organization_id' => $this->customer->organization_id,
+            'created_by' => $this->customer->id,
+            'vehicle_id' => $this->vehicle->id,
+            'assigned_station_id' => $station->id,
+            'stage' => RepairStage::ManagerRouting,
+            'revision' => 0,
+            'data' => [
+                'mileage' => '1000',
+                'laborRateType' => 'general'
+            ],
+            'works' => [],
+            'history' => [],
+        ];
+        $this->request = RepairRequest::query()->create($requestData);
+
+        $requestedPeriodData = [
+            'repair_request_id' => $this->request->id,
+            'stage' => 1,
+            'entered_at' => now(),
+            'actor_id' => $this->manager->id,
+        ];
+        RequestStatusPeriod::query()->create($requestedPeriodData);
+
+        $supplierData = [
+            'tenant_id' => $tenant->id,
+            'name' => 'Supplier',
+            'active' => true,
+        ];
+        $this->supplier = Supplier::query()->create($supplierData);
+
+        $catalogData = [
+            'tenant_id' => $tenant->id,
+            'name' => 'Filter',
+            'article' => 'F-1',
+            'unit' => 'шт.',
+            'manufacturer' => 'Test',
+            'supplier_id' => $this->supplier->id,
+            'sale_price' => 200,
+            'active' => true,
+        ];
+        $this->catalog = CatalogPart::query()->create($catalogData);
     }
 
     private function work(): RequestWork
     {
-        return RequestWork::query()->create(['repair_request_id' => $this->request->id, 'name' => 'Двигатель - замена масла', 'quantity' => 1, 'price' => 1500, 'hourly_rate' => 1000, 'norm_hours' => 1.5, 'line_amount' => 1500, 'is_maintenance' => true]);
+        $data = [
+            'repair_request_id' => $this->request->id,
+            'name' => 'Двигатель - замена масла',
+            'quantity' => 1,
+            'price' => 1500,
+            'hourly_rate' => 1000,
+            'norm_hours' => 1.5,
+            'line_amount' => 1500,
+            'is_maintenance' => true,
+        ];
+
+        return RequestWork::query()->create($data);
     }
 
     private function part(): RequestPart
     {
-        return RequestPart::query()->create(['repair_request_id' => $this->request->id, 'catalog_part_id' => $this->catalog->id, 'name' => 'Filter', 'article' => 'F-1', 'unit' => 'шт.', 'supplier_id' => $this->supplier->id, 'quantity' => 2, 'price' => 250, 'status' => 'proposed']);
+        $data = [
+            'repair_request_id' => $this->request->id,
+            'catalog_part_id' => $this->catalog->id,
+            'name' => 'Filter',
+            'article' => 'F-1',
+            'unit' => 'шт.',
+            'supplier_id' => $this->supplier->id,
+            'quantity' => 2,
+            'price' => 250,
+            'status' => 'proposed',
+        ];
+        return RequestPart::query()->create($data);
     }
 
     private function partPayload(): array
     {
-        return ['id' => '', 'catalogPartId' => $this->catalog->uuid, 'name' => 'Filter', 'article' => 'F-1', 'unit' => 'шт.', 'supplierId' => $this->supplier->uuid, 'qty' => 2, 'price' => 300];
+        return [
+            'id' => '',
+            'catalogPartId' => $this->catalog->uuid,
+            'name' => 'Filter',
+            'article' => 'F-1',
+            'unit' => 'шт.',
+            'supplierId' => $this->supplier->uuid,
+            'qty' => 2,
+            'price' => 300,
+        ];
     }
-
 
     private function supplierPayload(bool $individual = false): array
     {
-        return ['legalForm' => $individual ? 'ip' : 'ooo', 'name' => $individual ? 'ИП Иванов' : 'ООО Поставщик',
-            'taxId' => $individual ? '500100732259' : '7707083893', 'ogrn' => $individual ? '304500116000157' : '1027700132195',
-            'kpp' => $individual ? '' : '773601001', 'registrationDate' => '2020-01-15',
-            'lastName' => $individual ? 'Иванов' : '', 'firstName' => $individual ? 'Иван' : '',
+        return [
+            'legalForm' => $individual ? 'ip' : 'ooo',
+            'name' => $individual ? 'ИП Иванов' : 'ООО Поставщик',
+            'taxId' => $individual ? '500100732259' : '7707083893',
+            'ogrn' => $individual ? '304500116000157' : '1027700132195',
+            'kpp' => $individual ? '' : '773601001',
+            'registrationDate' => '2020-01-15',
+            'lastName' => $individual ? 'Иванов' : '',
+            'firstName' => $individual ? 'Иван' : '',
             'directorName' => $individual ? '' : 'Иванов Иван Иванович',
-            'legalAddress' => 'Москва', 'actualAddress' => 'Москва', 'postalAddress' => 'Москва',
-            'bankName' => 'Банк', 'bik' => '044525225', 'settlementAccount' => '40702810900000002851',
-            'correspondentAccount' => '30101810400000000225', 'taxRegime' => 'ОСНО', 'vatRate' => 'Без НДС',
-            'contacts' => [['lastName' => 'Иванов', 'firstName' => 'Иван', 'phone' => '+7 (999) 123 45 67', 'email' => '']]];
+            'legalAddress' => 'Москва',
+            'actualAddress' => 'Москва',
+            'postalAddress' => 'Москва',
+            'bankName' => 'Банк',
+            'bik' => '044525225',
+            'settlementAccount' => '40702810900000002851',
+            'correspondentAccount' => '30101810400000000225',
+            'taxRegime' => 'ОСНО',
+            'vatRate' => 'Без НДС',
+            'contacts' => [[
+                'lastName' => 'Иванов',
+                'firstName' => 'Иван',
+                'phone' => '+7 (999) 123 45 67',
+                'email' => '',
+            ]]
+        ];
     }
 
     public function test_manager_creates_full_supplier_and_station_can_select_it(): void
     {
-        $this->actingAs($this->manager)->postJson('/api/catalogs/suppliers', ['record' => $this->supplierPayload()])->assertCreated()->assertJsonPath('record.legalForm', 'ooo');
-        $supplier = Supplier::query()->where('tax_id', '7707083893')->firstOrFail();
+        $this->actingAs($this->manager)
+            ->postJson('/api/catalogs/suppliers', ['record' => $this->supplierPayload()])
+            ->assertCreated()
+            ->assertJsonPath('record.legalForm', 'ooo');
+
+        $supplier = Supplier::query()
+            ->where('tax_id', '7707083893')
+            ->firstOrFail();
+
         $this->assertSame('044525225', $supplier->requisites['bik']);
         $this->assertCount(1, $supplier->contacts);
+
         $reference = app(CatalogService::class)->reference($this->station);
+
         $this->assertContains($supplier->uuid, array_column($reference['suppliers'], 'id'));
     }
 
@@ -107,8 +236,11 @@ final class SupplierAndRecommendationsTest extends TestCase
     {
         $service = app(CatalogService::class);
         $supplier = $service->create($this->station, 'suppliers', $this->supplierPayload(true));
+
         $this->assertTrue($supplier['permissions']['canEdit']);
+
         $saved = $service->update($this->station, $supplier['id'], ['name' => 'ИП Иванов Иван']);
+
         $this->assertSame('ИП Иванов Иван', $saved['name']);
         $this->assertContains($supplier['id'], array_column($service->records($this->station), 'id'));
     }
@@ -118,29 +250,57 @@ final class SupplierAndRecommendationsTest extends TestCase
         $payload = $this->supplierPayload(true);
         $payload['taxId'] = '7707083893';
         $payload['settlementAccount'] = '123';
-        $this->actingAs($this->station)->postJson('/api/catalogs/suppliers', ['record' => $payload])->assertUnprocessable();
+
+        $this->actingAs($this->station)
+            ->postJson('/api/catalogs/suppliers', ['record' => $payload])
+            ->assertUnprocessable();
         $this->assertSame(0, Supplier::query()->where('legal_form', 'ip')->count());
     }
 
     public function test_customer_cannot_create_suppliers_or_parts(): void
     {
-        $this->actingAs($this->customer)->postJson('/api/catalogs/suppliers', ['record' => $this->supplierPayload()])->assertForbidden();
+        $this->actingAs($this->customer)
+            ->postJson('/api/catalogs/suppliers', ['record' => $this->supplierPayload()])
+            ->assertForbidden();
         $this->postJson('/api/catalogs/parts', ['record' => []])->assertForbidden();
     }
 
     public function test_shared_part_creator_is_organization_and_cannot_be_reassigned(): void
     {
-        $maker = PartManufacturer::query()->create(['tenant_id' => $this->manager->tenantId(), 'name' => 'BOSCH', 'normalized_name' => 'bosch', 'status' => 'approved', 'active' => true]);
-        $payload = ['name' => 'Фильтр', 'article' => 'NEW-1', 'manufacturerId' => $maker->uuid, 'supplierId' => $this->supplier->uuid, 'purchasePrice' => 100.5, 'salePrice' => 200.0, 'unit' => 'шт.', 'active' => true];
+        $makerData = [
+            'tenant_id' => $this->manager->tenantId(),
+            'name' => 'BOSCH',
+            'normalized_name' => 'bosch',
+            'status' => 'approved',
+            'active' => true,
+        ];
+        $maker = PartManufacturer::query()->create($makerData);
+
+        $payload = [
+            'name' => 'Фильтр',
+            'article' => 'NEW-1',
+            'manufacturerId' => $maker->uuid,
+            'supplierId' => $this->supplier->uuid,
+            'purchasePrice' => 100.5,
+            'salePrice' => 200.0,
+            'unit' => 'шт.',
+            'active' => true,
+        ];
+
         $service = app(CatalogService::class);
         $part = $service->create($this->station, 'parts', $payload);
+
         $this->assertSame($this->station->organization->name, $part['createdByOrganization']);
         $this->assertTrue($part['permissions']['canEdit']);
+
         $updated = $service->update($this->manager, $part['id'], ['salePrice' => 350.0]);
+
         $this->assertSame(350.0, $updated['salePrice']);
         $this->assertSame($part['createdByOrganization'], $updated['createdByOrganization']);
         $this->assertContains($part['id'], array_column($service->reference($this->station)['parts'], 'id'));
-        $this->actingAs($this->manager)->patchJson('/api/catalogs/' . $part['id'], ['patch' => ['createdByOrganization' => 'Подмена']])->assertUnprocessable();
+        $this->actingAs($this->manager)
+            ->patchJson('/api/catalogs/' . $part['id'], ['patch' => ['createdByOrganization' => 'Подмена']])
+            ->assertUnprocessable();
     }
 
     public function test_customer_document_and_recommendations_hide_supplier_and_purchase_price(): void
@@ -148,9 +308,11 @@ final class SupplierAndRecommendationsTest extends TestCase
         $part = $this->part();
         $part->update(['purchase_price' => 120.0]);
         $shown = app(ApiPresenter::class)->document($this->request, $this->customer);
+
         $this->assertArrayNotHasKey('supplierId', $shown['parts'][0]);
         $this->assertArrayNotHasKey('supplierName', $shown['parts'][0]);
         $this->assertArrayNotHasKey('purchasePrice', $shown['parts'][0]);
+
         $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [], 'partIds' => [$part->uuid]])['recommendation'];
         $rows = app(RecommendationService::class)->forVehicle($this->customer, $this->vehicle->uuid);
         $this->assertSame($this->vehicle->plate, $rows[0]['plate']);
@@ -222,10 +384,25 @@ final class SupplierAndRecommendationsTest extends TestCase
     public function test_part_snapshot_keeps_original_values_after_catalog_edit(): void
     {
         $service = app(RepairRequestService::class);
-        $this->catalog->update(['manufacturer' => 'Original', 'purchase_price' => 100]);
-        $service->update($this->manager, $this->request->uuid, 0, ['parts' => [$this->partPayload()]]);
-        $this->catalog->update(['manufacturer' => 'Changed', 'purchase_price' => 500]);
+        $this->catalog->update([
+            'manufacturer' => 'Original',
+            'purchase_price' => 100,
+        ]);
+
+        $dto = new UpdateRepairRequestDto(
+            requestKey: $this->request->uuid,
+            revision: 0,
+            rawPatch: [],
+            parts: [$this->partPayload()],
+        );
+        $service->update($this->manager, $dto);
+
+        $this->catalog->update([
+            'manufacturer' => 'Changed',
+            'purchase_price' => 500,
+        ]);
         $shown = app(ApiPresenter::class)->document($this->request->fresh(), $this->manager);
+
         $this->assertSame('Original', $shown['parts'][0]['manufacturer']);
         $this->assertSame(100.0, $shown['parts'][0]['purchasePrice']);
         $this->assertSame(300.0, $shown['parts'][0]['price']);
