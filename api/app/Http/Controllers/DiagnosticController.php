@@ -34,7 +34,7 @@ final class DiagnosticController
             Input::fail('Укажите заключение диагностики');
         }
 
-        $attachmentIds = $request->validated('attachmentIds');
+        $attachmentIds = $request->validated('attachmentIds') ?? [];
 
         $repairRequest = $service->mutate(
             $request->user(),

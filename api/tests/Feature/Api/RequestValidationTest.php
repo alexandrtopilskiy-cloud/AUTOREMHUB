@@ -40,11 +40,14 @@ final class RequestValidationTest extends TestCase
         $date = CarbonImmutable::now()->addDays(2)->format('Y-m-d');
         $request = $this->draft();
 
-        $this->api('PATCH', "/requests/{$request['id']}", [
+        $response = $this->api('PATCH', "/requests/{$request['id']}", [
             'revision' => $request['revision'],
-            'patch'    => ['slot' => "{$date}T{$time}"],
-        ])->assertUnprocessable()
-            ->assertJsonPath('error.fields.slot', $expectedMessage);
+            'slot'     => "{$date}T{$time}",
+        ]);
+
+           $response
+                ->assertUnprocessable()
+                ->assertJsonPath('error.fields.slot', $expectedMessage);
     }
 
     public function test_visit_time_must_be_at_least_30_mins_in_future(): void
@@ -53,8 +56,8 @@ final class RequestValidationTest extends TestCase
         $tooEarly = CarbonImmutable::now()->addMinutes(29);
 
         $this->api('PATCH', "/requests/{$request['id']}", [
-            'revision' => $request['revision'],
-            'patch'    => ['slot' => $tooEarly->format('Y-m-d\TH:i')],
+            'revision'  => $request['revision'],
+            'slot'      => $tooEarly->format('Y-m-d\TH:i'),
         ])->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_ERROR');
     }
 
@@ -65,12 +68,12 @@ final class RequestValidationTest extends TestCase
 
         $this->api('PATCH', "/requests/{$request['id']}", [
             'revision' => $new['revision'],
-            'patch'    => ['works' => []],
+            'works'    => [],
         ])->assertForbidden();
 
         $this->api('PATCH', "/requests/{$request['id']}", [
             'revision' => $new['revision'],
-            'patch'    => ['stage' => 13],
+            'stage'    => 13,
         ])->assertUnprocessable();
     }
 

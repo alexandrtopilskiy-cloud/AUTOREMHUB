@@ -18,6 +18,7 @@ use App\Enums\AttachmentPurpose;
 use App\Enums\InvoiceStatus;
 use App\Enums\PersonKind;
 use App\Enums\RepairStage;
+use App\Enums\ReviewContext;
 use App\Enums\RequestPartStatus;
 use App\Enums\TransitionAction;
 use App\Enums\UserRole;
@@ -96,7 +97,7 @@ final class RepairRequestService
                 'history'                  => [],
                 'stage'                    => RepairStage::Draft,
                 'revision'                 => 0,
-                'review_context'           => ApprovalDecision::ReviewInitial,
+                'review_context'           => ReviewContext::Initial,
                 'review_baseline_version'  => 0,
             ]);
 
@@ -315,7 +316,7 @@ final class RepairRequestService
             'previous_service_at'       => $previous['recordedAt'],
             'stage'                     => RepairStage::Draft,
             'revision'                  => 0,
-            'review_context'            => ApprovalDecision::ReviewInitial,
+            'review_context'            => ReviewContext::Initial,
             'review_baseline_version'   => 0,
         ]);
 
@@ -351,13 +352,13 @@ final class RepairRequestService
         $this->recalculatePlannedCompletion($request);
         if ($restored && $user->role === UserRole::Customer && $request->stage === RepairStage::CustomerApproval) {
             $this->moveToStage($request, $user, RepairStage::ManagerRouting);
-            $this->captureReviewBaseline($request, ApprovalDecision::ReviewInitial);
+            $this->captureReviewBaseline($request, ReviewContext::Initial->value);
         }
     }
 
     public function notifyRecommendationReview(RepairRequest $request, string $role, int $eventId): void
     {
-        if ($role === UserRole::Customer && $request->stage === RepairStage::ManagerRouting) {
+        if ($role === UserRole::Customer->value && $request->stage === RepairStage::ManagerRouting) {
             $dto = NotificationDto::fromRequest(
                 $this->managerUsers($request->tenant_id),
                 $request->id,
@@ -379,7 +380,7 @@ final class RepairRequestService
      */
     public function update(User $user, UpdateRepairRequestDto $dto): RepairRequest
     {
-        if ($dto->rawPatch === []) {
+        if ($dto->isEmpty()) {
             Input::fail('Передайте хотя бы одно изменяемое поле');
         }
 
@@ -1090,10 +1091,10 @@ final class RepairRequestService
         if ($to === RepairStage::ManagerRouting) {
             $this->captureReviewBaseline(
                 $request,
-                $estimateChanged ? ApprovalDecision::ReviewStationChanges->value : ApprovalDecision::ReviewStationDeclined->value,
+                $estimateChanged ? ReviewContext::StationChanges->value : ReviewContext::StationDeclined->value,
             );
         } else {
-            $request->review_context = ApprovalDecision::ReviewInitial;
+            $request->review_context = ReviewContext::Initial;
         }
 
         $this->moveToStage($request, $user, $to);
@@ -1120,7 +1121,7 @@ final class RepairRequestService
                 $this->createApproval($approvalDto);
 
                 if ($to === RepairStage::ManagerRouting) {
-                    $this->notifyManagerReviewRequired($request, $event->id, $dto->decision, $changes);
+                    $this->notifyManagerReviewRequired($request, $event->id, $dto->decision->label(), $changes);
                 } else {
                     $this->notifyCustomerFinalApproval($request, $event->id);
                 }
@@ -1188,7 +1189,7 @@ final class RepairRequestService
         if ($dto->decision === ApprovalDecision::Accepted) {
             $this->approveCurrentEstimate($request);
         } else {
-            $this->captureReviewBaseline($request, ApprovalDecision::ReviewCustomerSlot);
+            $this->captureReviewBaseline($request, ReviewContext::CustomerSlot->value);
         }
 
         $this->moveToStage($request, $user, $to);
@@ -1224,7 +1225,7 @@ final class RepairRequestService
                         RepairRequestWaitingVehicle::dispatch($request);
                     });
                 } else {
-                    $this->notifyManagerReviewRequired($request, $event->id, ApprovalDecision::ReviewCustomerSlot);
+                    $this->notifyManagerReviewRequired($request, $event->id, ReviewContext::CustomerSlot->label());
                 }
             },
         ];
@@ -1505,7 +1506,7 @@ final class RepairRequestService
 
         $isManagerDecision = $user->role === UserRole::Manager;
 
-        $requiresComment = (!$isInitialSubmission && !$isManagerDecision) || ($isManagerDecision && $request->review_context === ApprovalDecision::ReviewStationChanges && $transition === TransitionAction::Return);
+        $requiresComment = (!$isInitialSubmission && !$isManagerDecision) || ($isManagerDecision && $request->review_context === ReviewContext::StationChanges && $transition === TransitionAction::Return);
 
         if ($requiresComment && trim($comment) === '') {
             Input::fail('Укажите комментарий к решению');
@@ -1547,16 +1548,16 @@ final class RepairRequestService
         string $reviewContext,
     ): void {
         if ($from === RepairStage::ManagerRouting && $to === RepairStage::StationApproval) {
-            $managerChangedEstimate = $reviewContext === ApprovalDecision::ReviewStationChanges;
+            $managerChangedEstimate = $reviewContext === ReviewContext::StationChanges;
             $context = $managerChangedEstimate
-                ? ApprovalDecision::ReviewManagerChanges->value
-                : ApprovalDecision::ReviewInitial->value;
+                ? ReviewContext::StationChanges->value
+                : ReviewContext::Initial->value;
 
             $this->captureReviewBaseline($request, $context);
         }
 
         if ($transition === TransitionAction::Next && $from === RepairStage::ManagerRouting && $to === RepairStage::CustomerApproval) {
-            $request->review_context = ApprovalDecision::ReviewInitial;
+            $request->review_context = ReviewContext::Initial;
         }
     }
 
@@ -1567,12 +1568,12 @@ final class RepairRequestService
     ): RepairStage {
         if ($from === RepairStage::ManagerRouting) {
             if ($action === TransitionAction::Return) {
-                return $request->review_context === ApprovalDecision::ReviewStationChanges
+                return $request->review_context === ReviewContext::StationChanges->value
                     ? RepairStage::StationApproval
                     : RepairStage::Draft;
             }
 
-            if ($request->review_context === ApprovalDecision::ReviewStationChanges) {
+            if ($request->review_context === ReviewContext::StationChanges->value) {
                 return RepairStage::CustomerApproval;
             }
 
@@ -1705,7 +1706,7 @@ final class RepairRequestService
                 if ($request->stage === RepairStage::CustomerApproval) {
                     $this->notifyStationEstimateApproved($request, $event->id);
                     $this->notifyCustomerFinalApproval($request, $event->id);
-                } elseif ($request->stage === RepairStage::StationApproval && $context->reviewContext === ApprovalDecision::ReviewStationChanges) {
+                } elseif ($request->stage === RepairStage::StationApproval && $context->reviewContext === ReviewContext::StationChanges) {
                     $this->notifyStationEstimateChanged(
                         $request,
                         $event->id,
@@ -1956,11 +1957,9 @@ final class RepairRequestService
     /**
      * @param array<int, string> $changes
      */
-    private function notifyManagerReviewRequired(RepairRequest $request, int $eventId, ApprovalDecision $decision, array $changes = []): void
+    private function notifyManagerReviewRequired(RepairRequest $request, int $eventId, string $label, array $changes = []): void
     {
-        $reasonLabel = $decision->label() ?? 'СТО изменила работы или запчасти';
-
-        $message = "$reasonLabel по заявке {$request->number}.";
+        $message = "$label по заявке {$request->number}.";
 
         if ($changes !== []) {
             $message .= ' Изменения: ' . implode('; ', $changes);

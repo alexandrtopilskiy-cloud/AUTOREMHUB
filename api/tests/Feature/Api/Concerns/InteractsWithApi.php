@@ -40,10 +40,11 @@ trait InteractsWithApi
 
     protected function patchRequest(array $request, array $patch): array
     {
-        return $this->api('PATCH', "/requests/{$request['id']}", [
+        $response = $this->api('PATCH', "/requests/{$request['id']}", array_merge([
             'revision' => $request['revision'],
-            'patch'    => (object) $patch,
-        ])->assertOk()->json('request');
+        ], $patch));
+
+        return $response->assertOk()->json('request');
     }
 
     protected function uploadMedia(array $request, string $purpose = 'evidence'): array

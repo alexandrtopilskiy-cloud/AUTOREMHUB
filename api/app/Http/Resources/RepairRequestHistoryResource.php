@@ -11,6 +11,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @mixin RepairRequest */
 final class RepairRequestHistoryResource extends JsonResource
 {
+    public static $wrap = null;
+
     public function toArray(Request $request): array
     {
         $this->resource->loadMissing(['events', 'periods', 'approvals']);

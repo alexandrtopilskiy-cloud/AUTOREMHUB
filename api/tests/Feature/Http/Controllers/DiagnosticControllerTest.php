@@ -236,20 +236,6 @@ final class DiagnosticControllerTest extends TestCase
         )->assertUnprocessable();
     }
 
-    public function test_store_rejects_missing_attachment_ids(): void
-    {
-        $request = $this->requestAtVehicleAccepted();
-
-        $this->actingAs($this->station);
-        $this->postJson(
-            '/api/requests/' . $request['id'] .'/diagnostics',
-            [
-                'revision'   => $request['revision'],
-                'conclusion' => 'Ок',
-            ],
-        )->assertUnprocessable();
-    }
-
     public function test_store_rejects_attachment_with_wrong_purpose(): void
     {
         $request = $this->requestAtVehicleAccepted();

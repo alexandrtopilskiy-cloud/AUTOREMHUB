@@ -13,6 +13,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 final class RepairRequestResource extends JsonResource
 {
+    public static $wrap = 'request';
+
     public function toArray(Request $request): array
     {
         $user = $request->user();
@@ -120,6 +122,8 @@ final class RepairRequestResource extends JsonResource
             'plannedCompletionAt'    => $this->planned_completion_at ? $this->planned_completion_at->setTimezone($timezone)->format('Y-m-d\TH:i') : '',
             'repairCompletedAt'      => $this->repair_completed_at?->toISOString(),
             'overdueSeconds'         => $this->calculateOverdueSeconds(),
+            'slot'                   => $this->data['slot'] ?? '',
+            'stationSlot'            => $this->data['stationSlot'] ?? '',
 
             // Relations (Resources)
             'statusPeriods'          => RepairRequestStatusPeriodResource::collection($this->periods),

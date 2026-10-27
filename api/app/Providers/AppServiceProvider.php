@@ -6,9 +6,9 @@ namespace App\Providers;
 
 use App\Models\RepairRequest;
 use App\Policies\RepairRequestPolicy;
-use Illuminate\Auth\Access\Gate;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 

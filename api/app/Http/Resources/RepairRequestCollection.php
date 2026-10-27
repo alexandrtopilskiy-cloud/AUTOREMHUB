@@ -9,6 +9,8 @@ use Illuminate\Http\Resources\Json\ResourceCollection;
 
 final class RepairRequestCollection extends ResourceCollection
 {
+    public static $wrap = 'requests';
+
     /**
      * Имя ключа для массива данных.
      */

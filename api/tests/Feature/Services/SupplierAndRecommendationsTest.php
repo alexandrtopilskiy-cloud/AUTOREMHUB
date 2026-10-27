@@ -392,7 +392,8 @@ final class SupplierAndRecommendationsTest extends TestCase
         $dto = new UpdateRepairRequestDto(
             requestKey: $this->request->uuid,
             revision: 0,
-            rawPatch: ['parts' => [$this->partPayload()]]
+            rawPatch: [],
+            parts: [$this->partPayload()],
         );
         $service->update($this->manager, $dto);
 

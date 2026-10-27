@@ -53,6 +53,7 @@ final class RepairRequestControllerTest extends TestCase
     private User $manager;
     private User $station;
     private Station $stationRecord;
+    private WorkType $work;
 
     protected function setUp(): void
     {
@@ -195,8 +196,8 @@ final class RepairRequestControllerTest extends TestCase
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/requests/' . $request->uuid, [
-            'revision' => $request->revision,
-            'patch'    => ['mileage' => '12345'],
+            'revision'  => $request->revision,
+            'mileage'   => '12345',
         ])
             ->assertOk();
 
@@ -209,8 +210,8 @@ final class RepairRequestControllerTest extends TestCase
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/requests/' . $request->uuid, [
-            'revision' => $request->revision + 99,
-            'patch'    => ['mileage' => '12345'],
+            'revision'  => $request->revision + 99,
+            'mileage'   => '12345',
         ])->assertStatus(409);
     }
 
@@ -220,8 +221,8 @@ final class RepairRequestControllerTest extends TestCase
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/requests/' . $request->uuid, [
-            'revision' => $request->revision,
-            'patch'    => ['unknownField' => 'value'],
+            'revision'      => $request->revision,
+            'unknownField'  => 'value',
         ])->assertUnprocessable();
     }
 
@@ -301,11 +302,13 @@ final class RepairRequestControllerTest extends TestCase
         $request = $this->makeManagerRoutingRequest();
 
         $this->actingAs($this->manager);
-        $this->postJson('/api/requests/' . $request->uuid . '/next', [
+        $response = $this->postJson('/api/requests/' . $request->uuid . '/next', [
             'revision'      => $request->revision,
             'comment'       => '',
             'attachmentIds' => [],
-        ])
+        ]);
+
+        $response
             ->assertUnprocessable()
             ->assertJsonPath('error.message', 'Добавьте хотя бы одну работу');
     }
@@ -396,6 +399,7 @@ final class RepairRequestControllerTest extends TestCase
     {
         $request = $this->makeRequest($this->customer, Workflow::STAGE_CUSTOMER_APPROVAL);
         $request->update([
+            'assigned_station_id' => $this->stationRecord->id,
             'data' => array_replace($request->data, [
                 'slot'        => '2026-10-20T11:00',
                 'stationSlot' => '2026-10-21T14:00',
@@ -403,10 +407,12 @@ final class RepairRequestControllerTest extends TestCase
         ]);
 
         $this->actingAs($this->customer);
-        $this->postJson('/api/requests/' . $request->uuid . '/customer-slot-decision', [
+        $response = $this->postJson('/api/requests/' . $request->uuid . '/customer-slot-decision', [
             'revision' => $request->revision,
             'decision' => 'accepted',
-        ])
+        ]);
+
+        $response
             ->assertOk()
             ->assertJsonPath('request.stage', Workflow::STAGE_WAITING_VEHICLE);
     }
@@ -628,20 +634,20 @@ final class RepairRequestControllerTest extends TestCase
             'active'     => true,
         ]);
         $reason = ServiceReason::query()
-        ->where('tenant_id', $this->tenant->id)
+            ->where('tenant_id', $this->tenant->id)
             ->where('code', 'diagnostics')
             ->firstOrFail();
 
-        $this->patchJson('/api/requests/' . $created['id'], [
-            'revision' => $created['revision'],
-            'patch'    => [
-                'vehicleId' => $vehicle->uuid,
-                'mileage'   => '15000',
-                'contactId' => $contact->uuid,
-                'reasonId'  => $reason->uuid,
-                'slot'      => '2026-10-20T11:00',
-            ],
-        ])->assertOk();
+        $response = $this->patchJson('/api/requests/' . $created['id'], [
+            'revision'  => $created['revision'],
+            'vehicleId' => $vehicle->uuid,
+            'mileage'   => '15000',
+            'contactId' => $contact->uuid,
+            'reasonId'  => $reason->uuid,
+            'slot'      => '2026-10-20T11:00',
+        ]);
+
+        $response->assertOk();
 
         $advanced = $this->postJson('/api/requests/' . $created['id'] . '/next', [
             'revision'      => $created['revision'] + 1,
@@ -653,8 +659,8 @@ final class RepairRequestControllerTest extends TestCase
 
         $this->actingAs($this->manager);
         $this->patchJson('/api/requests/' . $request->uuid, [
-            'revision' => $request->revision,
-            'patch'    => ['stationId' => $this->stationRecord->uuid],
+            'revision'  => $request->revision,
+            'stationId' => $this->stationRecord->uuid,
         ])->assertOk();
 
         return $request->refresh();

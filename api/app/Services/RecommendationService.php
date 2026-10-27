@@ -125,10 +125,10 @@ final class RecommendationService
     public function restore(User $user, string $id, int $revision, array $itemIds, ?string $requestId, ?int $requestRevision): array
     {
         $result = $this->restoreMany(
-            $user,
-            [['id' => $id, 'revision' => $revision, 'itemIds' => $itemIds]],
-            $requestId,
-            $requestRevision,
+            user: $user,
+            documents: [['id' => $id, 'revision' => $revision, 'itemIds' => $itemIds]],
+            requestId: $requestId,
+            requestRevision: $requestRevision,
         );
 
         $result['recommendation'] = $result['recommendations'][0];
@@ -216,7 +216,7 @@ final class RecommendationService
                         'recommendationIds' => $docs->pluck('uuid')->all(),
                         'items' => $items->pluck('uuid')->all(),
                     ],
-                    'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $user->role, $event->id)
+                    'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $user->role->value, $event->id)
                 ];
             });
 

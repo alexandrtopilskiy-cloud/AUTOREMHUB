@@ -49,4 +49,18 @@ final class UpdateRepairRequestDto
             parts: $validated['parts'] ?? null,
         );
     }
+
+    public function isEmpty(): bool
+    {
+        return $this->rawPatch === []
+            && $this->vehicleId === null
+            && $this->contactId === null
+            && $this->driverId === null
+            && $this->stationId === null
+            && $this->reasonId === null
+            && $this->reasonSubtypeId === null
+            && $this->laborRateType === null
+            && $this->works === null
+            && $this->parts === null;
+    }
 }

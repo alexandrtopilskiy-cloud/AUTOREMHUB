@@ -302,13 +302,11 @@ final class StationDecisionTest extends TestCase
         // 2. Заполнение и переход на Review (ManagerRouting)
         $draft = $this->patchJson("/api/requests/{$draft['id']}", [
             'revision' => $draft['revision'],
-            'patch'    => [
-                'vehicleId' => $this->vehicle->uuid,
-                'mileage'   => '15000',
-                'contactId' => $this->contact->uuid,
-                'reasonId'  => $this->reason->uuid,
-                'slot'      => '2026-10-20T11:00',
-            ],
+            'vehicleId' => $this->vehicle->uuid,
+            'mileage'   => '15000',
+            'contactId' => $this->contact->uuid,
+            'reasonId'  => $this->reason->uuid,
+            'slot'      => '2026-10-20T11:00',
         ])->assertOk()->json('request');
 
         $draft = $this->postJson("/api/requests/{$draft['id']}/next", [
@@ -321,20 +319,18 @@ final class StationDecisionTest extends TestCase
         $this->actingAs($this->manager);
         $draft = $this->patchJson("/api/requests/{$draft['id']}", [
             'revision' => $draft['revision'],
-            'patch'    => [
-                'stationId' => $this->stationRecord->uuid,
-                'works'     => [[
-                    'name'               => 'Диагностика',
-                    'type'               => 'Работа',
-                    'qty'                => 1,
-                    'price'              => 100,
-                    'workTypeId'         => $this->work->uuid,
-                    'normHours'          => 1,
-                    'actualHours'        => null,
-                    'normIsManual'       => true,
-                    'normOverrideReason' => 'Ручная норма для теста',
-                ]],
-            ],
+            'stationId' => $this->stationRecord->uuid,
+            'works'     => [[
+                'name'               => 'Диагностика',
+                'type'               => 'Работа',
+                'qty'                => 1,
+                'price'              => 100,
+                'workTypeId'         => $this->work->uuid,
+                'normHours'          => 1,
+                'actualHours'        => null,
+                'normIsManual'       => true,
+                'normOverrideReason' => 'Ручная норма для теста',
+            ]],
         ])->assertOk()->json('request');
 
         return $this->postJson("/api/requests/{$draft['id']}/next", [

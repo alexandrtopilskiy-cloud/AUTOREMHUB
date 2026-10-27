@@ -13,6 +13,7 @@ use App\Enums\OrganizationKind;
 use App\Enums\PartMovementKind;
 use App\Enums\PersonKind;
 use App\Enums\RequestPartStatus;
+use App\Enums\ReviewContext;
 use App\Enums\TransitionAction;
 use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
@@ -73,14 +74,31 @@ final class FixedValueEnumsTest extends TestCase
                 'managers',
                 'users',
             ]],
-            InvoiceStatus::class => [InvoiceStatus::class, ['issued', 'submitted', 'paid']],
+            InvoiceStatus::class => [InvoiceStatus::class, [
+                'issued',
+                'submitted',
+                'paid',
+            ]],
             OrganizationKind::class => [OrganizationKind::class, [
                 'customer',
                 'station',
                 'manager',
             ]],
-            PartMovementKind::class => [PartMovementKind::class, ['return', 'exchange']],
-            PersonKind::class => [PersonKind::class, ['contact', 'driver']],
+            PartMovementKind::class => [PartMovementKind::class, [
+                'return',
+                'exchange',
+            ]],
+            PersonKind::class => [PersonKind::class, [
+                'contact',
+                'driver',
+            ]],
+            ReviewContext::class => [ReviewContext::class, [
+                'initial',
+                'station_changes',
+                'station_declined',
+                'customer_slot',
+                'manager_changes',
+            ]],
             RequestPartStatus::class => [RequestPartStatus::class, [
                 'proposed',
                 'approved',
@@ -90,9 +108,19 @@ final class FixedValueEnumsTest extends TestCase
                 'returned',
                 'exchanged',
             ]],
-            TransitionAction::class => [TransitionAction::class, ['next', 'return']],
-            UserRole::class => [UserRole::class, ['customer', 'station', 'manager']],
-            WorkOrderItemKind::class => [WorkOrderItemKind::class, ['work', 'part']],
+            TransitionAction::class => [TransitionAction::class, [
+                'next',
+                'return',
+            ]],
+            UserRole::class => [UserRole::class, [
+                'customer',
+                'station',
+                'manager',
+            ]],
+            WorkOrderItemKind::class => [WorkOrderItemKind::class, [
+                'work',
+                'part',
+            ]],
         ];
     }
 
