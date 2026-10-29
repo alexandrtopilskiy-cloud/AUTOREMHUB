@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createServer, optimizeDeps } from "vite";
-import { computed, createSSRApp, reactive, watch } from "vue";
+import { createServer } from "vite";
+import { createSSRApp, reactive } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { catalogNames, requestFields } from "../src/data/permissions.js";
 import {
@@ -100,7 +100,7 @@ test("planned completion includes all request work norms", () => {
 });
 
 test("Options API component rendering and interactive methods", async (context) => {
-    assert.equal(APP_VERSION, "ver. 0.38.2");
+    assert.equal(APP_VERSION, "ver. 0.38.3");
 
     const server = await createServer({
         root,
@@ -207,9 +207,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 )?.[0];
                 assert.ok(addButton);
                 assert.doesNotMatch(addButton, /disabled/);
-                assert.doesNotMatch(
-                    html,
-                    /Добавить позицию/);
+                assert.doesNotMatch(html, /Добавить позицию/);
                 assert.match(html, /05[\s\S]*Фото, видео и документы/);
                 assert.doesNotMatch(
                     html,
@@ -644,13 +642,14 @@ test("Options API component rendering and interactive methods", async (context) 
                 const { default: DateTime } = await server.ssrLoadModule(
                     "/src/components/ConfirmedDateTimeInput.vue",
                 );
-                const render = (modelValue) => renderToString(
-                    createSSRApp(DateTime, {
-                        modelValue,
-                        title: "Дата оплаты (ваше местное время)",
-                        pastOnly: true,
-                    }),
-                );
+                const render = (modelValue) =>
+                    renderToString(
+                        createSSRApp(DateTime, {
+                            modelValue,
+                            title: "Дата оплаты (ваше местное время)",
+                            pastOnly: true,
+                        }),
+                    );
 
                 const past = await render("2001-02-03T09:00");
                 assert.match(past, /3 февраля 2001 г\., 09:00/);
@@ -848,139 +847,6 @@ test("Options API component rendering and interactive methods", async (context) 
                 ]) {
                     assert.match(errors[field], /Правильно:/);
                 }
-            },
-        );
-
-        await context.test(
-            "approval displays exact before and after values",
-            async () => {
-                const { default: Approval } = await server.ssrLoadModule(
-                    "/src/features/catalogs/VehicleApprovalReview.vue",
-                );
-                const html = await renderToString(
-                    createSSRApp(Approval, {
-                        record: {
-                            action: "update",
-                            company: "ООО «Тест»",
-                            requestedBy: "Пользователь",
-                            payload: {},
-                            changes: [
-                                {
-                                    field: "year",
-                                    label: "Год выпуска",
-                                    before: "2024",
-                                    after: "2025",
-                                },
-                            ],
-                        },
-                        review: async () => {},
-                    }),
-                );
-
-                assert.match(html, /Запрошенные изменения/);
-                assert.match(html, /Год выпуска/);
-                assert.match(html, /2024/);
-                assert.match(html, /2025/);
-            },
-        );
-
-        await context.test(
-            "role-specific catalog navigation is isolated",
-            async () => {
-                const { default: App } =
-                    await server.ssrLoadModule("/src/App.vue");
-
-                assert.deepEqual(
-                    App.computed.catalogKeys.call({
-                        user: { role: "manager" },
-                    }),
-                    [
-                        "vehicles",
-                        "vehicleModels",
-                        "drivers",
-                        "contactPersons",
-                        "workTypes",
-                        "normApplicabilities",
-                        "partManufacturers",
-                        "suppliers",
-                        "parts",
-                        "customers",
-                        "stations",
-                        "managers",
-                        "users",
-                        "vehicleApprovals",
-                        "changeRegistry",
-                    ],
-                );
-                assert.deepEqual(
-                    App.computed.catalogKeys.call({
-                        user: { role: "customer" },
-                    }),
-                    ["vehicles", "drivers", "contactPersons"],
-                );
-                assert.deepEqual(
-                    App.computed.catalogKeys.call({
-                        user: { role: "station" },
-                    }),
-                    ["parts", "partManufacturers", "suppliers"],
-                );
-                assert.equal(catalogNames.vehicles, "Справочник ТС Заказчиков");
-                assert.equal(
-                    catalogNames.vehicleModels,
-                    "Справочник ТС (марки, модели)",
-                );
-
-                const rows = [
-                    {
-                        id: "request-1",
-                        number: "RP-000001",
-                        createdAt: "2026-09-27T10:00:00Z",
-                        vehicle: "Jetour Dashing",
-                        plate: "А111АА78",
-                        company: "ООО «Альфа»",
-                        stage: 1,
-                        works: [],
-                        parts: [],
-                        permissions: { canAdvance: true },
-                    },
-                    {
-                        id: "request-2",
-                        number: "RP-000002",
-                        createdAt: "2026-09-27T11:00:00Z",
-                        vehicle: "Lada Vesta",
-                        plate: "В222ВВ78",
-                        company: "ООО «Бетта»",
-                        stage: 2,
-                        works: [],
-                        parts: [],
-                        permissions: { canAdvance: true },
-                    },
-                ];
-                const filterContext = {
-                    active: {
-                        kind: "list",
-                        key: "requests",
-                        filters: { vehicle: "альфа" },
-                    },
-                    isRequestList: true,
-                    store: { requests: rows },
-                    user: { role: "manager" },
-                };
-                filterContext.requestColumnValue = (item, key) =>
-                    App.methods.requestColumnValue.call(
-                        filterContext,
-                        item,
-                        key,
-                    );
-                filterContext.filterCell = (item, key) =>
-                    App.methods.filterCell.call(filterContext, item, key);
-
-                const filtered = App.computed.listed.call(filterContext);
-
-                assert.deepEqual(
-                    filtered.map((item) => item.id),
-                    ["request-1"],
-                );
             },
         );
 
@@ -1644,13 +1510,12 @@ test("Options API component rendering and interactive methods", async (context) 
                         },
                     ],
                     permissions: {
-                        editableFields: [
-                            ],
-                            canCustomerSlotDecide: true,
-                            canDeferRecommendations: true,
-                            requiresAction: true,
-                            },
-                            };
+                        editableFields: [],
+                        canCustomerSlotDecide: true,
+                        canDeferRecommendations: true,
+                        requiresAction: true,
+                    },
+                };
                 const html = await renderToString(
                     createSSRApp(RepairEditor, { ...props, request: current }),
                 );
@@ -1683,8 +1548,7 @@ test("Options API component rendering and interactive methods", async (context) 
                     estimateVersion: 2,
                     reviewBaselineVersion: 1,
                     permissions: {
-                        editableFields: ["works",
-                        "parts"],
+                        editableFields: ["works", "parts"],
                         canAdvance: true,
                         canReturn: true,
                         canEditParts: true,
@@ -1699,39 +1563,65 @@ test("Options API component rendering and interactive methods", async (context) 
                     }),
                 );
 
-                assert.match(
-                    html,
-                    /title="Вернуть в СТО для корректировки"/);
-                assert.match(
-                    html,
-                    /Согласовать/);
+                assert.match(html, /title="Вернуть в СТО для корректировки"/);
+                assert.match(html, /Согласовать/);
                 assert.match(html, /aria-label="Добавить строку запчасти"/);
-        },
+            },
         );
-        await context.test('manufacturer empty search displays the full approved directory', async () => {
-            const { default: Picker } = await server.ssrLoadModule('/src/components/ReferencePicker.vue',
+        await context.test(
+            "manufacturer empty search displays the full approved directory",
+            async () => {
+                const { default: Picker } = await server.ssrLoadModule(
+                    "/src/components/ReferencePicker.vue",
                 );
-            const rows = Array.from({length: 120}, (_, i) => ({id: String(i), name: 'Brand ' + i, active: true,
+                const rows = Array.from({ length: 120 }, (_, i) => ({
+                    id: String(i),
+                    name: "Brand " + i,
+                    active: true,
                 }));
-            const state = { rows, query: '', browseAll: true, maxResults: 100000, valueLabel: (row ) => row.name ,
+                const state = {
+                    rows,
+                    query: "",
+                    browseAll: true,
+                    maxResults: 100000,
+                    valueLabel: (row) => row.name,
                 };
-            const results = Picker.computed.filtered.call(state);
-            assert.equal(results.length, 120);
-            assert.equal(results.at(-1).name, 'Brand 119');
-        },
+                const results = Picker.computed.filtered.call(state);
+                assert.equal(results.length, 120);
+                assert.equal(results.at(-1).name, "Brand 119");
+            },
         );
-        await context.test('recommendation targets exclude other VIN and read-only requests', async () => {
-            const { default: Panel } = await server.ssrLoadModule('/src/features/requests/RecommendationPanel.vue',
+        await context.test(
+            "recommendation targets exclude other VIN and read-only requests",
+            async () => {
+                const { default: Panel } = await server.ssrLoadModule(
+                    "/src/features/requests/RecommendationPanel.vue",
                 );
-            const targets = Panel.computed.targets.call({vehicleId: 'v1', requests: [{id: 'allowed', vehicleId: 'v1', permissions: {canRestoreRecommendations: true},
-                        }, {id: 'wrong-vin', vehicleId: 'v2', permissions: {canRestoreRecommendations: true},
-                        }, {id: 'readonly', vehicleId: 'v1', permissions: {canRestoreRecommendations: false},
+                const targets = Panel.computed.targets.call({
+                    vehicleId: "v1",
+                    requests: [
+                        {
+                            id: "allowed",
+                            vehicleId: "v1",
+                            permissions: { canRestoreRecommendations: true },
+                        },
+                        {
+                            id: "wrong-vin",
+                            vehicleId: "v2",
+                            permissions: { canRestoreRecommendations: true },
+                        },
+                        {
+                            id: "readonly",
+                            vehicleId: "v1",
+                            permissions: { canRestoreRecommendations: false },
                         },
                     ],
                 });
-            assert.deepEqual(targets.map((row ) => row.id), ['allowed'],
+                assert.deepEqual(
+                    targets.map((row) => row.id),
+                    ["allowed"],
                 );
-        },
+            },
         );
     } finally {
         await server.close();

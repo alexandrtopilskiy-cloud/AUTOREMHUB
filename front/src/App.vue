@@ -16,6 +16,12 @@ import VehicleModelCreateDialog from "./features/catalogs/VehicleModelCreateDial
 import CatalogImportWizard from "./features/catalogs/CatalogImportWizard.vue";
 import RequestChatDrawer from "./features/requests/RequestChatDrawer.vue";
 import VehicleHistory from "./features/vehicles/VehicleHistory.vue";
+import TopBar from "./components/TopBar.vue";
+import SidebarMenu from "./components/SidebarMenu.vue";
+import EdoDocuments from "./components/edo/EdoDocuments.vue";
+import RegistryTable from "./components/RegistryTable.vue";
+import WorkspaceTabs from "./components/WorkspaceTabs.vue";
+import WorkspaceAlerts from "./components/WorkspaceAlerts.vue";
 import { createRequestStore } from "./stores/requestStore.js";
 import { marketplaceApi, restoreToken, clearToken } from "./api/marketplace.js";
 import { http } from "./api/client.js";
@@ -26,33 +32,11 @@ import {
     total,
     formatDateTime,
     catalogNames,
-    catalogFields,
 } from "./data/permissions.js";
 
 const LIVE_REFRESH_MS = 10_000;
 const DOCUMENT_LOCK_HEARTBEAT_MS = 45_000;
 const SERVICE_MESSAGE_MS = 15_000;
-const WEEKDAY_LABELS = [
-    "",
-    "Пн.",
-    "Вт.",
-    "Ср.",
-    "Чт.",
-    "Пт.",
-    "Сб.",
-    "Вск."];
-const REQUEST_COLUMNS = {
-    document: "Документ / дата",
-    vehicle: "Автомобиль / заказчик",
-    status: "Статус",
-    amount: "Сумма, ₽",
-};
-const REQUEST_FILTER_PLACEHOLDERS = {
-    document: "Номер или дата",
-    vehicle: "ТС, госномер, заказчик",
-    status: "Статус или кабинет",
-    amount: "Сумма",
-};
 
 export default {
     name: "App",
@@ -73,6 +57,12 @@ export default {
         VehicleModelCreateDialog,
         RequestChatDrawer,
         VehicleHistory,
+        TopBar,
+        SidebarMenu,
+        EdoDocuments,
+        RegistryTable,
+        WorkspaceTabs,
+        WorkspaceAlerts,
     },
     data() {
         return {
@@ -108,6 +98,7 @@ export default {
             },
             resizeCleanup: null,
             appVersion: APP_VERSION,
+            vehicleReferenceReloadToken: 0,
         };
     },
     computed: {
@@ -125,14 +116,15 @@ export default {
             }
 
             const permissions = Object.fromEntries(
-                Object.entries(this.current.permissions || {}).map(([key, value]) => [
-                    key,
-                    Array.isArray(value)
-                        ? []
-                        : typeof value === "boolean"
-                          ? false
-                          : value,
-                ],
+                Object.entries(this.current.permissions || {}).map(
+                    ([key, value]) => [
+                        key,
+                        Array.isArray(value)
+                            ? []
+                            : typeof value === "boolean"
+                              ? false
+                              : value,
+                    ],
                 ),
             );
 
@@ -160,9 +152,6 @@ export default {
         },
         isRequestList() {
             return ["requests", "action", "archive"].includes(this.active?.key);
-        },
-        requestColumns() {
-            return REQUEST_COLUMNS;
         },
         activeFiltersApplied() {
             return Object.values(this.active?.filters || {}).some(
@@ -201,12 +190,14 @@ export default {
                 ];
             }
 
-            return this.user?.role === "station" ? ["parts", "partManufacturers", "suppliers"] : [];
+            return this.user?.role === "station"
+                ? ["parts", "partManufacturers", "suppliers"]
+                : [];
         },
         awaiting() {
-            return this.store.requests.filter((r) => r.permissions.requiresAction ?? r.permissions.canAdvance,
-            )
-                .length;
+            return this.store.requests.filter(
+                (r) => r.permissions.requiresAction ?? r.permissions.canAdvance,
+            ).length;
         },
         unreadNotifications() {
             return this.store.notifications.filter(
@@ -215,14 +206,16 @@ export default {
         },
         chatRequestNumber() {
             return (
-                this.store.get(this.chatRequestId)?.number
-                || this.store.chatSummaries.find(
+                this.store.get(this.chatRequestId)?.number ||
+                this.store.chatSummaries.find(
                     (item) => item.requestId === this.chatRequestId,
-                )?.requestNumber
-                || "");
+                )?.requestNumber ||
+                ""
+            );
         },
         unreadChatSummaries() {
-            return this.store.chatSummaries.filter((chat) => chat.unreadCount > 0,
+            return this.store.chatSummaries.filter(
+                (chat) => chat.unreadCount > 0,
             );
         },
         selectableDrafts() {
@@ -231,15 +224,17 @@ export default {
                 : [];
         },
         selectedDraftCount() {
-            const available = new Set(this.selectableDrafts.map((item) => item.id),
+            const available = new Set(
+                this.selectableDrafts.map((item) => item.id),
             );
 
-            return this.selectedDraftIds.filter((id) => available.has(id)).length;
+            return this.selectedDraftIds.filter((id) => available.has(id))
+                .length;
         },
         allVisibleDraftsSelected() {
             return (
-                this.selectableDrafts.length > 0
-                && this.selectableDrafts.every((item) =>
+                this.selectableDrafts.length > 0 &&
+                this.selectableDrafts.every((item) =>
                     this.selectedDraftIds.includes(item.id),
                 )
             );
@@ -250,10 +245,14 @@ export default {
                 ? this.store.requests
                 : this.active.key === "changeRegistry"
                   ? this.store.changeRegistry
-                  : this.store.records.filter((r) => r.kind === this.active.key,
+                  : this.store.records.filter(
+                        (r) => r.kind === this.active.key,
                     );
             if (this.active.key === "action")
-                rows = rows.filter((r) => r.permissions.requiresAction ?? r.permissions.canAdvance,
+                rows = rows.filter(
+                    (r) =>
+                        r.permissions.requiresAction ??
+                        r.permissions.canAdvance,
                 );
             if (this.active.key === "archive")
                 rows = rows.filter((r) => r.stage === 11);
@@ -261,7 +260,9 @@ export default {
 
             return rows.filter((row) =>
                 Object.entries(filters).every(([key, value]) => {
-                    const query = String(value || "").toLowerCase().trim();
+                    const query = String(value || "")
+                        .toLowerCase()
+                        .trim();
 
                     return matchesReference(this.filterCell(row, key), query);
                 }),
@@ -275,8 +276,12 @@ export default {
             );
         },
         canCreateCatalog() {
-            if (["parts", "partManufacturers", "suppliers"].includes(this.active?.key,
-                )) return ["manager", "station"].includes(this.user?.role);
+            if (
+                ["parts", "partManufacturers", "suppliers"].includes(
+                    this.active?.key,
+                )
+            )
+                return ["manager", "station"].includes(this.user?.role);
             if (this.active?.key === "vehicles") {
                 return ["customer", "manager"].includes(this.user?.role);
             }
@@ -286,8 +291,8 @@ export default {
             }
 
             return (
-                this.user?.role === "manager"
-                && [
+                this.user?.role === "manager" &&
+                [
                     "workTypes",
                     "normApplicabilities",
                     "suppliers",
@@ -296,15 +301,14 @@ export default {
                     "stations",
                     "managers",
                     "users",
-                ].includes(
-                    this.active?.key)
+                ].includes(this.active?.key)
             );
         },
         canImportCatalog() {
             return (
-                this.user?.role === "manager"
-                && this.active?.kind === "list"
-                && [
+                this.user?.role === "manager" &&
+                this.active?.kind === "list" &&
+                [
                     "vehicles",
                     "vehicleModels",
                     "drivers",
@@ -316,15 +320,51 @@ export default {
                     "stations",
                     "managers",
                     "users",
-                ].includes(this.active?.key));
+                ].includes(this.active?.key)
+            );
         },
         missingLaborHourRate() {
             return (
-                this.user?.role !== "customer"
-                && this.current?.vehicleId
-                && this.current?.laborHourRate == null
-                && this.current?.permissions?.editableFields?.includes("works")
+                this.user?.role !== "customer" &&
+                this.current?.vehicleId &&
+                this.current?.laborHourRate == null &&
+                this.current?.permissions?.editableFields?.includes("works")
             );
+        },
+        userAvatarInitials() {
+            if (!this.user?.login) return "";
+            return this.user.login.slice(0, 2).toUpperCase();
+        },
+        userDisplayName() {
+            if (!this.user) return "";
+            return (
+                this.user.fullName || this.user.displayName || this.user.login
+            );
+        },
+        userOrganization() {
+            return this.user?.organization || "";
+        },
+        userRoleLabel() {
+            return this.user?.label || "";
+        },
+        workspaceClasses() {
+            return {
+                "menu-off": !this.panel.menu,
+                "work-off": !this.panel.work,
+                "state-off": !this.panel.state,
+            };
+        },
+        saveStatusText() {
+            if (this.store.saveError) {
+                return "Ошибка сохранения";
+            }
+            if (this.store.busy) {
+                return "Выполняем операцию…";
+            }
+            if (this.store.dirty) {
+                return "Есть несохранённые изменения";
+            }
+            return "Изменения сохранены";
         },
     },
     methods: {
@@ -334,58 +374,6 @@ export default {
         statusClass,
         catalogNamesValue(key) {
             return catalogNames[key];
-        },
-        columns(key) {
-            const fields = { ...(catalogFields[key] || {}) };
-
-            if (key === "vehicles" && this.user?.role === "customer") {
-                delete fields.company;
-                delete fields.laborHourRate;
-                delete fields.laborHourRateOfficial;
-                delete fields.laborHourRateOther;
-            }
-
-            return fields;
-        },
-        requestFilterPlaceholder(key) {
-            return REQUEST_FILTER_PLACEHOLDERS[key] || "Фильтр";
-        },
-        requestColumnValue(item, key) {
-            if (key === "document") {
-                return [item.number, formatDateTime(item.createdAt)]
-                    .filter(Boolean)
-                    .join(" ");
-            }
-
-            if (key === "vehicle") {
-                return [
-                    item.vehicle || "Автомобиль не выбран",
-                    item.plate || "Пустой черновик",
-                    this.user?.role === "station" ? "" : item.company,
-                ]
-                    .filter(Boolean)
-                    .join(" ");
-            }
-
-            if (key === "status") {
-                const stage = workflow[item.stage] || {};
-
-                return [
-                    item.statusLabel || stage.status,
-                    stage.owner,
-                    item.overdueSeconds ? "Превышен плановый срок" : "",
-                ]
-                    .filter(Boolean)
-                    .join(" ");
-            }
-
-            if (key === "amount") {
-                const amount = total(item);
-
-                return `${amount} ${money(amount)}`;
-            }
-
-            return "";
         },
         filterCell(item, key) {
             return this.isRequestList
@@ -421,7 +409,8 @@ export default {
         },
 
         chatSummary(requestId) {
-            return this.store.chatSummaries.find((chat) => chat.requestId === requestId,
+            return this.store.chatSummaries.find(
+                (chat) => chat.requestId === requestId,
             );
         },
 
@@ -431,9 +420,11 @@ export default {
 
             try {
                 if (!this.chatSummary(requestId)) {
-                    if (!createIfMissing) await this.store.refreshChatSummaries();
+                    if (!createIfMissing)
+                        await this.store.refreshChatSummaries();
                     if (!this.chatSummary(requestId)) {
-                        if (!createIfMissing) throw new Error("Чат заявки не найден");
+                        if (!createIfMissing)
+                            throw new Error("Чат заявки не найден");
                         await marketplaceApi.createChat(requestId);
                         await this.store.refreshChatSummaries();
                     }
@@ -555,11 +546,11 @@ export default {
 
         async liveRefresh() {
             if (
-                this.liveRefreshBusy
-                || this.store.busy
-                || this.store.loading
-                || !this.user
-                || document.hidden
+                this.liveRefreshBusy ||
+                this.store.busy ||
+                this.store.loading ||
+                !this.user ||
+                document.hidden
             ) {
                 return;
             }
@@ -609,7 +600,8 @@ export default {
 
         heartbeatLocks() {
             for (const [tabId, lock] of Object.entries(this.documentLocks)) {
-                marketplaceApi.heartbeatDocumentLock(lock.id)
+                marketplaceApi
+                    .heartbeatDocumentLock(lock.id)
                     .then((renewed) => {
                         this.documentLocks[tabId] = renewed;
                     })
@@ -647,12 +639,10 @@ export default {
             }
 
             if (
-                tab.kind === "record"
-                && !tab.record?.isNew
-                && (
-                    tab.record?.permissions?.canEdit
-                    || tab.record?.permissions?.canReview
-                )
+                tab.kind === "record" &&
+                !tab.record?.isNew &&
+                (tab.record?.permissions?.canEdit ||
+                    tab.record?.permissions?.canReview)
             ) {
                 return {
                     type: "catalog_record",
@@ -669,8 +659,9 @@ export default {
                 return false;
             }
 
-            return ((request.permissions.editableFields || []).length > 0
-                || [
+            return (
+                (request.permissions.editableFields || []).length > 0 ||
+                [
                     "canAdvance",
                     "canReturn",
                     "canStationDecide",
@@ -683,13 +674,16 @@ export default {
                     "canSubmitPayment",
                     "canVerifyPayment",
                     "canDeleteDraft",
-                ].some((key) => request.permissions[key] === true));
+                ].some((key) => request.permissions[key] === true)
+            );
         },
 
         async synchronizeRequestLocks() {
-            for (const tab of this.tabs.filter((item) => item.kind === "request",
+            for (const tab of this.tabs.filter(
+                (item) => item.kind === "request",
             )) {
-                const needsLock = this.requestNeedsLock(this.store.get(tab.recordId),
+                const needsLock = this.requestNeedsLock(
+                    this.store.get(tab.recordId),
                 );
 
                 if (!needsLock) {
@@ -722,11 +716,12 @@ export default {
             if (!descriptor) return true;
 
             try {
-                this.documentLocks[tab.id] = await marketplaceApi.acquireDocumentLock(
-                    descriptor.type,
-                    descriptor.key,
-                    descriptor.label,
-                );
+                this.documentLocks[tab.id] =
+                    await marketplaceApi.acquireDocumentLock(
+                        descriptor.type,
+                        descriptor.key,
+                        descriptor.label,
+                    );
 
                 return true;
             } catch (error) {
@@ -752,16 +747,18 @@ export default {
                 if (item.targetType === "partManufacturer") {
                     await this.store.refreshCatalogs(true);
                     await this.openList("partManufacturers");
-                    const record = this.store.records.find((row) => row.id === item.targetId,
+                    const record = this.store.records.find(
+                        (row) => row.id === item.targetId,
                     );
                     if (record) await this.openRecord(record, "record");
                     return;
                 }
                 if (item.targetType === "vehicleApproval") {
                     await this.refresh();
-                    const targetList = this.user.role === "manager"
-                        ? "vehicleApprovals"
-                        : "vehicles";
+                    const targetList =
+                        this.user.role === "manager"
+                            ? "vehicleApprovals"
+                            : "vehicles";
 
                     if (!(await this.openList(targetList))) return;
 
@@ -858,7 +855,10 @@ export default {
             if (this.active && this.$refs.center)
                 this.active.scroll = this.$refs.center.scrollTop;
             this.activeId = id;
-            if (this.chatRequestId && this.active?.recordId !== this.chatRequestId) {
+            if (
+                this.chatRequestId &&
+                this.active?.recordId !== this.chatRequestId
+            ) {
                 this.chatRequestId = "";
             }
             this.showPanel("work");
@@ -948,7 +948,9 @@ export default {
                 },
                 isNew: true,
                 organizationId: this.user.organizationId,
-            ...(this.active.key === "parts" ? { createdByOrganization: this.user.organization } : {}),
+                ...(this.active.key === "parts"
+                    ? { createdByOrganization: this.user.organization }
+                    : {}),
             };
             this.openRecord(record, "record");
         },
@@ -961,22 +963,26 @@ export default {
                 return;
             }
 
-            await this.openRecord({
-                id: "new-" + Date.now(),
-                kind: "workTypes",
-                name: String(target?.name || "").trim(),
-                group: "Прочее",
-                active: true,
-                permissions: { canEdit: true },
-                isNew: true,
-                _requestWorkTarget: {
-                    requestId,
-                    requestTabId,
-                    rowId: target?.rowId || "",
-                    clientId: target?.clientId || "",
-                    index: Number.isInteger(target?.index) ? target.index : -1,
+            await this.openRecord(
+                {
+                    id: "new-" + Date.now(),
+                    kind: "workTypes",
+                    name: String(target?.name || "").trim(),
+                    group: "Прочее",
+                    active: true,
+                    permissions: { canEdit: true },
+                    isNew: true,
+                    _requestWorkTarget: {
+                        requestId,
+                        requestTabId,
+                        rowId: target?.rowId || "",
+                        clientId: target?.clientId || "",
+                        index: Number.isInteger(target?.index)
+                            ? target.index
+                            : -1,
+                    },
                 },
-            }, "record",
+                "record",
             );
         },
 
@@ -988,26 +994,30 @@ export default {
                 return;
             }
 
-            await this.openRecord({
-                id: "new-" + Date.now(),
-                kind: "parts",
+            await this.openRecord(
+                {
+                    id: "new-" + Date.now(),
+                    kind: "parts",
                     createdByOrganization: this.user.organization,
-                name: String(target?.name || "").trim(),
-                article: String(target?.article || "").trim(),
-                manufacturer: "",
-                unit: target?.unit || "шт.",
-                active: true,
-                permissions: { canEdit: true },
-                isNew: true,
-                _requestPartTarget: {
-                    requestId,
-                    requestTabId,
-                    partId: target?.partId || "",
-                    clientId: target?.clientId || "",
-                    index: Number.isInteger(target?.index) ? target.index : -1,
-                    scroll: this.$refs.center?.scrollTop || 0,
+                    name: String(target?.name || "").trim(),
+                    article: String(target?.article || "").trim(),
+                    manufacturer: "",
+                    unit: target?.unit || "шт.",
+                    active: true,
+                    permissions: { canEdit: true },
+                    isNew: true,
+                    _requestPartTarget: {
+                        requestId,
+                        requestTabId,
+                        partId: target?.partId || "",
+                        clientId: target?.clientId || "",
+                        index: Number.isInteger(target?.index)
+                            ? target.index
+                            : -1,
+                        scroll: this.$refs.center?.scrollTop || 0,
+                    },
                 },
-            }, "record",
+                "record",
             );
         },
 
@@ -1126,9 +1136,8 @@ export default {
                     (id) => !visibleIds.includes(id),
                 );
             } else {
-                this.selectedDraftIds = [...new Set([
-                    ...this.selectedDraftIds,
-                    ...visibleIds]),
+                this.selectedDraftIds = [
+                    ...new Set([...this.selectedDraftIds, ...visibleIds]),
                 ];
             }
         },
@@ -1140,23 +1149,24 @@ export default {
                     .map((item) => item.id),
             );
 
-            this.selectedDraftIds = this.selectedDraftIds.filter(
-                (id) => available.has(id),
+            this.selectedDraftIds = this.selectedDraftIds.filter((id) =>
+                available.has(id),
             );
         },
 
         async deleteDrafts(ids) {
-            const selectedIds = [...new Set(ids)].filter((id) =>
-                this.store.get(id)?.permissions?.canDeleteDraft,
+            const selectedIds = [...new Set(ids)].filter(
+                (id) => this.store.get(id)?.permissions?.canDeleteDraft,
             );
 
             if (!selectedIds.length) {
                 return;
             }
 
-            const suffix = selectedIds.length === 1
-                ? "Этот черновик будет удалён без возможности восстановления."
-                : `Будут удалены черновики: ${selectedIds.length}.`;
+            const suffix =
+                selectedIds.length === 1
+                    ? "Этот черновик будет удалён без возможности восстановления."
+                    : `Будут удалены черновики: ${selectedIds.length}.`;
 
             if (!window.confirm(`${suffix} Продолжить?`)) {
                 return;
@@ -1173,7 +1183,8 @@ export default {
                 }
 
                 this.tabs = this.tabs.filter(
-                    (tab) => tab.kind !== "request" || !deleted.has(tab.recordId),
+                    (tab) =>
+                        tab.kind !== "request" || !deleted.has(tab.recordId),
                 );
                 this.selectedDraftIds = this.selectedDraftIds.filter(
                     (id) => !deleted.has(id),
@@ -1208,36 +1219,60 @@ export default {
         },
 
         async deferRecommendations(selection) {
-            if (!this.current || this.store.pending[this.current.id] || this.store.busy) return;
+            if (
+                !this.current ||
+                this.store.pending[this.current.id] ||
+                this.store.busy
+            )
+                return;
             this.store.busy = true;
             try {
-                const result = await marketplaceApi.deferRecommendations(this.current.id, this.current.revision, selection,
+                const result = await marketplaceApi.deferRecommendations(
+                    this.current.id,
+                    this.current.revision,
+                    selection,
                 );
                 this.store.accept(result.request);
-                this.notify(`Созданы рекомендации ${result.recommendation.number}`,
+                this.notify(
+                    `Созданы рекомендации ${result.recommendation.number}`,
                 );
-            } catch (error) { this.notify(error.message); }
-            finally { this.store.busy = false; }
+            } catch (error) {
+                this.notify(error.message);
+            } finally {
+                this.store.busy = false;
+            }
         },
         async openRecommendations(request) {
-            const id = 'recommendations:' + request.vehicleId;
-            if (!this.tabs.some((tab ) => tab.id === id)) this.tabs.push({ id, kind: 'recommendations', vehicleId: request.vehicleId, requestId: request.id, title: `Рекомендации · ${request.vin}` ,
+            const id = "recommendations:" + request.vehicleId;
+            if (!this.tabs.some((tab) => tab.id === id))
+                this.tabs.push({
+                    id,
+                    kind: "recommendations",
+                    vehicleId: request.vehicleId,
+                    requestId: request.id,
+                    title: `Рекомендации · ${request.vin}`,
                 });
             await this.activate(id);
         },
         async recommendationsRestored(request) {
             this.store.accept(request);
-            this.notify('Позиции перенесены в ' + request.number);
+            this.notify("Позиции перенесены в " + request.number);
             await this.openRecord(request);
         },
         async vehicleModelCreated() {
             this.vehicleModelCreateOpen = false;
-            const tab = this.tabs.find((tab ) => tab.kind === 'list' && tab.key === 'vehicleModels',
+            const tab = this.tabs.find(
+                (tab) => tab.kind === "list" && tab.key === "vehicleModels",
             );
-            if (tab) { await this.activate(tab.id); this.vehicleReferenceReloadToken += 1; }
-            this.notify('Запись добавлена в справочник ТС');
+            if (tab) {
+                await this.activate(tab.id);
+                this.vehicleReferenceReloadToken += 1;
+            }
+            this.notify("Запись добавлена в справочник ТС");
         },
-        createVehicleModel(record) { return marketplaceApi.createVehicleCatalogVariant(record); },
+        createVehicleModel(record) {
+            return marketplaceApi.createVehicleCatalogVariant(record);
+        },
         async save() {
             try {
                 await this.store.save(this.current.id);
@@ -1292,7 +1327,7 @@ export default {
                     "workTypes",
                     "timeNorms",
                     "normApplicabilities",
-                "suppliers",
+                    "suppliers",
                     "parts",
                 ].includes(record.kind)
             ) {
@@ -1300,8 +1335,8 @@ export default {
             }
 
             return (
-                this.store.records.find((item) => item.id === saved.id)
-                || saved);
+                this.store.records.find((item) => item.id === saved.id) || saved
+            );
         },
 
         async saveVehicleCatalog(record, form) {
@@ -1317,7 +1352,9 @@ export default {
         async saveOrganizationPerson(record, form) {
             const saved = record.isNew
                 ? await marketplaceApi.createOrganizationPerson(form)
-                : await marketplaceApi.updateOrganizationPerson(record.id, form,
+                : await marketplaceApi.updateOrganizationPerson(
+                      record.id,
+                      form,
                   );
 
             this.store.upsertRecord(saved);
@@ -1326,7 +1363,8 @@ export default {
         },
 
         async deleteOrganizationPerson(record) {
-            const result = await marketplaceApi.deleteOrganizationPerson(record.id,
+            const result = await marketplaceApi.deleteOrganizationPerson(
+                record.id,
             );
 
             this.store.removeRecord(record.id);
@@ -1377,9 +1415,8 @@ export default {
                     await this.store.refreshCatalogs(true);
                 }
 
-                const imported = result.summary?.acceptedWorks
-                    ?? result.imported
-                    ?? 0;
+                const imported =
+                    result.summary?.acceptedWorks ?? result.imported ?? 0;
 
                 this.notify(`Импортировано записей: ${imported}`);
             } catch (error) {
@@ -1397,10 +1434,10 @@ export default {
             tab.record = record;
             tab.recordId = record.id;
             tab.title =
-                record.vehicle
-                || record.name
-                || record.fullName
-                || catalogNames[record.kind];
+                record.vehicle ||
+                record.name ||
+                record.fullName ||
+                catalogNames[record.kind];
             this.notify(
                 pendingApproval
                     ? "Изменения отправлены на согласование УК"
@@ -1409,14 +1446,14 @@ export default {
 
             if (record.kind === "workTypes" && requestWorkTarget) {
                 const request = this.store.get(requestWorkTarget.requestId);
-                const work = request?.works?.find(
-                    (item) =>
+                const work =
+                    request?.works?.find((item) =>
                         requestWorkTarget.rowId
                             ? item.id === requestWorkTarget.rowId
                             : requestWorkTarget.clientId
                               ? item._clientId === requestWorkTarget.clientId
                               : false,
-                ) || request?.works?.[requestWorkTarget.index];
+                    ) || request?.works?.[requestWorkTarget.index];
 
                 if (work) {
                     work.workTypeId = record.id;
@@ -1428,8 +1465,11 @@ export default {
                 const catalogTabId = tab.id;
                 this.removeTab(catalogTabId);
 
-                if (this.tabs.some((item) => item.id === requestWorkTarget.requestTabId,
-                    )) {
+                if (
+                    this.tabs.some(
+                        (item) => item.id === requestWorkTarget.requestTabId,
+                    )
+                ) {
                     this.activate(requestWorkTarget.requestTabId);
                 }
 
@@ -1442,7 +1482,11 @@ export default {
 
             if (record.kind === "parts" && requestPartTarget) {
                 const request = this.store.get(requestPartTarget.requestId);
-                const part = request?.parts?.find((item ) => requestPartTarget.partId ? item.id === requestPartTarget.partId : item._clientId === requestPartTarget.clientId,
+                const part =
+                    request?.parts?.find((item) =>
+                        requestPartTarget.partId
+                            ? item.id === requestPartTarget.partId
+                            : item._clientId === requestPartTarget.clientId,
                     ) || request?.parts?.[requestPartTarget.index];
 
                 if (part) {
@@ -1459,16 +1503,28 @@ export default {
                 const catalogTabId = tab.id;
                 this.removeTab(catalogTabId);
 
-                if (this.tabs.some((item) => item.id === requestPartTarget.requestTabId,
-                    )) {
-                    const originScroll = requestPartTarget.scroll ?? this.tabs.find((item ) => item.id === requestPartTarget.requestTabId,
-                        )?.scroll ?? 0;
-                    Promise.resolve(this.activate(requestPartTarget.requestTabId),
+                if (
+                    this.tabs.some(
+                        (item) => item.id === requestPartTarget.requestTabId,
+                    )
+                ) {
+                    const originScroll =
+                        requestPartTarget.scroll ??
+                        this.tabs.find(
+                            (item) =>
+                                item.id === requestPartTarget.requestTabId,
+                        )?.scroll ??
+                        0;
+                    Promise.resolve(
+                        this.activate(requestPartTarget.requestTabId),
                     ).then(() => {
-                        const origin = this.tabs.find((item ) => item.id === requestPartTarget.requestTabId,
+                        const origin = this.tabs.find(
+                            (item) =>
+                                item.id === requestPartTarget.requestTabId,
                         );
                         if (origin) origin.scroll = originScroll;
-                        if (this.$refs?.center) this.$refs.center.scrollTop = originScroll;
+                        if (this.$refs?.center)
+                            this.$refs.center.scrollTop = originScroll;
                     });
                 }
 
@@ -1492,9 +1548,9 @@ export default {
 
         closeChatOutside(event) {
             if (
-                !this.chatRequestId
-                || event.target.closest(".request-chat-drawer")
-                || event.target.closest(".request-chat-button")
+                !this.chatRequestId ||
+                event.target.closest(".request-chat-drawer") ||
+                event.target.closest(".request-chat-button")
             ) {
                 return;
             }
@@ -1504,26 +1560,31 @@ export default {
 
         updateOverflowTitle(event) {
             const element = event.target.closest(
-                "input, select, textarea, td, th, output, "
-                    + ".work-search-results button, .reference-picker-options button",
+                "input, select, textarea, td, th, output, " +
+                    ".work-search-results button, .reference-picker-options button",
             );
 
             if (!element || !event.currentTarget.contains(element)) {
                 return;
             }
 
-            if (element.hasAttribute("title") && !element.dataset.overflowTitle) {
+            if (
+                element.hasAttribute("title") &&
+                !element.dataset.overflowTitle
+            ) {
                 return;
             }
 
-            const text = element instanceof HTMLSelectElement
-                ? element.selectedOptions[0]?.textContent
-                : element instanceof HTMLInputElement
-                  || element instanceof HTMLTextAreaElement
-                    ? element.value
-                    : element.textContent;
-            const overflows = element.scrollWidth > element.clientWidth + 1
-                || element.scrollHeight > element.clientHeight + 1;
+            const text =
+                element instanceof HTMLSelectElement
+                    ? element.selectedOptions[0]?.textContent
+                    : element instanceof HTMLInputElement ||
+                        element instanceof HTMLTextAreaElement
+                      ? element.value
+                      : element.textContent;
+            const overflows =
+                element.scrollWidth > element.clientWidth + 1 ||
+                element.scrollHeight > element.clientHeight + 1;
 
             if (overflows && String(text || "").trim()) {
                 element.title = String(text).trim().replace(/\s+/g, " ");
@@ -1573,16 +1634,21 @@ export default {
 
         cell(item, key) {
             if (item.kind === "partManufacturers" && key === "status") {
-                return ({ approved: "Согласован", pending: "Ожидает согласования УК", rejected: "Отклонён" ,
-                    }[item.status] || item.status);
+                return (
+                    {
+                        approved: "Согласован",
+                        pending: "Ожидает согласования УК",
+                        rejected: "Отклонён",
+                    }[item.status] || item.status
+                );
             }
 
             const value = item[key];
 
             if (
-                item.kind === "workTypes"
-                && key === "laborHourRate"
-                && (value === null || value === undefined || value === "")
+                item.kind === "workTypes" &&
+                key === "laborHourRate" &&
+                (value === null || value === undefined || value === "")
             ) {
                 return "Не указана";
             }
@@ -1590,8 +1656,14 @@ export default {
             if (key.endsWith("At")) {
                 return formatDateTime(value);
             }
-            if (["parentId", "workTypeId", "supplierId", "manufacturerId",
-                ].includes(key)) {
+            if (
+                [
+                    "parentId",
+                    "workTypeId",
+                    "supplierId",
+                    "manufacturerId",
+                ].includes(key)
+            ) {
                 const rows = [
                     ...this.store.records,
                     ...Object.values(this.store.references).flat(),
@@ -1608,13 +1680,14 @@ export default {
 
                 if (key === "accessRights") {
                     const labels = Object.fromEntries(
-                        (this.store.references.accessRights || []).map((right) => [
-                            right.value,
-                            right.label],
+                        (this.store.references.accessRights || []).map(
+                            (right) => [right.value, right.label],
                         ),
                     );
 
-                    return value.map((entry) => labels[entry] || entry).join(", ");
+                    return value
+                        .map((entry) => labels[entry] || entry)
+                        .join(", ");
                 }
 
                 return value
@@ -1646,15 +1719,31 @@ export default {
             this.tabs = [];
             this.activeId = "";
             this.selectedDraftIds = [];
-            const message = "Сессия завершена. Возможно, выполнен вход с другого устройства.";
+            const message =
+                "Сессия завершена. Возможно, выполнен вход с другого устройства.";
             this.fatal = message;
             this.notify(message);
+        },
+
+        // Открытие вкладки ЭДО
+        async openEdoTab() {
+            const id = "edo";
+            if (!this.tabs.some((t) => t.id === id)) {
+                this.tabs.push({
+                    id,
+                    kind: "edo",
+                    title: "Документы ЭДО",
+                });
+            }
+            await this.activate(id);
         },
     },
 
     async mounted() {
         window.addEventListener("beforeunload", this.guardUnload);
-        document.addEventListener("visibilitychange", this.handleVisibilityChange,
+        document.addEventListener(
+            "visibilitychange",
+            this.handleVisibilityChange,
         );
         document.addEventListener("pointerdown", this.closeChatOutside);
 
@@ -1681,7 +1770,9 @@ export default {
         clearTimeout(this.fatalTimer);
         clearTimeout(this.saveErrorTimer);
         window.removeEventListener("beforeunload", this.guardUnload);
-        document.removeEventListener("visibilitychange", this.handleVisibilityChange,
+        document.removeEventListener(
+            "visibilitychange",
+            this.handleVisibilityChange,
         );
         document.removeEventListener("pointerdown", this.closeChatOutside);
         http.setUnauthorizedHandler(null);
@@ -1692,12 +1783,7 @@ export default {
 
 <template>
     <div v-if="checking" class="loading-page">
-        <img
-            src="/autoremhub-mark.png"
-            width="512"
-            height="512"
-            alt=""
-        />
+        <img src="/autoremhub-mark.png" width="512" height="512" alt="" />
         <span>Открываем AUTOREMHUB…</span>
     </div>
 
@@ -1707,40 +1793,14 @@ export default {
     </template>
 
     <div v-else class="app-shell" @pointerover="updateOverflowTitle">
-        <header class="topbar">
-            <div class="brand brand-topbar">
-                <div class="brand-logo-stack">
-                    <img
-                        class="brand-logo"
-                        src="/autoremhub-logo.png"
-                        width="1000"
-                        height="188"
-                        alt="AUTOREMHUB"
-                    />
-                    <small class="app-version">{{ appVersion }}</small>
-                </div>
-                <div class="brand-context">
-                    <small>Личный кабинет</small>
-                </div>
-            </div>
-            <div class="role-badge">{{ user.label }}</div>
-            <div class="user-chip">
-                <span class="avatar">{{
-                    user.login.slice(0, 2).toUpperCase()
-                }}</span>
-                <div>
-                    <strong>{{ user.fullName || user.displayName || user.login }}</strong>
-                    <small>{{ user.organization }}</small>
-                </div>
-                <button
-                    class="logout-btn"
-                    :disabled="logoutBusy || store.busy"
-                    @click="logout"
-                >
-                    Выйти
-                </button>
-            </div>
-        </header>
+        <TopBar
+            :user="user"
+            :busy="store.busy"
+            :logout-busy="logoutBusy"
+            :app-version="appVersion"
+            @logout="logout"
+            @open-edo="openEdoTab"
+        />
 
         <nav class="mobile-panels">
             <button @click="showPanel('menu')">Меню</button>
@@ -1748,106 +1808,24 @@ export default {
             <button @click="showPanel('state')">Состояние</button>
         </nav>
 
-        <main
-            class="workspace"
-            :style="layout"
-            :class="{
-                'menu-off': !panel.menu,
-                'work-off': !panel.work,
-                'state-off': !panel.state,
-            }"
-        >
-            <aside class="area menu-area" :class="{ collapsed: !panel.menu }">
-                <header class="area-head">
-                    <h2 v-if="panel.menu">Меню</h2>
-                    <button
-                        class="collapse-btn"
-                        :aria-expanded="panel.menu"
-                        aria-label="Свернуть или развернуть меню"
-                        @click="collapse('menu')"
-                    >
-                        {{ panel.menu ? "‹" : "›" }}
-                    </button>
-                </header>
-                <div v-if="panel.menu" class="area-scroll menu-scroll">
-                    <span class="nav-caption">Документы</span>
-                    <button
-                        class="nav-item"
-                        :class="{ active: active?.key === 'requests' }"
-                        @click="openList()"
-                    >
-                        ▤ Заявки на ремонт <b>{{ store.requests.length }}</b>
-                    </button>
-                    <button
-                        class="nav-item"
-                        :class="{ active: active?.key === 'action' }"
-                        @click="openList('action')"
-                    >
-                        ◷ Ожидают действия <b>{{ awaiting }}</b>
-                    </button>
-                    <button
-                        class="nav-item"
-                        :class="{ active: active?.key === 'archive' }"
-                        @click="openList('archive')"
-                    >
-                        ▣ Архив
-                    </button>
-                    <span class="nav-caption notification-caption">
-                        Уведомления
-                        <b v-if="unreadNotifications">{{ unreadNotifications }}</b>
-                    </span>
-                    <div class="notification-list">
-                        <button
-                            v-for="item in store.notifications.slice(0, 5)"
-                            :key="item.id"
-                            class="notification-item"
-                            :class="{ unread: !item.readAt }"
-                            @click="openNotification(item)"
-                        >
-                            <strong>{{ item.title }}</strong>
-                            <small>{{ item.message }}</small>
-                            <time>{{ formatDateTime(item.createdAt) }}</time>
-                        </button>
-                        <p v-if="!store.notifications.length" class="muted">
-                            Новых уведомлений нет.
-                        </p>
-                    </div>
-                    <span class="nav-caption notification-caption">
-                        Сообщения по заявкам
-                        <b v-if="store.chatUnreadTotal">{{ store.chatUnreadTotal }}</b>
-                    </span>
-                    <div v-if="unreadChatSummaries.length" class="notification-list">
-                        <button
-                            v-for="chat in unreadChatSummaries.slice(0, 5)"
-                            :key="chat.requestId"
-                            class="notification-item unread"
-                            @click="openUnreadChat(chat)"
-                        >
-                            <strong>{{ chat.requestNumber }} · чат</strong>
-                            <small>Непрочитанных сообщений: {{ chat.unreadCount }}</small>
-                        </button>
-                    </div>
-                    <template v-if="catalogKeys.length">
-                        <span class="nav-caption">Справочники</span>
-                        <button
-                            v-for="key in catalogKeys"
-                            :key="key"
-                            class="nav-item"
-                            :class="{ active: active?.key === key }"
-                            @click="openList(key)"
-                        >
-                            {{ catalogNamesValue(key) }}
-                        </button>
-                    </template>
-                    <div class="menu-info">
-                        <strong>{{ user.organization }}</strong>
-                        <p>{{ user.label }}</p>
-                    </div>
-                </div>
-                <button v-else class="vertical-label" @click="collapse('menu')">
-                    Меню
-                </button>
-            </aside>
+        <main class="workspace" :style="layout" :class="workspaceClasses">
+            <SidebarMenu
+                v-if="true"
+                :user="user"
+                :active="active"
+                :panel="panel"
+                :requests="store.requests"
+                :awaiting="awaiting"
+                :notifications="store.notifications"
+                :unread-notifications="unreadNotifications"
+                :unread-chat-summaries="unreadChatSummaries"
+                :chat-unread-total="store.chatUnreadTotal"
+                :catalog-keys="catalogKeys"
+                @open-list="openList"
+                @open-notification="openNotification"
+                @open-unread-chat="openUnreadChat"
+                @collapse="collapse"
+            />
 
             <div
                 class="splitter"
@@ -1868,15 +1846,7 @@ export default {
                         v-if="panel.work"
                         class="save-status"
                         :class="{ error: store.saveError }"
-                        >{{
-                            store.saveError
-                                ? "Ошибка сохранения"
-                                : store.busy
-                                  ? "Выполняем операцию…"
-                                  : store.dirty
-                                    ? "Есть несохранённые изменения"
-                                    : "Изменения сохранены"
-                        }}</span
+                        >{{ saveStatusText }}</span
                     >
                     <button
                         class="collapse-btn"
@@ -1889,60 +1859,24 @@ export default {
                 </header>
 
                 <template v-if="panel.work">
-                    <div class="virtual-tabs" role="tablist">
-                        <div
-                            v-for="t in tabs"
-                            :key="t.id"
-                            class="virtual-tab"
-                            :class="{ active: t.id === activeId }"
-                        >
-                            <button
-                                :title="t.title"
-                                role="tab"
-                                :aria-selected="t.id === activeId"
-                                @click="activate(t.id)"
-                            >
-                                {{ t.title
-                                }}{{ store.pending[t.recordId] ? " •" : "" }}
-                            </button>
-                            <button
-                                class="tab-close"
-                                :aria-label="'Закрыть ' + t.title"
-                                @click="closeTab(t.id)"
-                            >
-                                ×
-                            </button>
-                        </div>
-                    </div>
+                    <WorkspaceTabs
+                        :tabs="tabs"
+                        :active-id="activeId"
+                        :pending="store.pending"
+                        @activate="activate"
+                        @close="closeTab"
+                    />
 
-                    <div
-                        v-if="fatal || store.saveError"
-                        role="alert"
-                        class="error-banner"
-                    >
-                        {{ fatal || store.saveError
-                        }}<button @click="refresh">Повторить</button>
-                    </div>
-                    <div v-if="store.conflict" class="conflict-banner">
-                        <strong>Заявка изменилась в другом кабинете</strong>
-                        <button @click="resolve('mine')">
-                            Сохранить мои поля
-                        </button>
-                        <button @click="resolve('server')">
-                            Принять серверную версию
-                        </button>
-                    </div>
-                    <div v-if="missingLaborHourRate" class="warning-banner">
-                        <strong>Стоимость нормо/часа не указана.</strong>
-                        <template v-if="user.role === 'manager'">
-                            Откройте «Справочник ТС Заказчиков», заполните стоимость для VIN
-                            {{ current.vin }} и сохраните запись.
-                        </template>
-                        <template v-else>
-                            Обратитесь в УК: стоимость для VIN {{ current.vin }}
-                            заполняется в справочнике ТС.
-                        </template>
-                    </div>
+                    <WorkspaceAlerts
+                        :fatal="fatal"
+                        :save-error="store.saveError"
+                        :conflict="Boolean(store.conflict)"
+                        :missing-labor-hour-rate="missingLaborHourRate"
+                        :user="user"
+                        :current="current"
+                        @refresh="refresh"
+                        @resolve="resolve"
+                    />
 
                     <div
                         ref="center"
@@ -1969,7 +1903,7 @@ export default {
                                     <h1>
                                         {{ active.title }}
                                         <span class="count">{{
-                                            active.key === 'vehicleModels'
+                                            active.key === "vehicleModels"
                                                 ? vehicleReferenceTotal
                                                 : listed.length
                                         }}</span>
@@ -2001,28 +1935,39 @@ export default {
                                     >
                                         Импорт из Excel
                                     </button>
-                                    <button v-if="
+                                    <button
+                                        v-if="
                                             user.role === 'manager' &&
                                             active.key === 'vehicleModels'
                                         "
-                                        class="ghost-btn" @click="vehicleModelCreateOpen = true">Добавить ТС</button>
+                                        class="ghost-btn"
+                                        @click="vehicleModelCreateOpen = true"
+                                    >
+                                        Добавить ТС
+                                    </button>
                                     <button
                                         v-if="selectedDraftCount"
                                         class="danger-btn"
                                         :disabled="store.busy"
                                         @click="deleteDrafts(selectedDraftIds)"
                                     >
-                                        Удалить черновики ({{ selectedDraftCount }})
+                                        Удалить черновики ({{
+                                            selectedDraftCount
+                                        }})
                                     </button>
                                 </div>
                             </div>
                             <p class="list-hint">
-                                <template v-if="active.key === 'changeRegistry'">
+                                <template
+                                    v-if="active.key === 'changeRegistry'"
+                                >
                                     Реестр доступен только для просмотра.
                                 </template>
-                                <template v-else-if="active.key === 'vehicleModels'">
-                                    Внутренний справочник доступен УК для просмотра,
-                                    фильтрации и импорта.
+                                <template
+                                    v-else-if="active.key === 'vehicleModels'"
+                                >
+                                    Внутренний справочник доступен УК для
+                                    просмотра, фильтрации и импорта.
                                 </template>
                                 <template v-else>
                                     Один клик — предпросмотр · Двойной клик или
@@ -2034,255 +1979,24 @@ export default {
                                 :reload-token="vehicleReferenceReloadToken"
                                 @total="vehicleReferenceTotal = $event"
                             />
-                            <template v-else>
-                            <div class="registry-wrap">
-                                <table class="registry">
-                                    <thead>
-                                        <tr v-if="isRequestList">
-                                            <th v-if="
-                                                        active.key ===
-                                                        'requests'
-                                                    "
-                                                    class="selection-col">
-                                                <input
-                                                    type="checkbox"
-                                                    aria-label="Выбрать все доступные черновики"
-                                                    :checked="
-                                                            allVisibleDraftsSelected
-                                                        "
-                                                        :disabled="
-                                                            !selectableDrafts.length
-                                                        "
-                                                        @change="
-                                                            toggleAllDrafts
-                                                        "
-                                                    />
-                                            </th>
-                                            <th
-                                                v-for="(
-                                                        name, key
-                                                    ) in requestColumns"
-                                                    :key="key"
-                                            >
-                                                {{ name }}
-                                            </th>
-                                            <th />
-                                        </tr>
-                                        <tr v-else>
-                                            <th
-                                                v-for="(
-                                                        name, key
-                                                    ) in columns(active.key)"
-                                                    :key="key"
-                                            >
-                                                {{ name }}
-                                            </th>
-                                            <th />
-                                        </tr>
-                                        <tr
-                                            v-if="isRequestList"
-                                            class="column-filter-row request-filter-row"
-                                        >
-                                            <th
-                                                v-if="
-                                                        active.key ===
-                                                        'requests'
-                                                    "
-                                                    class="selection-col"
-                                            />
-                                            <th
-                                                v-for="(
-                                                        name, key
-                                                    ) in requestColumns"
-                                                    :key="key"
-                                            >
-                                                <input
-                                                    v-model="
-                                                            active.filters[key]
-                                                        "
-                                                        :aria-label="`Фильтр: ${name}`"
-                                                    :placeholder="
-                                                            requestFilterPlaceholder(
-                                                                key,
-                                                            )
-                                                        "
-                                                    />
-                                            </th>
-                                            <th />
-                                        </tr>
-                                        <tr v-else class="column-filter-row">
-                                            <th
-                                                v-for="(
-                                                        name, key
-                                                    ) in columns(active.key)"
-                                                    :key="key"
-                                            >
-                                                <input
-                                                    v-model="
-                                                            active.filters[key]
-                                                        "
-                                                        :aria-label="`Фильтр: ${name}`"
-                                                    placeholder="Фильтр"
-                                                />
-                                            </th>
-                                            <th />
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr
-                                            v-for="item in listed"
-                                            :key="item.id"
-                                            tabindex="0"
-                                            :class="{
-                                                    selected:
-                                                        active.selection ===
-                                                        item.id,
-                                                }"
-                                                @click="select(item)"
-                                            @dblclick="openListed(item)"
-                                            @keydown.enter="
-                                                    openListed(item)
-                                                "
-                                            >
-                                            <template v-if="isRequestList">
-                                                <td v-if="
-                                                            active.key ===
-                                                            'requests'
-                                                        "
-                                                        class="selection-col">
-                                                    <input
-                                                        v-if="
-                                                                item.permissions
-                                                                    ?.canDeleteDraft
-                                                            "
-                                                            type="checkbox"
-                                                        aria-label="Выбрать черновик для удаления"
-                                                        :checked="
-                                                                selectedDraftIds.includes(
-                                                                    item.id,
-                                                                )
-                                                            "
-                                                            @click.stop
-                                                        @change="
-                                                                toggleDraftSelection(
-                                                                    item.id,
-                                                                )
-                                                            "
-                                                        />
-                                                </td>
-                                                <td>
-                                                    <strong>{{
-                                                        item.number
-                                                    }}</strong
-                                                    ><small>{{
-                                                        formatDateTime(
-                                                            item.createdAt,
-                                                        )
-                                                    }}</small>
-                                                </td>
-                                                <td>
-                                                    <strong>{{
-                                                        item.vehicle ||
-                                                        "Автомобиль не выбран"
-                                                    }}</strong
-                                                    ><small
-                                                        >{{
-                                                            item.plate ||
-                                                            "Пустой черновик"
-                                                        }}
-                                                        <template
-                                                            v-if="
-                                                                    item.company &&
-                                                                    user.role !==
-                                                                        'station'
-                                                                "
-                                                            >
-                                                            · {{ item.company }}
-                                                        </template></small
-                                                    >
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        class="status"
-                                                        :class="
-                                                                statusClass(
-                                                                    item.stage,
-                                                                    item.permissions,
-                                                                )
-                                                            "
-                                                            >{{
-                                                            item.statusLabel || step(item.stage).status}}</span
-                                                    ><small>{{
-                                                        step(item.stage).owner
-                                                    }}</small
-                                                    ><small
-                                                        v-if="
-                                                                item.overdueSeconds
-                                                            "
-                                                            class="overdue"
-                                                        >Превышен плановый
-                                                        срок</small
-                                                    >
-                                                </td>
-                                                <td>
-                                                    {{ money(total(item)) }}
-                                                </td>
-                                            </template>
-                                            <template v-else>
-                                                <td
-                                                    v-for="(
-                                                            label, key
-                                                        ) in columns(
-                                                            active.key,
-                                                        )"
-                                                        :key="key"
-                                                >
-                                                    {{ cell(item, key) }}
-                                                </td>
-                                            </template>
-                                            <td>
-                                                <button
-                                                    v-if="
-                                                            active.key !==
-                                                            'changeRegistry'
-                                                        "
-                                                        class="open-row"
-                                                    :aria-label="
-                                                            'Открыть ' +
-                                                            (item.number ||
-                                                                item.vehicle ||
-                                                                item.name)
-                                                        "
-                                                        @click.stop="
-                                                            openListed(item)
-                                                        "
-                                                    >
-                                                    ↗
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div v-if="!listed.length" class="empty-state">
-                                <h3>
-                                    {{
-                                        store.loading
-                                            ? "Загружаем данные…"
-                                            : "Записей пока нет"
-                                    }}
-                                </h3>
-                                <p>
-                                    {{
-                                        activeFiltersApplied
-                                            ? "Измените параметры фильтрации."
-                                            : isRequestList
-                                              ? "Новая заявка откроется с пустыми полями."
-                                              : "Справочник ещё не заполнен."
-                                    }}
-                                </p>
-                            </div>
-                            </template>
+                            <RegistryTable
+                                v-else
+                                :active="active"
+                                :listed="listed"
+                                :is-request-list="isRequestList"
+                                :user="user"
+                                :store="store"
+                                :selectable-drafts="selectableDrafts"
+                                :selected-draft-ids="selectedDraftIds"
+                                :all-visible-drafts-selected="
+                                    allVisibleDraftsSelected
+                                "
+                                :active-filters-applied="activeFiltersApplied"
+                                @select="select"
+                                @open-listed="openListed"
+                                @toggle-all-drafts="toggleAllDrafts"
+                                @toggle-draft-selection="toggleDraftSelection"
+                            />
                         </template>
 
                         <template v-else-if="current">
@@ -2404,11 +2118,19 @@ export default {
                             @vehicle-history="openVehicle"
                             @open-record="openRecord($event, 'record')"
                         />
-                        <RecommendationPanel v-else-if="active?.kind === 'recommendations'" :key="active.id" :vehicle-id="active.vehicleId" :requests="store.requests" :pending="store.pending" @restored="recommendationsRestored" />
+                        <RecommendationPanel
+                            v-else-if="active?.kind === 'recommendations'"
+                            :key="active.id"
+                            :vehicle-id="active.vehicleId"
+                            :requests="store.requests"
+                            :pending="store.pending"
+                            @restored="recommendationsRestored"
+                        />
                         <VehicleHistory
                             v-else-if="active?.kind === 'vehicle-history'"
                             :vehicle-id="active.recordId"
                         />
+                        <EdoDocuments v-else-if="active?.kind === 'edo'" />
                     </div>
                 </template>
 
@@ -2474,7 +2196,12 @@ export default {
         @discard="closeUnsaved(false)"
     />
 
-    <VehicleModelCreateDialog v-if="vehicleModelCreateOpen" :create-model="createVehicleModel" @created="vehicleModelCreated" @close="vehicleModelCreateOpen = false" />
+    <VehicleModelCreateDialog
+        v-if="vehicleModelCreateOpen"
+        :create-model="createVehicleModel"
+        @created="vehicleModelCreated"
+        @close="vehicleModelCreateOpen = false"
+    />
     <CatalogImportWizard
         v-if="catalogImportKind"
         :kind="catalogImportKind"

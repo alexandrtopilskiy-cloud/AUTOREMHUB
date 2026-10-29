@@ -30,20 +30,40 @@ final class EdoDocumentController
     public function __construct(
         private readonly EdoService $service,
         private readonly MediaService $media,
-    ) {
-    }
+    ) {}
 
-    public function index(Request $request): EdoDocumentCollection
+    public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        $organizationId = $user->organization_id;
 
-        $documents = EdoDocument::query()
-        ->where('tenant_id', $user->tenantId())
-            ->with(['organization', 'counterparty'])
-            ->orderByDesc('id')
-            ->paginate(50);
+        $query = EdoDocument::query()
+            ->where(function ($q) use ($organizationId) {
+                $q
+                    ->where('organization_id', $organizationId)
+                    ->orWhere('counterparty_id', $organizationId);
+            })
+            ->with(['counterparty', 'organization', 'payloadAttachment'])
+            ->orderByDesc('id');
 
-        return new EdoDocumentCollection($documents);
+        // Фильтр по статусу
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        // Фильтр по типу
+        if ($request->filled('type')) {
+            $query->where('document_type', $request->input('type'));
+        }
+
+        // Фильтр по контрагенту
+        if ($request->filled('counterparty_id')) {
+            $query->where('counterparty_id', $request->input('counterparty_id'));
+        }
+
+        return response()->json([
+            'documents' => EdoDocumentResource::collection($query->paginate(50)),
+        ]);
     }
 
     public function show(Request $request, string $uuid): EdoDocumentResource
@@ -217,5 +237,33 @@ final class EdoDocumentController
         return (new EdoPreparedDocumentResource($prepared))
             ->response()
             ->setStatusCode(201);
+    }
+
+    public function retry(Request $request, string $uuid): JsonResponse
+    {
+        $user = $request->user();
+        $document = EdoDocument::query()
+            ->where('uuid', $uuid)
+            ->where(function ($q) use ($user) {
+                $q
+                    ->where('organization_id', $user->organization_id)
+                    ->orWhere('counterparty_id', $user->organization_id);
+            })
+            ->firstOrFail();
+
+
+        if (!in_array($document->status, ['rejected', 'unknown'], true)) {
+            throw new ApiException(422, 'VALIDATION_ERROR', 'Документ нельзя отправить повторно');
+        }
+
+        // Сбрасываем статус и отправляем событие заново
+        $document->update(['status' => 'draft']);
+
+        // В зависимости от типа документа, диспатчим нужное событие
+        // (можно взять из meta или source)
+        // Например:
+        // \App\Events\RepairRequests\InvoiceIssued::dispatch($request, $invoice);
+
+        return response()->json(['message' => 'Документ поставлен в очередь на повторную отправку']);
     }
 }

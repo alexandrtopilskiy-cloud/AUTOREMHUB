@@ -41,12 +41,16 @@ final class EdoDocumentControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonStructure([
-            'data' => [
-                '*' => ['id', 'uuid', 'documentType', 'status', 'number'],
+            'documents' => [
+                '*' => [
+                    'id',
+                    'type',
+                    'status',
+                    'number',
+                ],
             ],
-            'meta' => ['total', 'perPage', 'currentPage', 'lastPage'],
         ]);
-        $response->assertJsonCount(1, 'data');
+        $response->assertJsonCount(1, 'documents');
     }
 
     public function test_show_returns_document(): void

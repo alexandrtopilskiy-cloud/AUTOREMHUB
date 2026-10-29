@@ -37,96 +37,96 @@ final class DiadocProvider implements
     public function createStructuredDocument(EdoStructuredRequest $request): EdoDocumentDto
     {
         // TODO: сформировать XML УПД через Upd503Builder и вернуть DTO
-        throw EdoException::operationNotSupported('createStructuredDocument', 'diadoc');
+        throw EdoException::operationNotSupported('createStructuredDocument', EdoProviderEnum::Diadoc);
     }
 
     public function addAttachment(string $externalId, EdoFile $file): void
     {
-        throw EdoException::operationNotSupported('addAttachment', 'diadoc');
+        throw EdoException::operationNotSupported('addAttachment', EdoProviderEnum::Diadoc);
     }
 
     public function signDocument(string $externalId, EdoSignature $signature): void
     {
-        throw EdoException::operationNotSupported('signDocument', 'diadoc');
+        throw EdoException::operationNotSupported('signDocument', EdoProviderEnum::Diadoc);
     }
 
     public function sendDocument(string $externalId): void
     {
         $document = EdoDocument::query()
-            ->with(['organization', 'counterparty', 'payloadAttachment', 'signedAttachment'])
+            ->with(['organization', 'counterparty', 'payloadAttachment'])
             ->where('provider', EdoProviderEnum::Diadoc->value)
             ->where('external_id', $externalId)
             ->first();
 
         if ($document === null) {
-            throw EdoException::remoteError(
-                'diadoc',
-                'DOCUMENT_NOT_FOUND',
-                "Документ с external_id={$externalId} не найден в MSTO",
-            );
+            throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'DOCUMENT_NOT_FOUND', "Документ не найден");
         }
 
         $attachment = $document->payloadAttachment;
         if ($attachment === null || $attachment->object_key === '') {
-            throw EdoException::remoteError('diadoc', 'PAYLOAD_MISSING', 'У документа нет XML');
+            throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'PAYLOAD_MISSING', 'У документа нет файла (PDF)');
         }
 
-        $xmlBinary = Storage::disk($attachment->disk)->get($attachment->object_key);
-        if ($xmlBinary === null || $xmlBinary === '') {
-            throw EdoException::remoteError('diadoc', 'PAYLOAD_EMPTY', 'XML документа пуст');
+        $pdfBinary = Storage::disk($attachment->disk)->get($attachment->object_key);
+        if ($pdfBinary === null || $pdfBinary === '') {
+            throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'PAYLOAD_EMPTY', 'Файл документа пуст');
         }
 
-        $signedAttachment = $document->signedAttachment;
-        if ($signedAttachment === null || $signedAttachment->object_key === '') {
-            throw EdoException::remoteError('diadoc', 'SIGNATURE_MISSING', 'У документа нет подписи');
+        // 1. Получаем токен (refresh_token хранится у организации)
+        $refreshToken = $document->organization->edo_token;
+        if (!$refreshToken) {
+            throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'NO_REFRESH_TOKEN', 'У организации нет refresh_token');
         }
+        $accessToken = $this->client->getAccessToken($refreshToken);
 
-        $signatureBinary = Storage::disk($signedAttachment->disk)->get($signedAttachment->object_key);
-        if ($signatureBinary === null || $signatureBinary === '') {
-            throw EdoException::remoteError('diadoc', 'SIGNATURE_EMPTY', 'Подпись пуста');
-        }
-
+        // 2. BoxId отправителя и получателя
         $fromBoxId = $document->organization->edo_client_id;
         $toBoxId = $document->counterparty?->edo_client_id;
 
         if (!$fromBoxId || !$toBoxId) {
-            throw EdoException::remoteError(
-                'diadoc',
-                'BOX_ID_MISSING',
-                'Не заполнен edo_client_id (BoxId) у отправителя или получателя',
-            );
+            throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'BOX_ID_MISSING', 'Не заполнен edo_client_id (BoxId)');
         }
 
-        $typeNamedId = $this->mapTypeNamedId($document->document_type);
-        $function = $this->mapFunction($document->document_type);
-        $version = $this->mapVersion($document->document_type);
+        // 3. Генерируем подпись (заглушка, в реальности — КриптоПро или DSSign)
+        // Для тестов в Диадоке можно использовать SignWithTestSignature = true
+        $signatureBinary = base64_decode('mock-signature');
 
+        // 4. Формируем запрос для неформализованного документа
         $payload = [
             'FromBoxId' => $fromBoxId,
             'ToBoxId' => $toBoxId,
             'DocumentAttachments' => [
                 [
                     'SignedContent' => [
-                        'Content' => base64_encode($xmlBinary),
+                        'Content' => base64_encode($pdfBinary),
                         'Signature' => base64_encode($signatureBinary),
+                        // Для тестового контура можно раскомментировать:
+                         'SignWithTestSignature' => true,
                     ],
-                    'TypeNamedId' => $typeNamedId,
-                    'Function' => $function,
-                    'Version' => $version,
+                    'TypeNamedId' => 'Nonformalized', // 👈 Тип для PDF
+                    'Function' => 'default',
+                    'Version' => '1.0',
                     'NeedRecipientSignature' => true,
+                    'Comment' => "Документ по заявке {$document->number}",
                 ],
             ],
         ];
 
-        $response = $this->client->post('/V3/PostMessage', $payload);
+        // 5. Отправляем в Диадок
+        $response = $this->client->post(
+            path: '/V3/PostMessage',
+            body: $payload,
+            token: $accessToken,
+        );
 
         $messageId = $response['MessageId'] ?? null;
         $entityId = $response['Entities'][0]['EntityId'] ?? null;
 
         if ($messageId === null) {
-            throw EdoException::remoteError('diadoc', 'NO_MESSAGE_ID', 'Диадок не вернул MessageId');
+            throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'NO_MESSAGE_ID', 'Диадок не вернул MessageId');
         }
 
+        // 6. Обновляем статус документа
         $document->update([
             'external_uuid' => $messageId,
             'status' => EdoDocumentStatus::Sended,
@@ -146,7 +146,7 @@ final class DiadocProvider implements
             EdoDocumentType::UpdDop => 'UniversalTransferDocument',
             EdoDocumentType::UcdCsf => 'UniversalCorrectionDocument',
             EdoDocumentType::Invoice => 'Invoice',
-            default => throw EdoException::operationNotSupported('mapTypeNamedId(' . $type->value . ')', 'diadoc'),
+            default => throw EdoException::operationNotSupported('mapTypeNamedId(' . $type->value . ')', EdoProviderEnum::Diadoc),
         };
     }
 
@@ -158,7 +158,7 @@ final class DiadocProvider implements
             EdoDocumentType::UpdDop => 'ДОП',
             EdoDocumentType::UcdCsf => 'КСЧФ',
             EdoDocumentType::Invoice => 'СЧФ',
-            default => throw EdoException::operationNotSupported('mapFunction(' . $type->value . ')', 'diadoc'),
+            default => throw EdoException::operationNotSupported('mapFunction(' . $type->value . ')', EdoProviderEnum::Diadoc),
         };
     }
 
@@ -170,7 +170,7 @@ final class DiadocProvider implements
             EdoDocumentType::UpdDop => 'utd970_05_03_01',
             EdoDocumentType::UcdCsf => 'ucd970_05_03_01',
             EdoDocumentType::Invoice => 'invoice_05_03_01',
-            default => throw EdoException::operationNotSupported('mapVersion(' . $type->value . ')', 'diadoc'),
+            default => throw EdoException::operationNotSupported('mapVersion(' . $type->value . ')', EdoProviderEnum::Diadoc),
         };
     }
 
