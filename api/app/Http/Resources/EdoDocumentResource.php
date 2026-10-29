@@ -16,12 +16,12 @@ final class EdoDocumentResource extends JsonResource
         return [
             'id'              => $this->uuid,
             'type'            => $this->document_type,
-            'typeLabel'       => $this->getTypeLabel(),
+            'typeLabel'       => $this->document_type->label(),
             'number'          => $this->number,
             'date'            => $this->document_date->format('d.m.Y'),
             'provider'        => $this->provider,
             'status'          => $this->status,
-            'statusLabel'     => $this->getStatusLabel(),
+            'statusLabel'     => $this->status->label(),
             'direction'       => $this->organization_id === $request->user()->organization_id ? 'outgoing' : 'incoming',
             'counterparty'    => $this->counterparty?->name ?? '—',
             'source'          => [
@@ -36,30 +36,5 @@ final class EdoDocumentResource extends JsonResource
             'canDownload'     => $this->payload_attachment_id !== null,
             'pdfUrl'          => $this->payload_attachment_id ? "/api/attachments/{$this->payloadAttachment->uuid}/download" : null,
         ];
-    }
-
-    private function getTypeLabel(): string
-    {
-        return match ($this->document_type) {
-            'upd_sf' => 'УПД (СЧФ)',
-            'invoice' => 'Счёт-фактура',
-            'act_works' => 'Акт выполненных работ',
-            'power_of_attorney' => 'Доверенность',
-            'nonformalized' => 'Неформализованный документ',
-            default => $this->document_type,
-        };
-    }
-
-    private function getStatusLabel(): string
-    {
-        return match ($this->status) {
-            'draft' => 'Черновик',
-            'sended' => 'Отправлен',
-            'delivered' => 'Доставлен',
-            'signed' => 'Подписан',
-            'rejected' => 'Отклонен',
-            'unknown' => 'Неизвестно',
-            default => $this->status,
-        };
     }
 }
