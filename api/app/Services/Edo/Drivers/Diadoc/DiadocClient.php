@@ -16,7 +16,6 @@ use Illuminate\Support\Str;
 final class DiadocClient
 {
     private const IDENTITY_URL = 'https://identity.kontur.ru';
-    private const TOKEN_CACHE_PREFIX = 'edo:diadoc:token:';
 
     public function __construct(
         private readonly string $baseUrl,
@@ -33,14 +32,12 @@ final class DiadocClient
 
     /**
      * Получает Access Token через Refresh Token.
-     * В реальности refresh_token хранится в БД у организации.
      */
     public function getAccessToken(Organization $org): string
     {
-
         if (config('edo.mock')) {
             Log::channel('edo')->info('MOCK DIADOC: Имитация получения access_token');
-            return 'mock-access-token-' . Str::random(10);
+            return 'mock-access-token';
         }
 
         // Если токен есть и не истек — возвращаем
@@ -57,16 +54,23 @@ final class DiadocClient
         ]);
 
         if ($response->failed()) {
-            throw EdoException::remoteError(EdoProvider::Diadoc->value, 'AUTH_FAILED', $response->body());
+            throw EdoException::remoteError(
+                provider: EdoProvider::Diadoc->value,
+                code: 'AUTH_FAILED',
+                message: 'Ошибка авторизации Диадок: ' . $response->body()
+            );
         }
 
-        $accessToken = $response->json('access_token');
-        $expiresIn = $response->json('expires_in', 3600);
+        $data = $response->json();
+        $accessToken = $data['access_token'];
+        $expiresIn = $data['expires_in'] ?? 3600;
+        $newRefreshToken = $data['refresh_token'] ?? $org->edo_refresh_token;
 
-        // Сохраняем в БД
+        // Сохраняем оба токена в БД. Вычитаем 60 секунд для буфера.
         $org->update([
-            'edo_token' => $accessToken,
-            'edo_token_expires_at' => now()->addSeconds($expiresIn),
+            'edo_token'            => $accessToken,
+            'edo_token_expires_at' => now()->addSeconds(max(0, $expiresIn - 60)),
+            'edo_refresh_token'    => $newRefreshToken,
         ]);
 
         return $accessToken;
@@ -82,10 +86,31 @@ final class DiadocClient
 
     public function post(string $path, array $body = [], ?string $token = null): array
     {
+        // Если включен мок — возвращаем заглушку
+        if (config('edo.mock') && str_contains($path, 'PostMessage')) {
+            return $this->mockPost($path, $body);
+        }
+
         $uri = $this->baseUrl . $path;
         $response = $this->http($token)->post($uri, $body);
 
         return $this->decode($response);
+    }
+
+    public function getRaw(string $path, array $query = [], ?string $token = null): string
+    {
+        $uri = $this->baseUrl . $path;
+        $response = $this->http($token)->get($uri, $query);
+
+        if ($response->status() !== 200) {
+            throw EdoException::remoteError(
+                provider: EdoProvider::Diadoc->value,
+                code: "HTTP_{$response->status()}",
+                message: 'Не удалось скачать файл',
+            );
+        }
+
+        return $response->body();
     }
 
     private function http(?string $token): PendingRequest
@@ -112,7 +137,7 @@ final class DiadocClient
 
         if (!is_array($payload)) {
             throw EdoException::remoteError(
-                provider: EdoProvider::Diadoc,
+                provider: EdoProvider::Diadoc->value,
                 code: 'BAD_JSON',
                 message: "Невалидный JSON в ответе (HTTP {$response->status()})",
             );
@@ -121,7 +146,7 @@ final class DiadocClient
         if ($response->status() !== 200) {
             $message = $payload['Message'] ?? $payload['message'] ?? 'Неизвестная ошибка';
             throw EdoException::remoteError(
-                provider: EdoProvider::Diadoc,
+                provider: EdoProvider::Diadoc->value,
                 code: "HTTP_{$response->status()}",
                 message: $message,
             );
@@ -130,41 +155,18 @@ final class DiadocClient
         return $payload;
     }
 
-    public function getRaw(string $path, array $query = [], ?string $token = null): string
-    {
-        $response = $this->http($token)->get($this->baseUrl . $path, $query);
-
-        if ($response->status() !== 200) {
-            throw EdoException::remoteError(
-                provider: EdoProvider::Diadoc,
-                code: "HTTP_{$response->status()}",
-                message: 'Не удалось скачать файл',
-            );
-        }
-
-        return $response->body();
-    }
-
-    /**
-     * Имитация ответов Диадока для разных эндпоинтов.
-     */
     private function mockPost(string $path, array $body): array
     {
         Log::channel('edo')->info("MOCK DIADOC: POST {$path}", ['body' => $body]);
 
-        if (str_contains($path, '/PostMessage')) {
-            return [
-                'MessageId' => (string) Str::uuid(),
-                'Entities' => [
-                    [
-                        'EntityId' => (string) Str::uuid(),
-                        'DepartmentId' => null,
-                    ],
+        return [
+            'MessageId' => (string) Str::uuid(),
+            'Entities' => [
+                [
+                    'EntityId' => (string) Str::uuid(),
+                    'DepartmentId' => null,
                 ],
-            ];
-        }
-
-        // Заглушка для других эндпоинтов
-        return [];
+            ],
+        ];
     }
 }

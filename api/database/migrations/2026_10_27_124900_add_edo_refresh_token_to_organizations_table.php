@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('organizations', function (Blueprint $table) {
+            $table->text('edo_token')->nullable()->after('edo_provider');
             // Токен обновления (refresh_token), который выдается в Кабинете интегратора
             $table->string('edo_refresh_token', 2048)->nullable()->after('edo_token');
-
             // Время истечения access_token (для кэширования)
             $table->timestamp('edo_token_expires_at')->nullable()->after('edo_refresh_token');
         });
@@ -22,7 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('organizations', function (Blueprint $table) {
-            $table->dropColumn(['edo_refresh_token', 'edo_token_expires_at']);
+            $table->dropColumn(['edo_token', 'edo_refresh_token', 'edo_token_expires_at']);
         });
     }
 };
