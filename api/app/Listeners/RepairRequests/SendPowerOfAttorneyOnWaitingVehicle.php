@@ -18,8 +18,7 @@ final class SendPowerOfAttorneyOnWaitingVehicle implements ShouldQueue
 
     public function __construct(
         private readonly EdoPowerOfAttorneyService $edoPowerOfAttorneyService
-    ) {
-    }
+    ) {}
 
     public function handle(RepairRequestWaitingVehicle $event): void
     {

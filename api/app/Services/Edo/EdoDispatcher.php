@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Edo;
 
 use App\Contracts\Edo\EdoOutboundProviderInterface;
+use App\Enums\Edo\EdoProvider;
 use App\Models\Organization;
 use App\Services\Edo\Drivers\Diadoc\DiadocMapper;
 use App\Services\Edo\Drivers\Diadoc\DiadocProvider;
@@ -50,5 +51,24 @@ final class EdoDispatcher
             ),
             default => throw new \RuntimeException("Оператор ЭДО не настроен: {$org->edo_provider}"),
         };
+    }
+
+    /**
+     * Привязка организации к Диадоку (доступно только для провайдера Diadoc).
+     */
+    public function connectDiadocOrganization(Organization $org, string $refreshToken, string $boxId): void
+    {
+        // Проверяем, что организация действительно на Диадоке
+        if ($org->edo_provider !== EdoProvider::Diadoc) {
+            throw new \RuntimeException("Организация не использует Диадок. Текущий провайдер: {$org->edo_provider?->value}");
+        }
+
+        // Создаем провайдер (в обход мока, чтобы реально проверить токен)
+        $provider = new DiadocProvider(
+            $this->diadocClientFactory->make($org),
+            new DiadocMapper(),
+        );
+
+        $provider->connectOrganization($org, $refreshToken, $boxId);
     }
 }

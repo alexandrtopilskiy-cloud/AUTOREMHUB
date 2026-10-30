@@ -100,7 +100,7 @@ test("planned completion includes all request work norms", () => {
 });
 
 test("Options API component rendering and interactive methods", async (context) => {
-    assert.equal(APP_VERSION, "ver. 0.38.3");
+    assert.equal(APP_VERSION, "ver. 0.38.4");
 
     const server = await createServer({
         root,

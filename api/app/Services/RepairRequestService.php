@@ -1390,7 +1390,7 @@ final class RepairRequestService
             snapshot: $snapshot,
             files: $files,
             changes: $changes,
-            reviewContext: $request->review_context,
+            reviewContext: $request->review_context?->value ?? '',
             isReadyForIssue: $isReadyForIssue,
         );
 

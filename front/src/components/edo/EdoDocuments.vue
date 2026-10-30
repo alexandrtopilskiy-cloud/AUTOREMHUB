@@ -1,3 +1,70 @@
+<script setup>
+import { ref, onMounted } from "vue";
+import { marketplaceApi } from "../../api/marketplace";
+import EdoSettingsModal from "./EdoSettingsModal.vue";
+const showSettings = ref(false);
+
+const documents = ref([]);
+const loading = ref(false);
+const error = ref(null);
+
+const filters = ref({
+    search: "",
+    status: "",
+});
+
+// Возвращает класс для бейджа направления
+const getDirectionClass = (direction) => {
+    return direction === "outgoing" ? "badge-out" : "badge-in";
+};
+
+// Возвращает человекочитаемый текст направления
+const getDirectionLabel = (direction) => {
+    return direction === "outgoing" ? "Исходящий" : "Входящий";
+};
+
+const fetchDocuments = async () => {
+    loading.value = true;
+    error.value = null;
+    try {
+        const response = await marketplaceApi.listEdoDocuments(filters.value);
+        documents.value = response.documents?.data || response.documents || [];
+    } catch (err) {
+        error.value = err.message || "Ошибка загрузки документов";
+    } finally {
+        loading.value = false;
+    }
+};
+
+const onSettingsConnected = () => {
+    fetchDocuments();
+};
+
+const retryDocument = async (uuid) => {
+    if (!confirm("Отправить документ повторно?")) return;
+    try {
+        await marketplaceApi.retryEdoDocument(uuid);
+        alert("Документ поставлен в очередь");
+        fetchDocuments();
+    } catch (err) {
+        alert("Ошибка: " + err.message);
+    }
+};
+
+const formatDate = (isoString) => {
+    if (!isoString) return "—";
+    return new Date(isoString).toLocaleDateString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+};
+
+onMounted(fetchDocuments);
+</script>
+
 <template>
     <div class="edo-cabinet">
         <header class="edo-header">
@@ -28,6 +95,13 @@
                 >
                     {{ loading ? "Загрузка..." : "Обновить" }}
                 </button>
+                <button
+                    class="btn-settings"
+                    @click="showSettings = true"
+                    title="Настройки подключения к ЭДО"
+                >
+                    ⚙️
+                </button>
             </div>
         </header>
 
@@ -54,18 +128,9 @@
                     <td>{{ doc.counterparty }}</td>
                     <td>
                         <span
-                            :class="[
-                                'badge',
-                                doc.direction === 'outgoing'
-                                    ? 'badge-out'
-                                    : 'badge-in',
-                            ]"
+                            :class="['badge', getDirectionClass(doc.direction)]"
                         >
-                            {{
-                                doc.direction === "outgoing"
-                                    ? "Исходящий"
-                                    : "Входящий"
-                            }}
+                            {{ getDirectionLabel(doc.direction) }}
                         </span>
                     </td>
                     <td>
@@ -101,82 +166,43 @@
                 </tr>
             </tbody>
         </table>
+        <EdoSettingsModal
+            v-if="showSettings"
+            @close="showSettings = false"
+            @connected="onSettingsConnected"
+        />
     </div>
 </template>
-
-<script setup>
-import { ref, onMounted } from "vue";
-import { marketplaceApi } from "../../api/marketplace";
-
-const documents = ref([]);
-const loading = ref(false);
-const error = ref(null);
-
-const filters = ref({
-    search: "",
-    status: "",
-});
-
-const fetchDocuments = async () => {
-    loading.value = true;
-    error.value = null;
-    try {
-        const response = await marketplaceApi.listEdoDocuments(filters.value);
-        // Laravel Resource возвращает { data: [...] } при пагинации
-        documents.value = response.documents?.data || response.documents || [];
-    } catch (err) {
-        error.value = err.message || "Ошибка загрузки документов";
-    } finally {
-        loading.value = false;
-    }
-};
-
-const retryDocument = async (uuid) => {
-    if (!confirm("Отправить документ повторно?")) return;
-    try {
-        await marketplaceApi.retryEdoDocument(uuid);
-        alert("Документ поставлен в очередь");
-        fetchDocuments();
-    } catch (err) {
-        alert("Ошибка: " + err.message);
-    }
-};
-
-const formatDate = (isoString) => {
-    if (!isoString) return "—";
-    return new Date(isoString).toLocaleDateString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-};
-
-onMounted(fetchDocuments);
-</script>
 
 <style scoped>
 .edo-cabinet {
     padding: 20px;
     font-family: sans-serif;
 }
+
 .edo-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: space-between; /* Заголовок слева, действия справа */
     align-items: center;
     margin-bottom: 20px;
+    gap: 20px;
 }
+
 .edo-actions {
     display: flex;
+    align-items: center;
     gap: 10px;
 }
+
 .input-search,
 .select-status {
     padding: 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    height: 38px;
+    box-sizing: border-box;
 }
+
 .btn-refresh {
     padding: 8px 16px;
     background: #007bff;
@@ -184,6 +210,7 @@ onMounted(fetchDocuments);
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    height: 38px;
 }
 
 .edo-table {
@@ -204,6 +231,26 @@ onMounted(fetchDocuments);
     font-size: 12px;
     text-transform: uppercase;
     color: #666;
+}
+
+.btn-settings {
+    background: #f1f3f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0;
+    transition: background 0.2s;
+    box-sizing: border-box; /* Чтобы бордер не увеличивал размер */
+}
+
+.btn-settings:hover {
+    background: #e2e6ea;
 }
 
 .status {

@@ -1170,11 +1170,11 @@ export const marketplaceApi = {
      * @returns {Promise<object>}
      */
     async listEdoDocuments(filters = {}) {
-        const query = new URLSearchParams()
-        if (filters.search) query.set('search', filters.search)
-        if (filters.status) query.set('status', filters.status)
+        const query = new URLSearchParams();
+        if (filters.search) query.set("search", filters.search);
+        if (filters.status) query.set("status", filters.status);
 
-        return http.request(`/edo/documents?${query}`)
+        return http.request(`/edo/documents?${query}`);
     },
 
     /**
@@ -1182,6 +1182,28 @@ export const marketplaceApi = {
      * @returns {Promise<object>}
      */
     retryEdoDocument(uuid) {
-        return http.request(`/edo/documents/${uuid}/retry`, { method: 'POST' })
+        const uri = `/edo/documents/${uuid}/retry`;
+        const data =  { method: "POST" };
+
+        return http.request(uri, data);
+    },
+
+    /**
+     * Привязка организации к Диадоку.
+     * @param {string} clientId - BoxId
+     * @param {string} refreshToken
+     * @returns {Promise<object>}
+     */
+    async connectEdoOrganization(clientId, refreshToken) {
+        const uri = "/edo/connect";
+        const data = {
+            method: "POST",
+            body: {
+                client_id: clientId,
+                refresh_token: refreshToken,
+                },
+            };
+
+        return http.request(uri, data);
     },
 };
