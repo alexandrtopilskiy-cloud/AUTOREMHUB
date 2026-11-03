@@ -1519,15 +1519,14 @@ test("Options API component rendering and interactive methods", async (context) 
                 const html = await renderToString(
                     createSSRApp(RepairEditor, { ...props, request: current }),
                 );
-                assert.match(
-                    html,
-                    /aria-label="Выбрать работу для рекомендаций"/,
-                );
+                assert.match(html, /aria-label="Выбрать работу"/);
                 assert.match(
                     html,
                     /aria-label="Выбрать запчасть для рекомендаций"/,
                 );
-                assert.match(html, /Добавить работы в рекомендации/);
+                assert.match(html, /Переместить в Рекомендации/);
+                // Заказчик не редактирует работы: удаления и копирования нет.
+                assert.doesNotMatch(html, />\s*Создать копию\s*</);
                 assert.match(html, /Добавить ЗЧ в рекомендации/);
                 assert.match(html, /title="Выбрать иную дату и время"/);
                 assert.match(html, /title="Подтвердить финальную заявку"/);

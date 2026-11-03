@@ -8,6 +8,7 @@ use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Services\RepairRequestCalculator;
 use App\Services\Workflow;
+use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -28,8 +29,10 @@ final class RepairRequestResource extends JsonResource
             'stationRecord',
             'reasonRecord',
             'reasonSubtype',
-//            'workLines.workType',
-//            'workLines.timeNorm',
+            // Без этих связей WorkResource не отдаёт workTypeId/timeNormId,
+            // и при следующем сохранении сервер считает норму ручной.
+            'workLines.workType',
+            'workLines.timeNorm',
             'parts.catalogPart',
             'parts.supplier',
             'events',
@@ -41,6 +44,10 @@ final class RepairRequestResource extends JsonResource
 //            'invoice.documentAttachment',
 //            'invoice.paidDocumentAttachment',
             'acceptanceAct.attachment',
+            ...array_map(
+                static fn (string $relation): string => 'workLines.timeNorm.' . $relation,
+                TimeNormDescription::RELATIONS,
+            ),
         ]);
 
         $vehicle = $this->vehicleRecord;

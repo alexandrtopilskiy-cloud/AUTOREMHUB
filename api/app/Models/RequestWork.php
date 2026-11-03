@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
 /**
  * @property string $quantity
  * @property string|null $price
@@ -13,6 +15,10 @@ namespace App\Models;
  * @property bool $norm_is_manual
  * @property string|null $actual_hours
  * @property bool $is_maintenance
+ * @property int|null $work_type_id
+ * @property int|null $time_norm_id
+ * @property-read WorkType|null $workType
+ * @property-read TimeNorm|null $timeNorm
  */
 final class RequestWork extends Entity
 {
@@ -31,5 +37,17 @@ final class RequestWork extends Entity
             'norm_is_manual' => 'boolean',
             'is_maintenance' => 'boolean',
         ];
+    }
+
+    /** @return BelongsTo<WorkType, $this> */
+    public function workType(): BelongsTo
+    {
+        return $this->belongsTo(WorkType::class);
+    }
+
+    /** @return BelongsTo<TimeNorm, $this> */
+    public function timeNorm(): BelongsTo
+    {
+        return $this->belongsTo(TimeNorm::class);
     }
 }

@@ -97,7 +97,7 @@ const emit = defineEmits([
 
 /* ─── Состояние ─── */
 
-const selectedWorkIds = ref([]);
+const selectedWorkKeys = ref([]);
 const selectedPartIds = ref([]);
 const canDefer = computed(() => props.request.permissions?.canDeferRecommendations === true,
 );
@@ -108,11 +108,14 @@ const showRepairBlock = computed(
       (props.request.stage >= 3 ||
         props.request.statusPeriods?.some((row) => Number(row.stage) >= 3))),
 );
-const selectedRecommendationCount = computed(() => selectedWorkIds.value.length + selectedPartIds.value.length,
-);
-function deferSelected(kind) { emit('defer-recommendations', { workIds: kind === "work" ? selectedWorkIds.value: [], partIds: kind === "part" ? selectedPartIds.value : [],
-  }); }
-watch(() => props.request.revision, () => { selectedWorkIds.value = []; selectedPartIds.value = []; },
+function deferSelected(kind) {
+  emit('defer-recommendations', {
+    workRows: kind === 'work' ? selectedWorks.value : [],
+    workIds: [],
+    partIds: kind === 'part' ? selectedPartIds.value : [],
+  });
+}
+watch(() => props.request.revision, () => { selectedWorkKeys.value = []; selectedPartIds.value = []; },
 );
 
 const transitionAction = ref('');
@@ -414,9 +417,117 @@ async function addWork() {
 }
 
 function removeWork(index) {
-  props.request.works.splice(index, 1);
+  const [removed] = props.request.works.splice(index, 1);
+  if (removed) {
+    selectedWorkKeys.value = selectedWorkKeys.value.filter((key) => key !== workKey(removed));
+  }
   touch();
 }
+
+/* ─── Выделение строк работ и групповые действия ─── */
+
+/**
+ * Ключ строки: id сохранённой строки или клиентский id новой строки.
+ * Новым строкам без _clientId он присваивается при первом обращении.
+ */
+function workKey(work) {
+  if (work.id) {
+    return work.id;
+  }
+
+  if (!work._clientId) {
+    emptyWorkSequence += 1;
+    work._clientId = `new-work-${emptyWorkSequence}`;
+  }
+
+  return work._clientId;
+}
+
+/** Колонка выбора видна, если с работами можно что-то сделать. */
+const canSelectWorks = computed(() => canWork.value || canDefer.value);
+
+/** Строки, доступные для выделения (без пустой строки-заглушки). */
+const selectableWorks = computed(() => (props.request.works || []).filter(
+  (work) => work !== placeholderWork.value
+    && (canWork.value || Boolean(work.id)),
+));
+
+const selectedWorks = computed(() => {
+  const keys = new Set(selectedWorkKeys.value);
+
+  return selectableWorks.value.filter((work) => keys.has(workKey(work)));
+});
+
+const allWorksSelected = computed(() => selectableWorks.value.length > 0
+  && selectedWorks.value.length === selectableWorks.value.length,
+);
+
+function isWorkSelectable(work) {
+  return selectableWorks.value.includes(work);
+}
+
+function isWorkSelected(work) {
+  return selectedWorkKeys.value.includes(workKey(work));
+}
+
+function toggleWork(work, checked) {
+  const key = workKey(work);
+  const rest = selectedWorkKeys.value.filter((item) => item !== key);
+
+  selectedWorkKeys.value = checked ? [...rest, key] : rest;
+}
+
+function toggleAllWorks(checked) {
+  selectedWorkKeys.value = checked
+    ? selectableWorks.value.map((work) => workKey(work))
+    : [];
+}
+
+function deleteSelectedWorks() {
+  if (!canWork.value || !selectedWorks.value.length) {
+    return;
+  }
+
+  const selected = new Set(selectedWorks.value);
+  const kept = props.request.works.filter((work) => !selected.has(work));
+
+  props.request.works.splice(0, props.request.works.length, ...kept);
+  selectedWorkKeys.value = [];
+  touch();
+}
+
+function copySelectedWorks() {
+  if (!canWork.value || !selectedWorks.value.length) {
+    return;
+  }
+
+  const selected = new Set(selectedWorks.value);
+  const rows = [];
+
+  for (const work of props.request.works) {
+    rows.push(work);
+
+    if (selected.has(work)) {
+      const copy = JSON.parse(JSON.stringify(work));
+
+      delete copy.id;
+      delete copy._normLoading;
+      emptyWorkSequence += 1;
+      copy._clientId = `copy-work-${emptyWorkSequence}`;
+      rows.push(copy);
+    }
+  }
+
+  props.request.works.splice(0, props.request.works.length, ...rows);
+  touch();
+}
+
+/** Перенос в рекомендации возможен для любых строк с наименованием. */
+const canMoveSelectedWorks = computed(() => selectedWorks.value.length > 0
+  && selectedWorks.value.every(
+    (work) => work.workTypeId || String(work.name || '').trim(),
+  ),
+);
 
 async function workTypeChanged(row, workType) {
   if (row === placeholderWork.value) {
@@ -979,7 +1090,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 04. Работы, запчасти и ремонт -->
+    <!-- 04. Работы -->
     <section
       v-if="showRepairBlock"
       class="repair-calculation-section"
@@ -988,7 +1099,7 @@ onMounted(() => {
       <div class="section-title">
         <span>04</span>
         <div>
-          <h3>Работы, запчасти и ремонт</h3>
+          <h3>Работы</h3>
           <p v-if="draftRepairBlock">
             Блок станет активным после обработки заявки Управляющей компанией.
           </p>
@@ -1035,16 +1146,62 @@ onMounted(() => {
         финальную заявку, чтобы СТО ожидала автомобиль.
       </p>
 
+      <div
+        v-if="canSelectWorks"
+        class="work-bulk-actions"
+        role="toolbar"
+        aria-label="Действия с выбранными работами"
+      >
+        <span class="work-bulk-count">Выбрано: {{ selectedWorks.length }}</span>
+        <button
+          v-if="canWork"
+          type="button"
+          class="ghost-btn"
+          :disabled="busy || !selectedWorks.length"
+          @click="deleteSelectedWorks"
+        >
+          Удалить
+        </button>
+        <button
+          v-if="canWork"
+          type="button"
+          class="ghost-btn"
+          :disabled="busy || !selectedWorks.length"
+          @click="copySelectedWorks"
+        >
+          Создать копию
+        </button>
+        <button
+          v-if="canDefer"
+          type="button"
+          class="ghost-btn"
+          :disabled="busy || !canMoveSelectedWorks"
+          :title="dirty ? 'Изменения заявки будут сохранены перед переносом' : ''"
+          @click="deferSelected('work')"
+        >
+          Переместить в Рекомендации
+        </button>
+      </div>
+
       <div class="table-wrap excel-grid-wrap">
         <table class="excel-grid works-grid">
           <thead>
             <tr>
-              <th v-if="canDefer" class="selection-col" />
-              <th class="resizable-column">
+              <th v-if="canSelectWorks" class="selection-col">
+                <input
+                  type="checkbox"
+                  class="selection-checkbox"
+                  :checked="allWorksSelected"
+                  :disabled="busy || !selectableWorks.length"
+                  aria-label="Выбрать все работы"
+                  @change="toggleAllWorks($event.target.checked)"
+                />
+              </th>
+              <th class="resizable-column work-name-column">
                 Наименование работы
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
-              <th class="resizable-column">
+              <th class="resizable-column work-norm-column">
                 Норма времени
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
@@ -1068,8 +1225,17 @@ onMounted(() => {
               v-for="(work, index) in displayedWorks"
               :key="work.id || work._clientId || index"
             >
-              <td v-if="canDefer"><input v-if="work.id" v-model="selectedWorkIds" type="checkbox" :value="work.id" class="selection-checkbox"
-                  :disabled="busy" aria-label="Выбрать работу для рекомендаций" /></td>
+              <td v-if="canSelectWorks" class="selection-col">
+                <input
+                  v-if="isWorkSelectable(work)"
+                  type="checkbox"
+                  class="selection-checkbox"
+                  :checked="isWorkSelected(work)"
+                  :disabled="busy"
+                  aria-label="Выбрать работу"
+                  @change="toggleWork(work, $event.target.checked)"
+                />
+              </td>
               <td :title="work.name">
                 <WorkTypePicker
                   v-if="canWork"
@@ -1210,18 +1376,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <div
-        v-if="canDefer"
-        class="recommendation-actions work-recommendation-actions"
-      >
-        <button
-          class="ghost-btn"
-          :disabled="busy || dirty || !selectedWorkIds.length"
-          @click="deferSelected('work')"
-        >
-          Добавить работы в рекомендации ({{ selectedWorkIds.length }})
-        </button>
-      </div>
       <PartsPanel
         :request="request"
         :customer-view="isCustomer"

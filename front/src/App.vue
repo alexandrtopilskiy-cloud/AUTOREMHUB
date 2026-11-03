@@ -1219,18 +1219,44 @@ export default {
         },
 
         async deferRecommendations(selection) {
-            if (
-                !this.current ||
-                this.store.pending[this.current.id] ||
-                this.store.busy
-            )
-                return;
+            if (!this.current || this.store.busy) return;
+            const request = this.current;
+            const workRows = selection.workRows || [];
+            const filled = (rows) =>
+                (rows || []).filter(
+                    (row) => row.workTypeId || String(row.name || "").trim(),
+                );
+            let workIds = selection.workIds || [];
+            if (this.store.pending[request.id]) {
+                // Новые строки получают id только после сохранения, а сервер
+                // пересоздаёт строки работ в том же порядке, поэтому выбранные
+                // строки сопоставляются по позиции среди заполненных строк.
+                const positions = workRows.map((row) =>
+                    filled(request.works).indexOf(row),
+                );
+                try {
+                    await this.store.save(request.id);
+                } catch (error) {
+                    this.notify(error.message);
+                    return;
+                }
+                const saved = filled(request.works);
+                workIds = positions
+                    .map((index) => saved[index]?.id)
+                    .filter(Boolean);
+            } else {
+                workIds = [
+                    ...workIds,
+                    ...workRows.map((row) => row.id).filter(Boolean),
+                ];
+            }
+            if (!workIds.length && !(selection.partIds || []).length) return;
             this.store.busy = true;
             try {
                 const result = await marketplaceApi.deferRecommendations(
-                    this.current.id,
-                    this.current.revision,
-                    selection,
+                    request.id,
+                    request.revision,
+                    { workIds, partIds: selection.partIds || [] },
                 );
                 this.store.accept(result.request);
                 this.notify(

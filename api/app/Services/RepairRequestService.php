@@ -740,7 +740,7 @@ final class RepairRequestService
                 'workTypeId'  => Input::uuidOrEmpty(),
                 'timeNormId'  => Input::uuidOrEmpty(),
                 'qty'         => ['required', 'numeric', 'min:0', 'max:1000000', Input::numeric(3)],
-                'price'       => ['sometimes', 'numeric', 'min:0', 'max:1000000000'],
+                'price'       => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:1000000000'],
                 'hourlyRate'  => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:1000000000'],
                 'normHours'   => ['nullable', 'numeric', 'min:0.001', 'max:100000'],
                 'actualHours' => ['nullable', 'numeric', 'min:0', 'max:100000'],
@@ -793,9 +793,11 @@ final class RepairRequestService
                 ));
 
             if ($isManual && ($providedNorm === null || $reason === '')) {
+                $workName = $type?->name ?? trim((string) $work['name']);
                 Input::fail(
                     'Для ручной нормы укажите положительное значение '
-                    . 'и причину корректировки',
+                    . 'и причину корректировки'
+                    . ($workName !== '' ? " (работа «{$workName}»)" : ''),
                     'works',
                 );
             }

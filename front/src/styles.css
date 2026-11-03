@@ -2554,20 +2554,33 @@ td small {
   font-size: 12px;
 }
 
+/* Содержимое ячейки «Норма времени» подстраивается под ширину столбца. */
 .norm-time-control {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
-  min-width: 165px;
+  min-width: 0;
+}
+
+.norm-time-control > * {
+  min-width: 0;
 }
 
 .norm-time-control small {
-  max-width: 200px;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
   color: var(--muted);
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
 }
 
 .norm-time-control .norm-override-reason {
-  min-width: 210px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   border-color: #d6a84b;
   background: #fffaf0;
   font-size: 12px;
@@ -2639,7 +2652,7 @@ td small {
 
 .manual-norm-field {
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
 }
@@ -2764,8 +2777,25 @@ body.is-resizing-column {
   width: 280px;
 }
 
-.works-grid .resizable-column:nth-child(2) {
+.works-grid .work-name-column {
+  width: 280px;
+}
+
+.works-grid .work-norm-column {
   width: 220px;
+}
+
+.work-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.work-bulk-count {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .parts-grid {
