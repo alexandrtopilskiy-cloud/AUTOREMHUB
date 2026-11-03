@@ -25,8 +25,7 @@ final class EdoDispatcher
         private readonly EdoRuClientFactory $edoRuClientFactory,
         private readonly Upd503Builder $upd503Builder,
         private readonly DiadocClientFactory $diadocClientFactory,
-    ) {
-    }
+    ) {}
 
     public function forOrganization(Organization $org): EdoOutboundProviderInterface
     {
@@ -36,16 +35,16 @@ final class EdoDispatcher
         }
 
         return match ($org->edo_provider) {
-            'edoru' => new EdoRuProvider(
+            EdoProvider::EdoRu => new EdoRuProvider(
                 $this->edoRuClientFactory->make($org),
                 new EdoRuMapper(),
                 $this->upd503Builder
             ),
-             'taxcom' => new TaxcomProvider(
+             EdoProvider::Taxcom => new TaxcomProvider(
                  app(TaxcomClientFactory::class)->make($org),
                  new TaxcomMapper(),
              ),
-            'diadoc' => new DiadocProvider(
+            EdoProvider::Diadoc => new DiadocProvider(
                 $this->diadocClientFactory->make($org),
                 new DiadocMapper(),
             ),

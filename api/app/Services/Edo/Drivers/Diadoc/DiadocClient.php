@@ -131,6 +131,23 @@ final class DiadocClient
         return $accessToken;
     }
 
+    private function maskPassword(string $password, int $visibleChars = 15): string
+    {
+        // Если длина строки меньше или равна количеству видимых символов — возвращаем как есть
+        if (mb_strlen($password) <= $visibleChars) {
+            return $password;
+        }
+
+        // Берем первые $visibleChars символов (mb_substr корректно работает с UTF-8)
+        $visiblePart = mb_substr($password, 0, $visibleChars);
+
+        // Вычисляем, сколько символов нужно замаскировать
+        $hiddenLength = mb_strlen($password) - $visibleChars;
+
+        // Возвращаем видимую часть + нужное количество звездочек
+        return $visiblePart . str_repeat('*', $hiddenLength);
+    }
+
     public function get(string $path, array $query = [], ?string $token = null): array
     {
         $uri = $this->baseUrl . $path;
@@ -199,11 +216,17 @@ final class DiadocClient
         }
 
         if ($response->status() !== 200) {
-            $message = $payload['Message'] ?? $payload['message'] ?? 'Неизвестная ошибка';
+            $body = $response->body();
+            $payload = json_decode($body, true);
+            $message = $payload['Message'] ?? $payload['message'] ?? $body;
+
+            // Обрезаем, чтобы не засорять лог, но показываем начало
+            $preview = substr($message, 0, 500);
+
             throw EdoException::remoteError(
                 provider: EdoProvider::Diadoc->value,
                 code: "HTTP_{$response->status()}",
-                message: $message,
+                message: "Диадок вернул ошибку: " . $preview,
             );
         }
 
