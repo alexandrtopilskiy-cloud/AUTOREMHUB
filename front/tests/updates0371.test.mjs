@@ -204,11 +204,48 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
                         },
                     }),
                 );
-                assert.match(html, /Добавить работы в рекомендации/);
+                assert.match(html, /Переместить в Рекомендации/);
                 assert.match(html, /Добавить ЗЧ в рекомендации/);
+                // Работы: «выбрать все» + строка; запчасти: строка.
                 assert.equal(
                     (html.match(/class="selection-checkbox"/g) || []).length,
-                    2,
+                    3,
+                );
+            },
+        );
+        await t.test(
+            "block 04: editable works show bulk actions and checkboxes for new rows",
+            async () => {
+                const html = await renderToString(
+                    createSSRApp(Repair, {
+                        ...props,
+                        user: { role: "station" },
+                        request: {
+                            ...request,
+                            stage: 2,
+                            works: [
+                                { id: "w", name: "Сохранённая", qty: 1, workTypeId: "t1" },
+                                { _clientId: "new-1", name: "Новая", qty: 1, workTypeId: "t2", normIsManual: true, normOverrideReason: "" },
+                            ],
+                            parts: [],
+                            permissions: {
+                                editableFields: ["works", "parts"],
+                                canDeferRecommendations: true,
+                            },
+                        },
+                    }),
+                );
+                assert.match(html, /<h3>Работы<\/h3>/);
+                assert.doesNotMatch(html, /Работы, запчасти и ремонт/);
+                for (const label of ["Удалить", "Создать копию", "Переместить в Рекомендации"]) {
+                    assert.match(html, new RegExp(`>\\s*${label}\\s*<`));
+                }
+                // «Выбрать все» + сохранённая строка + новая строка без id.
+                assert.equal((html.match(/aria-label="Выбрать работу"/g) || []).length, 2);
+                assert.match(html, /aria-label="Выбрать все работы"/);
+                assert.ok(
+                    html.indexOf("work-bulk-actions") < html.indexOf("works-grid"),
+                    "actions are above the works table",
                 );
             },
         );

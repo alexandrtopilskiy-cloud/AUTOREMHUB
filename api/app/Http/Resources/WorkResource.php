@@ -24,8 +24,10 @@ final class WorkResource extends JsonResource
             'lineAmount'  => $this->line_amount !== null ? (float) $this->line_amount : null,
             'hourlyRate'  => $this->hourly_rate !== null ? (float) $this->hourly_rate : null,
             'workCode'    => $this->work_code_snapshot,
-            'workTypeId'  => $this->work_type_id ? $this->whenLoaded('workType', fn() => $this->workType->uuid) : '',
-            'timeNormId'  => $this->time_norm_id ? $this->whenLoaded('timeNorm', fn() => $this->timeNorm->uuid) : '',
+            // Ключи присутствуют всегда: Front отправляет строки обратно целиком,
+            // и пропавший workTypeId превращает нормативную строку в «ручную».
+            'workTypeId'  => $this->work_type_id ? ($this->workType?->uuid ?? '') : '',
+            'timeNormId'  => $this->time_norm_id ? ($this->timeNorm?->uuid ?? '') : '',
             'normId'      => $this->norm_id_snapshot,
             'normSelectionScope' => $this->norm_selection_scope,
             'normApplicabilityLabel' => $this->norm_is_manual ? 'Ручная норма для этой заявки' : $this->getNormLabel(),
@@ -38,11 +40,6 @@ final class WorkResource extends JsonResource
 
     private function getNormLabel(): string
     {
-        // Упрощенная логика: если норма загружена, берем её описание, иначе пусто
-        if ($this->relationLoaded('timeNorm') && $this->timeNorm) {
-            // Здесь можно использовать логику из TimeNormDescription
-            return TimeNormDescription::label($this->timeNorm) ?? '';
-        }
-        return '';
+        return $this->time_norm_id ? TimeNormDescription::label($this->timeNorm) : '';
     }
 }
