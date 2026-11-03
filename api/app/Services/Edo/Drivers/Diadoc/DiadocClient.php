@@ -9,6 +9,8 @@ use App\Exceptions\EdoException;
 use App\Models\Organization;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -28,6 +30,59 @@ final class DiadocClient
     public function provider(): EdoProvider
     {
         return EdoProvider::Diadoc;
+    }
+
+    /**
+     * Привязывает организацию к Диадоку, сохраняя refresh_token.
+     * Проверяет токен, запрашивая access_token.
+     *
+     * @throws EdoException
+     */
+    public function connectOrganization(Organization $org, string $refreshToken): void
+    {
+        $response = Http::asForm()->post(self::IDENTITY_URL . '/connect/token', [
+            'grant_type'    => 'refresh_token',
+            'client_id'     => $this->clientId,
+            'client_secret' => $this->clientSecret,
+            'refresh_token' => $refreshToken,
+        ]);
+
+        if ($response->failed()) {
+            throw EdoException::remoteError(
+                provider: EdoProvider::Diadoc->value,
+                code: 'AUTH_FAILED',
+                message: 'Не удалось проверить refresh_token: ' . $response->body()
+            );
+        }
+
+        $data = $response->json();
+        $accessToken = $data['access_token'];
+        $expiresIn = $data['expires_in'] ?? 3600;
+        $newRefreshToken = $data['refresh_token'] ?? $refreshToken;
+
+        // 2. Сохраняем через DB::table(), чтобы обойти каст encrypted
+        // Сначала обновляем саму модель в памяти (чтобы Eloquent знал новые значения)
+        $org->edo_provider = EdoProvider::Diadoc;
+        $org->edo_token = $accessToken;
+        $org->edo_token_expires_at = now()->addSeconds(max(0, $expiresIn - 60));
+        $org->edo_refresh_token = $newRefreshToken;
+        $org->edo_registered_at = now();
+
+        // Затем сохраняем в БД напрямую (без кастов), но предварительно
+        // шифруем токены вручную, чтобы при следующем чтении Eloquent их понял.
+        DB::table('organizations')
+            ->where('id', $org->id)
+            ->update([
+                'edo_provider'         => EdoProvider::Diadoc->value,
+                'edo_token'            => Crypt::encryptString($accessToken),
+                'edo_token_expires_at' => now()->addSeconds(max(0, $expiresIn - 60)),
+                'edo_refresh_token'    => Crypt::encryptString($newRefreshToken),
+                'edo_registered_at'    => now(),
+                'updated_at'           => now(),
+            ]);
+
+        // Обновляем модель, чтобы она не считала себя "грязной"
+        $org->syncOriginal();
     }
 
     /**
@@ -74,6 +129,23 @@ final class DiadocClient
         ]);
 
         return $accessToken;
+    }
+
+    private function maskPassword(string $password, int $visibleChars = 15): string
+    {
+        // Если длина строки меньше или равна количеству видимых символов — возвращаем как есть
+        if (mb_strlen($password) <= $visibleChars) {
+            return $password;
+        }
+
+        // Берем первые $visibleChars символов (mb_substr корректно работает с UTF-8)
+        $visiblePart = mb_substr($password, 0, $visibleChars);
+
+        // Вычисляем, сколько символов нужно замаскировать
+        $hiddenLength = mb_strlen($password) - $visibleChars;
+
+        // Возвращаем видимую часть + нужное количество звездочек
+        return $visiblePart . str_repeat('*', $hiddenLength);
     }
 
     public function get(string $path, array $query = [], ?string $token = null): array
@@ -144,11 +216,17 @@ final class DiadocClient
         }
 
         if ($response->status() !== 200) {
-            $message = $payload['Message'] ?? $payload['message'] ?? 'Неизвестная ошибка';
+            $body = $response->body();
+            $payload = json_decode($body, true);
+            $message = $payload['Message'] ?? $payload['message'] ?? $body;
+
+            // Обрезаем, чтобы не засорять лог, но показываем начало
+            $preview = substr($message, 0, 500);
+
             throw EdoException::remoteError(
                 provider: EdoProvider::Diadoc->value,
                 code: "HTTP_{$response->status()}",
-                message: $message,
+                message: "Диадок вернул ошибку: " . $preview,
             );
         }
 

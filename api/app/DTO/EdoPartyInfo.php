@@ -12,6 +12,6 @@ final readonly class EdoPartyInfo
         public string $kpp,
         public ?string $address = null,
         public ?string $regionCode = null,
-        public ?string $ediCode = null,   // ← добавили
+        public ?string $ediCode = null,
     ) {}
 }

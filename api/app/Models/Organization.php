@@ -24,14 +24,14 @@ final class Organization extends Entity
     protected function casts(): array
     {
         return [
-            'vat_rate'          => 'decimal:2',
-            'kind'              => OrganizationKind::class,
-            'edo_provider'      => EdoProviderEnum::class,
-            'edo_registered_at' => 'immutable_datetime',
-            'markup_percent'    => 'decimal:2',
-            'edo_token'         => 'encrypted',
-            'edo_refresh_token'         => 'encrypted',
-            'edo_token_expires_at' => 'immutable_datetime',
+            'vat_rate'              => 'decimal:2',
+            'kind'                  => OrganizationKind::class,
+            'edo_provider'          => EdoProviderEnum::class,
+            'edo_registered_at'     => 'immutable_datetime',
+            'markup_percent'        => 'decimal:2',
+            'edo_token'             => 'encrypted',
+            'edo_refresh_token'     => 'encrypted',
+            'edo_token_expires_at'  => 'immutable_datetime',
         ];
     }
 

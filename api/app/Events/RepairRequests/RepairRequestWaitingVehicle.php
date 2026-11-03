@@ -11,7 +11,7 @@ final class RepairRequestWaitingVehicle
 {
     use Dispatchable;
 
-    public function __construct(public readonly RepairRequest $request)
-    {
-    }
+    public function __construct(
+        public readonly RepairRequest $request
+    ) {}
 }

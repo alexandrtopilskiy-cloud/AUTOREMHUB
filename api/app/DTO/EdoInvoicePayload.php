@@ -19,6 +19,5 @@ final readonly class EdoInvoicePayload
         public string $formatVersion = '5.03',
         public string $formatCode = '1115131',
         public ?string $idContract = null,
-    ) {
-    }
+    ) {}
 }

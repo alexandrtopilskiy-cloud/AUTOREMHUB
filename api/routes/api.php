@@ -10,6 +10,7 @@ use App\Http\Controllers\ChangeRegistryController;
 use App\Http\Controllers\DiagnosticController;
 use App\Http\Controllers\DocumentLockController;
 use App\Http\Controllers\EdoDocumentController;
+use App\Http\Controllers\EdoSettingsController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationPersonController;
@@ -195,6 +196,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     /* ─── ЭДО ─── */
 
     Route::prefix('edo')->name('edo.')->group(function (): void {
+        Route::post('/connect', [EdoSettingsController::class, 'connect']);
         Route::get('/documents', [EdoDocumentController::class, 'index'])->name('documents.index');
         Route::get('/documents/{uuid}', [EdoDocumentController::class, 'show'])->whereUuid('uuid')->name('documents.show');
         Route::post('/documents/{uuid}/sign-and-send', [EdoDocumentController::class, 'signAndSend'])->whereUuid('uuid')->name('documents.signAndSend');
