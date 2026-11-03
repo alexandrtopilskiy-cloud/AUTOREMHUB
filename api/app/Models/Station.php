@@ -15,12 +15,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $workday_start
  * @property string $workday_end
  * @property array<int, int> $working_days
+ * @property string|null $agent_discount_percent
  *
  * @property-read \Illuminate\Database\Eloquent\Collection<int, WorkOrder> $workOrders
  */
 final class Station extends Entity
 {
     use HasFactory;
+
+    /** Агентская скидка СТО по умолчанию, %. */
+    public const DEFAULT_AGENT_DISCOUNT_PERCENT = 10.0;
 
     /**
      * @return array<string, string>
@@ -32,6 +36,7 @@ final class Station extends Entity
             'rating' => 'float',
             'profile' => 'array',
             'working_days' => 'array',
+            'agent_discount_percent' => 'decimal:2',
         ];
     }
 

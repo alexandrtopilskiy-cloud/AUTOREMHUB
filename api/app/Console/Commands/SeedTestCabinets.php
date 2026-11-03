@@ -98,6 +98,8 @@ final class SeedTestCabinets extends Command
             }
         });
 
+        \App\Support\TestParticipantRequisites::apply($tenant->id);
+
         $this->info(
             'Тестовые организации созданы или обновлены. '
             . 'Перечни ТС Альфа и Бетта пустые.',

@@ -142,10 +142,13 @@ final class ApiPresenter
             'overdueSeconds'         => $this->calculateOverdueSeconds($request),
             'statusPeriods'          => $this->presentStatusPeriods($request),
             'recommendations' => $this->recommendationSummary($request, $user),
-            'works'                  => $this->presentWorks($request),
+            'works'                  => $this->presentWorks($request, $user),
             'partMovements'          => $this->presentPartMovements($request),
-            'parts'                  => $this->presentParts($request),
+            'parts'                  => $this->presentParts($request, $user),
             'total'                  => (float) $this->repairRequestCalculator->total($request),
+            ...(AgentDiscount::visibleTo($user)
+                ? ['agentDiscount' => AgentDiscount::summary($request)]
+                : []),
             'history'                => $this->presentHistory($request, $timezone),
             'attachments'            => $this->presentAttachments($request),
             'currentPeriodId'        => $this->currentPeriodId($request),
@@ -271,7 +274,7 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentWorks(RepairRequest $request): array
+    private function presentWorks(RepairRequest $request, User $user): array
     {
         $workTypeIds = $request->workLines->pluck('work_type_id')->filter()->unique()->all();
         $timeNormIds = $request->workLines->pluck('time_norm_id')->filter()->unique()->all();
@@ -280,7 +283,7 @@ final class ApiPresenter
         $timeNorms = TimeNorm::query()->with(TimeNormDescription::RELATIONS)->whereIn('id', $timeNormIds)->get()->keyBy('id');
 
         return $request->workLines
-            ->map(fn ($work) => [
+            ->map(fn ($work) => array_merge([
                 'id'          => $work->uuid,
                 'name'        => $work->name,
                 'type'        => 'Работа',
@@ -305,23 +308,23 @@ final class ApiPresenter
                 'normOverrideReason' => $work->norm_override_reason,
                 'normHours'   => $work->norm_hours !== null ? (float) $work->norm_hours : null,
                 'actualHours' => $work->actual_hours !== null ? (float) $work->actual_hours : null,
-            ])
+            ], AgentDiscount::visibleTo($user) ? AgentDiscount::workFields($work) : []))
             ->all();
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentParts(RepairRequest $request): array
+    private function presentParts(RepairRequest $request, User $user): array
     {
         $supplierIds = $request->parts->pluck('supplier_id')->filter()->unique()->all();
         $suppliers = Supplier::query()->whereIn('id', $supplierIds)->get()->keyBy('id');
 
         return $request->parts
-            ->map(function ($part) use ($suppliers): array {
+            ->map(function ($part) use ($suppliers, $user): array {
                 $supplier = $suppliers->get($part->supplier_id);
 
-                return [
+                return array_merge([
                     'id'              => $part->uuid,
                     'systemId'        => $part->id,
                     'name'            => $part->name,
@@ -339,7 +342,7 @@ final class ApiPresenter
                     'returnedQty'     => (float) $part->returned_quantity,
                     'status'          => $part->status->value,
                     'approvedVersion' => $part->approved_version,
-                ];
+                ], AgentDiscount::visibleTo($user) ? AgentDiscount::partFields($part) : []);
             })
             ->all();
     }

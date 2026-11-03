@@ -3,6 +3,8 @@ import { catalogNames, formatDateTime } from "../../data/permissions.js";
 import { marketplaceApi } from "../../api/marketplace.js";
 import SupplierCreateDialog from "./SupplierCreateDialog.vue";
 import InfoHint from "../../components/InfoHint.vue";
+import FormatHint from "../../components/FormatHint.vue";
+import { requisiteFormatHint, requisiteInputAttrs } from "../../data/requisiteFormats.js";
 import ReferencePicker from "../../components/ReferencePicker.vue";
 import { startColumnResize } from "../../utils/columnResize.js";
 
@@ -35,6 +37,7 @@ const FIELDS = {
         correspondentAccount: "Корреспондентский счёт",
         taxRegime: "Система налогообложения",
         vatRate: "Ставка НДС, %",
+        agentDiscountPercent: "Агентская скидка, %",
         mechanicalBays: "Механические посты",
         lifts: "Подъёмники",
         mechanicsCount: "Количество механиков",
@@ -199,6 +202,7 @@ const NUMBER_FIELDS = [
     "intervalKm",
     "intervalMonths",
     "vatRate",
+    "agentDiscountPercent",
     "mechanicalBays",
     "lifts",
     "mechanicsCount",
@@ -264,7 +268,7 @@ const WORK_HELP = {
 
 export default {
     name: "CatalogEditor",
-    components: { InfoHint, ReferencePicker , SupplierCreateDialog },
+    components: { FormatHint, InfoHint, ReferencePicker , SupplierCreateDialog },
     props: {
         record: {
             type: Object,
@@ -510,6 +514,14 @@ export default {
         fieldHelp(key) {
             return this.record.kind === "workTypes" ? WORK_HELP[key] || "" : "";
         },
+        formatHint(key) {
+            return ["stations", "customers", "managers"].includes(this.record.kind)
+                ? requisiteFormatHint(key)
+                : "";
+        },
+        inputAttrs(key) {
+            return this.formatHint(key) ? requisiteInputAttrs(key) : {};
+        },
         inputType(key) {
             if (key === "email") {
                 return "email";
@@ -524,7 +536,7 @@ export default {
         stepFor(key) {
             return ["hours", "laborRateCoefficient"].includes(key)
                 ? "0.001"
-                : ["vatRate"].includes(key)
+                : ["vatRate", "agentDiscountPercent"].includes(key)
                   ? "0.01"
                   : "1";
         },
@@ -1134,6 +1146,7 @@ export default {
                 <span class="field-label-with-help">
                     {{ label }}
                     <InfoHint v-if="fieldHelp(key)" :text="fieldHelp(key)" />
+                    <FormatHint v-if="formatHint(key)" :text="formatHint(key)" />
                 </span>
 
                 <input
@@ -1239,13 +1252,16 @@ export default {
                     v-model.number="form[key]"
                     type="number"
                     :min="minFor(key)"
+                    :max="['vatRate', 'agentDiscountPercent'].includes(key) ? 100 : undefined"
                     :step="stepFor(key)"
+                    :placeholder="key === 'agentDiscountPercent' ? '10' : undefined"
                     :disabled="!editable || busy"
                 />
 
                 <input
                     v-else
                     v-model="form[key]"
+                    v-bind="inputAttrs(key)"
                     :type="inputType(key)"
                     :disabled="!editable || busy"
                     :required="isRequired(key)"

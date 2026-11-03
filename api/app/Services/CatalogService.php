@@ -795,6 +795,9 @@ final class CatalogService
             'contact'      => $station->contact,
             'rating'       => $station->rating,
             'active'       => $station->active,
+            'agentDiscountPercent' => $station->agent_discount_percent !== null
+                ? (float) $station->agent_discount_percent
+                : Station::DEFAULT_AGENT_DISCOUNT_PERCENT,
             'workdayStart' => $this->formatStationTime($station->workday_start),
             'workdayEnd'   => $this->formatStationTime($station->workday_end),
             'workingDays'  => array_values(array_map(
@@ -1169,6 +1172,8 @@ final class CatalogService
                 'workday_end'     => $payload['workdayEnd'],
                 'working_days'    => $payload['workingDays'],
                 'profile'         => $this->stationProfile($payload),
+                'agent_discount_percent' => $payload['agentDiscountPercent']
+                    ?? Station::DEFAULT_AGENT_DISCOUNT_PERCENT,
             ]);
 
             $this->audit->record(
@@ -1241,6 +1246,11 @@ final class CatalogService
                     if (array_key_exists($field, $payload)) {
                         $model->{$field} = $payload[$field];
                     }
+                }
+
+                if (array_key_exists('agentDiscountPercent', $payload)) {
+                    $model->agent_discount_percent = $payload['agentDiscountPercent']
+                        ?? Station::DEFAULT_AGENT_DISCOUNT_PERCENT;
                 }
 
                 foreach ([
@@ -1327,6 +1337,7 @@ final class CatalogService
         if ($kind === CatalogKind::Stations) {
             $rules['address'] = $text;
             $rules['active'] = ['sometimes', 'boolean'];
+            $rules['agentDiscountPercent'] = ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100', Input::numeric(2)];
             $rules['workdayStart'] = [
                 $create ? 'required' : 'sometimes',
                 'required',

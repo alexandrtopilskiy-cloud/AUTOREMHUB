@@ -427,6 +427,16 @@ final class RepairRequestService
                     $this->replaceWorks($request, $works);
                 }
 
+                // Смена СТО: строки получают агентскую скидку новой СТО.
+                if ($request->isDirty('assigned_station_id')) {
+                    $agentDiscount = self::stationAgentDiscount($request);
+                    foreach ([RequestWork::class, RequestPart::class] as $lineModel) {
+                        $lineModel::query()
+                            ->where('repair_request_id', $request->id)
+                            ->update(['agent_discount_percent' => $agentDiscount]);
+                    }
+                }
+
                 if ($dto->works !== null || $dto->laborRateType !== null || $dto->parts !== null) {
                     $request->estimate_version++;
                     RequestPart::query()
@@ -710,7 +720,25 @@ final class RepairRequestService
 
     /* ─────────────────── Работы ─────────────────── */
 
-    private function replaceWorks(RepairRequest $request, array $works): void
+/**
+     * Агентская скидка назначенной СТО, % (null — СТО ещё не выбрана).
+     */
+    public static function stationAgentDiscount(RepairRequest $request): ?string
+    {
+        if ($request->assigned_station_id === null) {
+            return null;
+        }
+
+        $percent = Station::query()
+            ->whereKey($request->assigned_station_id)
+            ->value('agent_discount_percent');
+
+        return $percent !== null
+            ? (string) $percent
+            : (string) Station::DEFAULT_AGENT_DISCOUNT_PERCENT;
+    }
+
+        private function replaceWorks(RepairRequest $request, array $works): void
     {
         $works = array_values(array_filter(
             $works,
@@ -721,6 +749,8 @@ final class RepairRequestService
         $rows = [];
         $vehicle = $request->vehicleRecord()->first();
         $hourlyRate = $vehicle?->laborRate((string) ($request->data['laborRateType'] ?? 'general'));
+        // Агентская скидка не редактируется в заявке: берётся из реквизитов СТО.
+        $agentDiscount = self::stationAgentDiscount($request);
 
         foreach ($works as $work) {
             if (!is_array($work)) {
@@ -751,6 +781,10 @@ final class RepairRequestService
                 'normSelectionScope' => ['sometimes', 'nullable', 'string', 'max:40'],
                 'lineAmount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
                 'amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+                // Только для чтения: скидка берётся из реквизитов СТО.
+                'agentDiscountPercent' => ['sometimes', 'nullable'],
+                'agentDiscountAmount' => ['sometimes', 'nullable'],
+                'stationAmount' => ['sometimes', 'nullable'],
             ]);
 
             $type = $this->resolveWorkType($request, $work);
@@ -828,6 +862,7 @@ final class RepairRequestService
                 'norm_hours'        => $normHours,
                 'actual_hours'      => $work['actualHours'] ?? null,
                 'is_maintenance'    => $type?->is_maintenance ?? false,
+                'agent_discount_percent' => $agentDiscount,
             ];
         }
 

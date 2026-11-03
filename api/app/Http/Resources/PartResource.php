@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources;
 
 use App\Models\RequestPart;
+use App\Support\AgentDiscount;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,7 +14,7 @@ final class PartResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        return [
+        return array_merge([
             'id'              => $this->uuid,
             'systemId'        => $this->id,
             'name'            => $this->name,
@@ -29,6 +30,6 @@ final class PartResource extends JsonResource
             'returnedQty'     => (float) $this->returned_quantity,
             'status'          => $this->status->value,
             'approvedVersion' => $this->approved_version,
-        ];
+        ], AgentDiscount::visibleTo($request->user()) ? AgentDiscount::partFields($this->resource) : []);
     }
 }

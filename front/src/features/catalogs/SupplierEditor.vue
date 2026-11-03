@@ -1,5 +1,7 @@
 <script>
 import PhoneInput from "../../components/PhoneInput.vue";
+import FormatHint from "../../components/FormatHint.vue";
+import { requisiteFormatHint } from "../../data/requisiteFormats.js";
 
 const FIELDS = {
     name: "Полное наименование",
@@ -38,7 +40,7 @@ const OPTIONAL = [
 
 export default {
     name: "SupplierEditor",
-    components: { PhoneInput },
+    components: { FormatHint, PhoneInput },
     props: {
         record: { type: Object, required: true },
         references: { type: Object, required: true },
@@ -103,6 +105,9 @@ export default {
         },
     },
     methods: {
+        formatHint(key) {
+            return requisiteFormatHint(key);
+        },
         emptyContact() {
             return {
                 lastName: "",
@@ -197,8 +202,10 @@ export default {
                         <label v-for="(label, key) in fields" :key="key">
                             <span
                                 >{{ label
-                                }}{{ required(key) ? " *" : "" }}</span
-                            >
+                                }}{{ required(key) ? " *" : "" }}<FormatHint
+                                    v-if="formatHint(key)"
+                                    :text="formatHint(key)"
+                            /></span>
                             <input
                                 v-model="form[key]"
                                 :type="

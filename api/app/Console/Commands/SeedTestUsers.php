@@ -131,6 +131,9 @@ final class SeedTestUsers extends Command
             }
         });
 
+        // Реквизиты УК заполняются после создания логина UK.
+        \App\Support\TestParticipantRequisites::apply($tenant->id);
+
         $this->table(['Логин', 'Организация', 'Результат'], $rows);
         $this->warn('Тестовый пароль общий для всех логинов. Не оставляйте эти учётные записи в рабочей системе.');
 

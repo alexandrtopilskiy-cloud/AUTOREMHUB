@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources;
 
 use App\Models\RequestWork;
+use App\Support\AgentDiscount;
 use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -14,7 +15,7 @@ final class WorkResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        return [
+        return array_merge([
             'id'          => $this->uuid,
             'name'        => $this->name,
             'type'        => 'Работа',
@@ -35,7 +36,7 @@ final class WorkResource extends JsonResource
             'normOverrideReason' => $this->norm_override_reason,
             'normHours'   => $this->norm_hours !== null ? (float) $this->norm_hours : null,
             'actualHours' => $this->actual_hours !== null ? (float) $this->actual_hours : null,
-        ];
+        ], AgentDiscount::visibleTo($request->user()) ? AgentDiscount::workFields($this->resource) : []);
     }
 
     private function getNormLabel(): string

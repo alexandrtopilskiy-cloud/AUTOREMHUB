@@ -32,6 +32,7 @@ final class RequestPart extends Entity
     protected function casts(): array
     {
         return [
+            'agent_discount_percent' => 'decimal:2',
             'quantity'          => 'decimal:3',
             'purchase_price' => 'decimal:2',
             'price'             => 'decimal:2',

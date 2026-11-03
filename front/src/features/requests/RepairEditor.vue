@@ -17,7 +17,7 @@ import ConfirmedDateTimeInput from '../../components/ConfirmedDateTimeInput.vue'
 import InfoHint from '../../components/InfoHint.vue';
 import { VISIT_TIME_END, VISIT_TIME_START } from '../../data/schedule.js';
 import { workflow, statusClass } from '../../data/workflow.js';
-import { money, total, formatDateTime, duration ,
+import { money, total, formatDateTime, duration , agentDiscountPercent, agentDiscountAmount,
 } from '../../data/permissions.js';
 import { startColumnResize } from '../../utils/columnResize.js';
 import { calculatePlannedCompletion } from '../../utils/plannedCompletion.js';
@@ -702,6 +702,40 @@ function workAmount(work) {
   return work.lineAmount == null ? null : Number(work.lineAmount);
 }
 
+/* ─── Агентская скидка СТО (только ЛК УК и ЛК СТО) ─── */
+
+const showAgentDiscount = computed(() => !isCustomer.value);
+const stationAgentPercent = computed(() => {
+  const value = selectedStation.value?.agentDiscountPercent;
+  return value == null || value === '' ? null : Number(value);
+});
+
+function lineAgentPercent(line) {
+  return agentDiscountPercent(line, props.request, stationAgentPercent.value);
+}
+
+function workAgentDiscount(work) {
+  return agentDiscountAmount(workAmount(work), lineAgentPercent(work));
+}
+
+const agentDiscountTotals = computed(() => {
+  let discount = 0;
+  let sum = 0;
+  for (const work of props.request.works || []) {
+    const amount = workAmount(work);
+    if (amount == null) continue;
+    sum += amount;
+    discount += agentDiscountAmount(amount, lineAgentPercent(work)) ?? 0;
+  }
+  for (const part of props.request.parts || []) {
+    const amount = Number(part.qty || 0) * Number(part.price || 0);
+    sum += amount;
+    discount += agentDiscountAmount(amount, lineAgentPercent(part)) ?? 0;
+  }
+  discount = Math.round(discount * 100) / 100;
+  return { discount, station: Math.round((sum - discount) * 100) / 100 };
+});
+
 /* ─── Диагностика ─── */
 
 function diagnosticAttachmentIds() {
@@ -1217,6 +1251,18 @@ onMounted(() => {
                 Стоимость, ₽
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
+              <th
+                v-if="showAgentDiscount"
+                class="resizable-column agent-discount-column"
+                title="Агентская скидка СТО из реквизитов СТО. В заявке не меняется, Заказчику не видна."
+              >
+                Агентская скидка, %
+                <span class="column-resize-handle" @pointerdown="startColumnResize" />
+              </th>
+              <th v-if="showAgentDiscount" class="resizable-column agent-discount-column">
+                Скидка, ₽
+                <span class="column-resize-handle" @pointerdown="startColumnResize" />
+              </th>
               <th class="row-command-column" />
             </tr>
           </thead>
@@ -1340,6 +1386,21 @@ onMounted(() => {
                 {{ workAmount(work) == null ? 'Не рассчитано' : money(workAmount(work)) }}
               </td>
 
+              <td v-if="showAgentDiscount" class="agent-discount-cell">
+                <input
+                  :value="lineAgentPercent(work) ?? ''"
+                  type="number"
+                  readonly
+                  disabled
+                  placeholder="—"
+                  aria-label="Агентская скидка, %"
+                  title="Подставляется из реквизитов СТО"
+                />
+              </td>
+              <td v-if="showAgentDiscount" class="agent-discount-cell">
+                {{ workAgentDiscount(work) == null ? '—' : money(workAgentDiscount(work)) }}
+              </td>
+
               <td>
                 <button
                   v-if="canWork && work !== placeholderWork"
@@ -1373,12 +1434,17 @@ onMounted(() => {
         <div class="total">
           <span>Работы и запчасти</span>
           <strong>{{ money(total(request)) }} ₽</strong>
+          <small v-if="showAgentDiscount" class="agent-discount-total">
+            в т.ч. агентская скидка СТО {{ money(agentDiscountTotals.discount) }} ₽ ·
+            к оплате СТО {{ money(agentDiscountTotals.station) }} ₽
+          </small>
         </div>
       </div>
 
       <PartsPanel
         :request="request"
         :customer-view="isCustomer"
+        :station-agent-percent="stationAgentPercent"
         :suppliers="references.suppliers"
         :catalog-parts="references.parts"
         :part-units="references.partUnits"

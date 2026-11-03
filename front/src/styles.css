@@ -3838,3 +3838,61 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .recommendation-grid th:nth-child(2) { width: 24%; }
 .recommendation-grid .link-btn { display: block; font-size: 10px; padding: 0; }
 .recommendation-group { margin-bottom: 18px; }
+
+/* Ссылка «формат» с рекомендациями по заполнению реквизитов */
+.format-hint {
+  position: relative;
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: baseline;
+}
+
+.format-hint-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.format-hint-link:hover,
+.format-hint-link:focus-visible {
+  text-decoration-style: solid;
+}
+
+.format-hint-popover {
+  position: absolute;
+  z-index: 90;
+  left: 0;
+  top: calc(100% + 4px);
+  width: min(300px, 80vw);
+  padding: 9px 11px;
+  border: 1px solid #baddcb;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgb(10 68 38 / 18%);
+  color: #315c46;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  text-transform: none;
+}
+
+/* Агентская скидка СТО в блоке 04 (ЛК УК и ЛК СТО) */
+.agent-discount-cell {
+  color: #315c46;
+  white-space: nowrap;
+}
+
+.agent-discount-total {
+  display: block;
+  margin-top: 2px;
+  color: #5d7a6a;
+  font-size: 12px;
+  font-weight: 500;
+}
