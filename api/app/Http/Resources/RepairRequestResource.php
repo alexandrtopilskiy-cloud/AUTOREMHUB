@@ -8,6 +8,7 @@ use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Services\RepairRequestCalculator;
 use App\Services\Workflow;
+use App\Support\AgentDiscount;
 use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -139,6 +140,10 @@ final class RepairRequestResource extends JsonResource
             'partMovements'          => [], // TODO: если нужно, вынести в PartMovementResource
             'parts'                  => PartResource::collection($this->parts),
             'total'                  => $total,
+            // Агентская скидка СТО: только для ЛК УК и ЛК СТО.
+            ...(AgentDiscount::visibleTo($user)
+                ? ['agentDiscount' => AgentDiscount::summary($this->resource)]
+                : []),
             'history'                => RepairRequestEventResource::collection($this->events),
             'attachments'            => AttachmentResource::collection($this->attachments), // Создадим ниже
             'currentPeriodId'        => $this->periods->first(fn($p) => $p->exited_at === null)?->uuid,

@@ -19,6 +19,7 @@ final class RequestPartService
     public function replace(RepairRequest $request, array $rows): void
     {
         $existing = $request->parts()->lockForUpdate()->get()->keyBy('uuid');
+        $agentDiscount = RepairRequestService::stationAgentDiscount($request);
         $kept = [];
         foreach ($rows as $index => $row) {
             if (is_array($row) && empty($row['id']) && empty($row['catalogPartId']) && trim((string) ($row['name'] ?? '')) === '') {
@@ -60,13 +61,21 @@ final class RequestPartService
                 'purchase_price' => $part->exists && $part->catalog_part_id === $catalog?->id ? $part->purchase_price : $catalog?->purchase_price,
             ];
             $part->fill($attributes);
-            if ($part->isDirty()) {
+            $lineChanged = $part->isDirty();
+            // Скидка из реквизитов СТО: обновляется у новых и изменённых строк,
+            // а у прежних — только если ещё не была зафиксирована.
+            if ($lineChanged || $part->agent_discount_percent === null) {
+                $part->agent_discount_percent = $agentDiscount;
+            }
+            if ($lineChanged) {
                 $this->assertEditable($part);
                 if (!$supplier->active) {
                     Input::fail('Поставщик неактивен', 'parts.' . $index . '.supplierId');
                 }
                 $part->status = RequestPartStatus::Proposed;
                 $part->approved_version = null;
+                $part->save();
+            } elseif ($part->isDirty()) {
                 $part->save();
             }
             $kept[] = $part->uuid;

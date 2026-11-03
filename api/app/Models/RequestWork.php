@@ -28,6 +28,7 @@ final class RequestWork extends Entity
     protected function casts(): array
     {
         return [
+            'agent_discount_percent' => 'decimal:2',
             'quantity'       => 'decimal:3',
             'price'          => 'decimal:2',
             'hourly_rate'    => 'decimal:2',

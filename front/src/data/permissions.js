@@ -92,6 +92,25 @@ export function total(request) {
 }
 
 /**
+ * Агентская скидка СТО по строке, %: зафиксированная в строке, иначе — из
+ * реквизитов выбранной СТО. Заказчику API эти данные не отдаёт.
+ */
+export function agentDiscountPercent(line, request, stationPercent = null) {
+    const value = line?.agentDiscountPercent ?? stationPercent ?? request?.agentDiscount?.percent;
+
+    return value == null || value === "" ? null : Number(value);
+}
+
+/** Сумма скидки по строке, ₽ (округление до копеек). */
+export function agentDiscountAmount(amount, percent) {
+    if (amount == null || percent == null || Number.isNaN(Number(amount))) {
+        return null;
+    }
+
+    return Math.round(Number(amount) * Number(percent)) / 100;
+}
+
+/**
  * Форматирует ISO-дату как `дд.мм.гггг чч:мм` в русской локали.
  *
  * @param {string|null|undefined} value
@@ -223,6 +242,7 @@ export const catalogFields = {
         correspondentAccount: "Корреспондентский счёт",
         taxRegime: "Система налогообложения",
         vatRate: "Ставка НДС, %",
+        agentDiscountPercent: "Агентская скидка, %",
         rating: "Рейтинг",
         mechanicalBays: "Механические посты",
         lifts: "Подъёмники",

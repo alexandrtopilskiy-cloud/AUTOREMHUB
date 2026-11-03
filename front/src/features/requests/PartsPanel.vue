@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, ref } from "vue";
-import { money } from "../../data/permissions.js";
+import { money, agentDiscountPercent, agentDiscountAmount } from "../../data/permissions.js";
 import { startColumnResize } from "../../utils/columnResize.js";
 import WorkTypePicker from "./WorkTypePicker.vue";
 const props = defineProps({
@@ -14,6 +14,7 @@ const props = defineProps({
     selectedIds: { type: Array, default: () => [] },
     selectable: Boolean,
     customerView: Boolean,
+    stationAgentPercent: { type: Number, default: null },
 });
 const emit = defineEmits(["create-part", "touch", "update:selectedIds"]);
 const STATUS_LABELS = {
@@ -78,6 +79,16 @@ const replacementParts = computed(() =>
             p.approvedVersion === props.request.estimateVersion,
     ),
 );
+/* Агентская скидка СТО: только ЛК УК и ЛК СТО, в заявке не редактируется. */
+function rowAgentPercent(row) {
+    return agentDiscountPercent(row, props.request, props.stationAgentPercent);
+}
+function rowAgentDiscount(row) {
+    return agentDiscountAmount(
+        Number(row.qty || 0) * Number(row.price || 0),
+        rowAgentPercent(row),
+    );
+}
 function editable(row) {
     return (
         canEditParts.value &&
@@ -210,6 +221,8 @@ async function apply() {
                     <col style="width: 6%" />
                     <col style="width: 10%" />
                     <col style="width: 10%" />
+                    <col v-if="!customerView" style="width: 7%" />
+                    <col v-if="!customerView" style="width: 8%" />
                     <col style="width: 8%" />
                     <col style="width: 26px" />
                 </colgroup>
@@ -226,6 +239,9 @@ async function apply() {
                                 'Кол-во',
                                 'Цена, ₽',
                                 'Сумма, ₽',
+                                ...(!customerView
+                                    ? ['Агентская скидка, %', 'Скидка, ₽']
+                                    : []),
                                 'Статус',
                             ]"
                             :key="title"
@@ -336,6 +352,24 @@ async function apply() {
                                     Number(row.qty || 0) *
                                         Number(row.price || 0),
                                 )
+                            }}
+                        </td>
+                        <td v-if="!customerView" class="agent-discount-cell">
+                            <input
+                                :value="rowAgentPercent(row) ?? ''"
+                                type="number"
+                                readonly
+                                disabled
+                                placeholder="—"
+                                aria-label="Агентская скидка, %"
+                                title="Подставляется из реквизитов СТО"
+                            />
+                        </td>
+                        <td v-if="!customerView" class="agent-discount-cell">
+                            {{
+                                rowAgentDiscount(row) == null
+                                    ? "—"
+                                    : money(rowAgentDiscount(row))
                             }}
                         </td>
                         <td :title="statusLabel(row.status)">
