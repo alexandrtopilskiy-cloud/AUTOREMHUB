@@ -55,6 +55,8 @@ final class FixedValueEnumsTest extends TestCase
                 'paid_invoice',
                 'acceptance_act',
                 'edo_payload',
+                'transfer_act',
+                'generated_document',
             ]],
             CatalogKind::class => [CatalogKind::class, [
                 'vehicles',

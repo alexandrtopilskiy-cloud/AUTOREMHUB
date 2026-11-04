@@ -7,7 +7,7 @@ import {
 import VehiclePicker from './VehiclePicker.vue';
 import WorkTypePicker from './WorkTypePicker.vue';
 import PartsPanel from './PartsPanel.vue';
-import PaymentPanel from './PaymentPanel.vue';
+import ClosingPanel from './ClosingPanel.vue';
 import AttachmentPanel from './AttachmentPanel.vue';
 import TransitionDialog from './TransitionDialog.vue';
 import StationDecisionDialog from './StationDecisionDialog.vue';
@@ -1567,7 +1567,7 @@ onMounted(() => {
       class="feature-card"
       :class="{ 'draft-disabled-section': isCustomer && request.stage === 0 }"
     >
-      <h3>Заключение диагностики СТО</h3>
+      <h3>Заключение диагностики СТО <small class="muted">(необязательно)</small></h3>
 
       <article
         v-for="report in request.diagnosticReports"
@@ -1600,15 +1600,12 @@ onMounted(() => {
       </form>
     </section>
 
-    <!-- Оплата -->
-    <section v-if="showRepairBlock"
-      :class="{ 'draft-disabled-section': isCustomer && request.stage === 0 }">
-      <PaymentPanel
-        :request="request"
-        :busy="busy"
-        :perform="perform"
-      />
-    </section>
+    <!-- Выдача ТС, документы и оплаты -->
+    <ClosingPanel
+      :request="request"
+      :busy="busy"
+      :perform="perform"
+    />
 
     <!-- 05. Вложения -->
     <div class="section-title">
@@ -1708,6 +1705,9 @@ onMounted(() => {
         </small>
         <small v-else-if="canCustomerSlotDecide">
           При согласии заявка перейдёт в «Ожидание ТС на СТО»; иное время вернётся в УК
+        </small>
+        <small v-else-if="isStation && request.stage === 6">
+          Сначала подтвердите выдачу ТС подписанным актом передачи
         </small>
         <small v-else-if="isStation">
           Комментарий обязателен; фото и видео можно приложить отдельно
@@ -1819,6 +1819,7 @@ onMounted(() => {
       :perform="perform"
       :optional-decision="
         (isCustomer && request.stage === 0) ||
+        (isStation && request.stage === 6) ||
         (isManager &&
           !(
             managerReviewingStationChanges &&

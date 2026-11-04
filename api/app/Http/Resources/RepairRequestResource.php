@@ -46,6 +46,8 @@ final class RepairRequestResource extends JsonResource
 //            'invoice.documentAttachment',
 //            'invoice.paidDocumentAttachment',
             'acceptanceAct.attachment',
+            'documents.attachment',
+            'documents.signedAttachment',
             ...array_map(
                 static fn (string $relation): string => 'workLines.timeNorm.' . $relation,
                 TimeNormDescription::RELATIONS,
@@ -143,13 +145,16 @@ final class RepairRequestResource extends JsonResource
                 ? ['agentDiscount' => AgentDiscount::summary($this->resource)]
                 : []),
             'history'                => RepairRequestEventResource::collection($this->events),
-            'attachments'            => AttachmentResource::collection($this->attachments), // Создадим ниже
+            'attachments'            => AttachmentResource::collection(
+                $this->attachments->reject(fn ($attachment) => $attachment->purpose === \App\Enums\AttachmentPurpose::GeneratedDocument)->values(),
+            ),
             'currentPeriodId'        => $this->periods->first(fn($p) => $p->exited_at === null)?->uuid,
             'diagnosticReports'      => DiagnosticReportResource::collection($this->diagnoses),
             'approvals'              => RepairRequestApprovalResource::collection($this->approvals),
             'workOrder'              => $this->workOrder ? (new WorkOrderResource($this->resource))->toArray($request)['workOrder'] : null,
             'invoice'                => $this->invoice ? (new InvoiceResource($this->invoice))->toArray($request) : null,
             'acceptanceAct'          => $this->acceptanceAct ? (new AcceptanceActResource($this->acceptanceAct))->toArray($request) : null,
+            'closing'                => app(\App\Services\ClosingDocumentService::class)->present($this->resource, $user),
 
             // Permissions
             'permissions' => array_merge(Workflow::permissions($this->resource, $user), [

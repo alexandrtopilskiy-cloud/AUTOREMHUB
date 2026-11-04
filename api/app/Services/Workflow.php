@@ -80,10 +80,9 @@ final class Workflow
         'customer',
         'station',
         'station',
+        'station',
         'manager',
-        'customer',
         'manager',
-        'customer',
         'manager',
         null,
     ];
@@ -101,12 +100,11 @@ final class Workflow
         'Согласование Заказчика',
         'Ожидание ТС на СТО',
         'В работе',
-        'Готово',
-        'Выдача автомобиля',
-        'Закрывающие документы',
-        'Ожидает оплаты',
-        'Оплата на проверке УК',
-        'Заявка закрыта',
+        'ТС готово к выдаче Заказчику',
+        'Выдан. Подготовка документов',
+        'Подтверждение оплаты Заказчика',
+        'Оплата в СТО',
+        'Заявка на ремонт закрыта',
     ];
 
     /* Обратная совместимость для тестов и внешних интеграций на уровне PHP. */
@@ -117,11 +115,10 @@ final class Workflow
     public const STAGE_WAITING_VEHICLE = 4;
     public const STAGE_REPAIR_IN_PROGRESS = 5;
     public const STAGE_READY = 6;
-    public const STAGE_ISSUE = 7;
-    public const STAGE_CLOSING_DOCS = 8;
-    public const STAGE_AWAITING_PAYMENT = 9;
-    public const STAGE_PAYMENT_REVIEW = 10;
-    public const STAGE_CLOSED = 11;
+    public const STAGE_ISSUED = 7;
+    public const STAGE_CUSTOMER_PAYMENT = 8;
+    public const STAGE_STATION_PAYMENT = 9;
+    public const STAGE_CLOSED = 10;
 
     /**
      * @return array<string, mixed>
@@ -193,12 +190,13 @@ final class Workflow
                 && !$isCustomerSlotDecision
                 && !$isVehicleAcceptance
                 && $stage !== RepairStage::Closed,
+            // ТС уже выдано (7) и оплата СТО (9) — возврат не предусмотрен.
             'canReturn'        => $isOwner
                 && !$isStationDecision
                 && !$isCustomerSlotDecision
                 && !$isVehicleAcceptance
                 && !$isStationCompletion
-                && $stage !== RepairStage::Draft,
+                && !in_array($stage, [RepairStage::Draft, RepairStage::Issued, RepairStage::StationPayment], true),
             'canStationDecide' => $isStationDecision,
             'canCustomerSlotDecide' => $isCustomerSlotDecision,
             'canAcceptVehicle' => $isVehicleAcceptance,
@@ -207,19 +205,21 @@ final class Workflow
             'canRestoreRecommendations' => $isOwner && in_array($stage, [RepairStage::Draft, RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true),
             'requiresAction' => ($isOwner && $stage !== RepairStage::Closed) || $isWorkChangeReviewer,
             'canDiagnose'      => $isStationInWork,
-            'canUpload'        => $isStationInWork || ($isOwner && (
-                $role !== UserRole::Manager
-                || $stage === RepairStage::ClosingDocuments
-            )),
+            'canUpload'        => $isStationInWork || ($isOwner && $role !== UserRole::Manager),
             'canManageParts'   => $isStationInWork,
             // Изменение работ/ЗЧ на стадии «В работе».
             'canSubmitWorkChange' => $canChangeInWork && $workChange !== null,
             'canDiscardWorkChange' => $canChangeInWork && $workChange !== null,
             'canDecideWorkChange' => $isWorkChangeReviewer,
             'advanceBlockedByWorkChange' => $advanceBlockedByWorkChange,
-            'canIssueInvoice'  => $isOwner && $stage === RepairStage::ClosingDocuments,
-            'canSubmitPayment' => $isOwner && $stage === RepairStage::AwaitingPayment,
-            'canVerifyPayment' => $isOwner && $stage === RepairStage::PaymentReview,
+            // Закрытие ЗР: акт передачи ТС (СТО), документы и оплаты (УК).
+            'canSignTransferAct' => $isOwner && $role === UserRole::Station && $stage === RepairStage::Ready,
+            'canGenerateDocuments' => $isOwner && (
+                ($role === UserRole::Station && $stage === RepairStage::Ready)
+                || ($role === UserRole::Manager && $stage === RepairStage::Issued)
+            ),
+            'canMarkCustomerPayment' => $isOwner && $role === UserRole::Manager && $stage === RepairStage::CustomerPayment,
+            'canMarkStationPayment' => $isOwner && $role === UserRole::Manager && $stage === RepairStage::StationPayment,
         ];
     }
 

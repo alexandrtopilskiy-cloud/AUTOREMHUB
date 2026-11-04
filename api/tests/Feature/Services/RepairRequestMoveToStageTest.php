@@ -26,7 +26,7 @@ use Tests\TestCase;
  * Проверяет:
  *   - закрытие текущего активного периода;
  *   - создание нового периода с правильным stage и actor_id;
- *   - для stage=11 (Closed) новый период сразу закрывается;
+ *   - для stage=10 (Closed) новый период сразу закрывается;
  *   - без активного периода — ModelNotFoundException;
  *   - moveToStage не сохраняет модель (это делает mutate()).
  */
@@ -118,7 +118,7 @@ final class RepairRequestMoveToStageTest extends TestCase
 
     public function test_move_to_closed_closes_new_period_immediately(): void
     {
-        $from = RepairStage::PaymentReview;
+        $from = RepairStage::StationPayment;
         $to = RepairStage::Closed;
 
         RequestStatusPeriod::query()->create([

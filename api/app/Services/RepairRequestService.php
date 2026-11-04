@@ -18,6 +18,7 @@ use App\Enums\AttachmentPurpose;
 use App\Enums\InvoiceStatus;
 use App\Enums\PersonKind;
 use App\Enums\RepairStage;
+use App\Enums\RequestDocumentType;
 use App\Enums\ReviewContext;
 use App\Enums\RequestPartStatus;
 use App\Enums\TransitionAction;
@@ -73,8 +74,7 @@ final class RepairRequestService
         private readonly WorkCostService $workCost,
         private readonly ApiPresenter $apiPresenter,
         private readonly DocumentLockService $documentLocks,
-        private readonly DocumentGeneratorService $documentGenerator,
-        private readonly InvoiceService $invoiceService,
+        private readonly ClosingDocumentService $closingDocuments,
     ) {}
 
     /* ─────────────────── Создание ─────────────────── */
@@ -1421,16 +1421,6 @@ final class RepairRequestService
         $snapshot = $this->buildTransitionSnapshot($request);
 
         if ($dto->action === TransitionAction::Next) {
-            if ($from === RepairStage::VehicleIssue) {
-                $this->invoiceService->generateAndIssue($request, $user);
-            }
-            if ($from === RepairStage::AwaitingPayment) {
-                $this->ensurePaymentSubmitted($request, $user);
-            }
-            if ($from === RepairStage::PaymentReview) {
-                $this->ensurePaymentVerified($request, $user);
-            }
-
             $this->validateNext($request);
         }
 
@@ -1446,13 +1436,22 @@ final class RepairRequestService
 
         $isReadyForIssue = $dto->action === TransitionAction::Next
             && $from === RepairStage::Ready
-            && $to === RepairStage::VehicleIssue;
+            && $to === RepairStage::Issued;
 
         $this->moveToStage($request, $user, $to);
         $request->data = array_replace($request->data, ['routeComment' => '']);
 
-        if ($dto->action === TransitionAction::Return && $request->stage->value <= RepairStage::VehicleIssue->value) {
+        if ($dto->action === TransitionAction::Return && $request->stage->value <= RepairStage::RepairInProgress->value) {
             $request->repair_completed_at = null;
+        }
+
+        // Закрытие ЗР: акт передачи ТС при готовности ТС к выдаче,
+        // комплект документов УК после выдачи ТС.
+        if ($dto->action === TransitionAction::Next && $to === RepairStage::Ready) {
+            $this->closingDocuments->generateTransferAct($request, $user);
+        }
+        if ($dto->action === TransitionAction::Next && $to === RepairStage::Issued) {
+            $this->closingDocuments->generateClosingDocuments($request, $user);
         }
 
         $context = new TransitionContext(
@@ -1482,85 +1481,6 @@ final class RepairRequestService
         ];
     }
 
-    /**
-     * Автоматически прикрепляет чек об оплате, если УК переводит заявку
-     * на проверку оплаты.
-     */
-    private function ensurePaymentSubmitted(RepairRequest $request, User $user): void
-    {
-        $invoice = $request->invoice;
-
-        // Если счета нет или он уже проверен — ничего не делаем
-        if (!$invoice || $invoice->status === InvoiceStatus::Paid) {
-            return;
-        }
-
-        // Если чек уже прикреплен, но статус не Submitted — обновляем статус
-        if ($invoice->status === InvoiceStatus::Submitted) {
-            return;
-        }
-
-        // 1. Генерируем красивый PDF через DocumentGeneratorService
-        $pdfContent = $this->documentGenerator->generatePaymentReceipt($request, $invoice);
-        $objectKey = 'payments/' . $invoice->uuid . '_paid.pdf';
-        Storage::disk('local')->put($objectKey, $pdfContent);
-
-        // 2. Получаем текущий период
-        $currentPeriodId = $request->periods()->whereNull('exited_at')->first()?->id;
-
-        if (!$currentPeriodId) {
-            throw new \RuntimeException("Не найден активный период для заявки {$request->number}");
-        }
-
-        // 3. Создаем Attachment
-        $attachment = new Attachment();
-        $attachment->uuid = (string) Str::uuid();
-        $attachment->repair_request_id = $request->id;
-        $attachment->uploaded_by = $user->id;
-        $attachment->request_status_period_id = $currentPeriodId;
-        $attachment->disk = 'local';
-        $attachment->object_key = $objectKey;
-        $attachment->original_name = "Чек_об_оплате_{$invoice->number}.pdf";
-        $attachment->mime_type = 'application/pdf';
-        $attachment->size = strlen($pdfContent);
-        $attachment->sha256 = hash('sha256', $pdfContent);
-        $attachment->purpose = AttachmentPurpose::PaidInvoice;
-        $attachment->save();
-
-        // 4. Обновляем счет
-        $invoice->update([
-            'status'                      => InvoiceStatus::Submitted,
-            'paid_amount'                 => $invoice->amount,
-            'paid_at'                     => now(),
-            'paid_document_attachment_id' => $attachment->id,
-        ]);
-    }
-
-    /**
-     * Автоматически подтверждает оплату, чтобы закрыть заявку.
-     */
-    private function ensurePaymentVerified(RepairRequest $request, User $user): void
-    {
-        $invoice = $request->invoice;
-
-        if (!$invoice || $invoice->status === InvoiceStatus::Paid) {
-            return;
-        }
-
-        // Если чек об оплате не прикреплен (хотя мы его генерировали на прошлом шаге),
-        // на всякий случай создадим его.
-        if (!$invoice->paid_document_attachment_id) {
-            $this->ensurePaymentSubmitted($request, $user);
-            $invoice->refresh();
-        }
-
-        $invoice->update([
-            'status'      => InvoiceStatus::Paid,
-            'verified_by' => $user->id,
-            'verified_at' => now(),
-        ]);
-    }
-
     private function assertTransitionAllowed(
         RepairRequest $request,
         User $user,
@@ -1580,7 +1500,11 @@ final class RepairRequestService
 
         $isManagerDecision = $user->role === UserRole::Manager;
 
-        $requiresComment = (!$isInitialSubmission && !$isManagerDecision) || ($isManagerDecision && $request->review_context === ReviewContext::StationChanges && $transition === TransitionAction::Return);
+        // Выдача ТС (6 → 7) подтверждается подписанным актом передачи ТС.
+        $isVehicleHandover = $transition === TransitionAction::Next
+            && $request->stage === RepairStage::Ready;
+
+        $requiresComment = (!$isInitialSubmission && !$isManagerDecision && !$isVehicleHandover) || ($isManagerDecision && $request->review_context === ReviewContext::StationChanges && $transition === TransitionAction::Return);
 
         if ($requiresComment && trim($comment) === '') {
             Input::fail('Укажите комментарий к решению');
@@ -2206,26 +2130,26 @@ final class RepairRequestService
         }
 
         if (
-            in_array($stage, [
-                RepairStage::Ready,
-                RepairStage::VehicleIssue,
-                RepairStage::ClosingDocuments,
-            ], true)
+            in_array($stage, [RepairStage::Ready, RepairStage::Issued], true)
             && !$request->workOrder()->exists()
         ) {
             Input::fail('Заказ-наряд ещё не сформирован');
         }
 
-        if ($stage === RepairStage::ClosingDocuments) {
-            $this->validateInvoiceIssuedStage($request);
+        if ($stage === RepairStage::Ready && !$this->closingDocuments->isTransferActSigned($request)) {
+            Input::fail('Загрузите подписанный водителем акт передачи ТС и подтвердите сверку документов водителя с доверенностью');
         }
 
-        if ($stage === RepairStage::AwaitingPayment) {
-            $this->validateInvoiceSubmittedStage($request);
+        if ($stage === RepairStage::Issued && !$this->closingDocuments->hasClosingDocuments($request)) {
+            Input::fail('Сформируйте документы по заявке');
         }
 
-        if ($stage === RepairStage::PaymentReview) {
-            $this->validateInvoicePaidStage($request);
+        if ($stage === RepairStage::CustomerPayment && !$this->closingDocuments->isPaid($request, RequestDocumentType::CustomerInvoice)) {
+            Input::fail('Отметьте оплату Заказчика');
+        }
+
+        if ($stage === RepairStage::StationPayment && !$this->closingDocuments->isPaid($request, RequestDocumentType::StationInvoice)) {
+            Input::fail('Отметьте оплату в пользу СТО');
         }
     }
 
@@ -2269,10 +2193,6 @@ final class RepairRequestService
 
     private function validateEstimateStage(RepairRequest $request): void
     {
-        if (!$request->diagnoses()->exists()) {
-            Input::fail('СТО должна сохранить заключение диагностики');
-        }
-
         if (!$request->planned_completion_at) {
             Input::fail('Укажите плановую дату и время завершения');
         }
@@ -2350,39 +2270,6 @@ final class RepairRequestService
             if ($needsReceive && $notReady) {
                 Input::fail('Подтвердите получение согласованных запчастей');
             }
-        }
-    }
-
-    private function validateInvoiceIssuedStage(RepairRequest $request): void
-    {
-        $invoice = $request->invoice;
-
-        $matchesTotal = $invoice !== null
-            && bccomp((string) $invoice->amount, (string) $request->workOrder->total, 2) === 0;
-
-        if (!$invoice || $invoice->status !== InvoiceStatus::Issued || !$matchesTotal) {
-            Input::fail('Прикрепите счёт на полную сумму заказ-наряда');
-        }
-    }
-
-    private function validateInvoiceSubmittedStage(RepairRequest $request): void
-    {
-        if ($request->invoice?->status !== InvoiceStatus::Submitted) {
-            Input::fail('Прикрепите закрытый счёт и сведения об оплате');
-        }
-    }
-
-    private function validateInvoicePaidStage(RepairRequest $request): void
-    {
-        $invoice = $request->invoice;
-
-        $isPaid = $invoice !== null
-            && $invoice->status === InvoiceStatus::Paid
-            && $invoice->paid_document_attachment_id !== null
-            && bccomp((string) $invoice->paid_amount, (string) $invoice->amount, 2) >= 0;
-
-        if (!$isPaid) {
-            Input::fail('УК должна проверить оплату и закрытый счёт');
         }
     }
 

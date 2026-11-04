@@ -179,12 +179,16 @@ final class AttachmentController
         AttachmentPurpose $purpose,
     ): void
     {
-        if ($role === UserRole::Manager && $purpose !== AttachmentPurpose::IssuedInvoice) {
+        if ($role === UserRole::Manager) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
-                'УК загружает только документ выставленного счёта',
+                'УК не загружает файлы в заявку: документы формируются автоматически',
             );
+        }
+
+        if ($purpose === AttachmentPurpose::TransferAct && $role !== UserRole::Station) {
+            throw new ApiException(403, 'FORBIDDEN', 'Подписанный акт передачи ТС загружает СТО');
         }
     }
 

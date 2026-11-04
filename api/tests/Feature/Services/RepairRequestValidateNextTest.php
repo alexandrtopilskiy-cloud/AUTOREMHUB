@@ -7,10 +7,11 @@ namespace Tests\Feature\Services;
 use App\Exceptions\ApiException;
 use App\Models\Attachment;
 use App\Models\DiagnosticReport;
-use App\Models\Invoice;
 use App\Models\Organization;
 use App\Models\RepairRequest;
+use App\Enums\RequestDocumentType;
 use App\Models\RequestApproval;
+use App\Models\RequestDocument;
 use App\Models\RequestEvent;
 use App\Models\RequestPart;
 use App\Models\RequestStatusPeriod;
@@ -42,7 +43,7 @@ use Tests\TestCase;
  *   - validateManagerReviewStage (1) ← новое в dev
  *   - validateEstimateStage / validatePartsReceivedStage (5)
  *   - workOrder requirement (6, 7, 8)
- *   - invoice and payment checks (8, 9, 10)
+ *   - акт передачи ТС (6), документы закрытия (7), отметки об оплате (8, 9)
  *
  * Пока в проекте нет enum'ов — работает с int-этапами.
  * После этапа 0 — переписать на RepairStage enum.
@@ -56,10 +57,9 @@ final class RepairRequestValidateNextTest extends TestCase
     private const STAGE_ESTIMATE_REVIEW  = 5;
     private const STAGE_READY_TO_REPAIR  = 5;
     private const STAGE_READY_TO_ISSUE   = 6;
-    private const STAGE_ISSUE            = 7;
-    private const STAGE_CLOSING_DOCS     = 8;
-    private const STAGE_AWAITING_PAYMENT = 9;
-    private const STAGE_PAYMENT_REVIEW   = 10;
+    private const STAGE_ISSUED           = 7;
+    private const STAGE_CUSTOMER_PAYMENT = 8;
+    private const STAGE_STATION_PAYMENT  = 9;
 
     private Tenant $tenant;
     private Organization $customerOrg;
@@ -207,10 +207,16 @@ final class RepairRequestValidateNextTest extends TestCase
             ],
 
             /* ─── EstimateReview (5) ─── */
-            'EstimateReview: без diagnoses' => [
+            // Заключение диагностики больше не обязательно (04.11.2026).
+            'EstimateReview: без diagnoses и planned' => [
                 self::STAGE_ESTIMATE_REVIEW,
                 ['acceptance'],
-                'СТО должна сохранить заключение диагностики',
+                'Укажите плановую дату и время завершения',
+            ],
+            'EstimateReview: ок без diagnoses' => [
+                self::STAGE_ESTIMATE_REVIEW,
+                ['acceptance', 'planned', 'work_valid', 'part_ok', 'approval_stage3_ok'],
+                null,
             ],
             'EstimateReview: без planned' => [
                 self::STAGE_ESTIMATE_REVIEW,
@@ -255,64 +261,59 @@ final class RepairRequestValidateNextTest extends TestCase
                 null,
             ],
 
-            /* ─── ReadyToIssue / Issue / ClosingDocs (8, 9, 10) ─── */
+            /* ─── ТС готово к выдаче (6) / Выдан. Подготовка документов (7) ─── */
             'ReadyToIssue: без workOrder' => [
                 self::STAGE_READY_TO_ISSUE,
                 [],
                 'Заказ-наряд ещё не сформирован',
             ],
-            'Issue: без workOrder' => [
-                self::STAGE_ISSUE,
+            'ReadyToIssue: акт передачи не подписан' => [
+                self::STAGE_READY_TO_ISSUE,
+                ['work_order', 'transfer_act'],
+                'Загрузите подписанный водителем акт передачи ТС и подтвердите сверку документов водителя с доверенностью',
+            ],
+            'ReadyToIssue: ок' => [
+                self::STAGE_READY_TO_ISSUE,
+                ['work_order', 'transfer_act_signed'],
+                null,
+            ],
+            'Issued: без workOrder' => [
+                self::STAGE_ISSUED,
                 [],
                 'Заказ-наряд ещё не сформирован',
             ],
-            'ClosingDocs: без workOrder' => [
-                self::STAGE_CLOSING_DOCS,
-                [],
-                'Заказ-наряд ещё не сформирован',
-            ],
-            'ClosingDocs: без invoice' => [
-                self::STAGE_CLOSING_DOCS,
+            'Issued: без документов' => [
+                self::STAGE_ISSUED,
                 ['work_order'],
-                'Прикрепите счёт на полную сумму заказ-наряда',
+                'Сформируйте документы по заявке',
             ],
-            'ClosingDocs: invoice не совпадает по сумме' => [
-                self::STAGE_CLOSING_DOCS,
-                ['work_order', 'invoice_wrong_total'],
-                'Прикрепите счёт на полную сумму заказ-наряда',
-            ],
-            'ClosingDocs: ок' => [
-                self::STAGE_CLOSING_DOCS,
-                ['work_order', 'invoice_issued'],
+            'Issued: ок' => [
+                self::STAGE_ISSUED,
+                ['work_order', 'closing_documents'],
                 null,
             ],
 
-            /* ─── AwaitingPayment (11) ─── */
-            'AwaitingPayment: без submitted invoice' => [
-                self::STAGE_AWAITING_PAYMENT,
-                ['work_order', 'invoice_issued'],
-                'Прикрепите закрытый счёт и сведения об оплате',
+            /* ─── Подтверждение оплаты Заказчика (8) ─── */
+            'CustomerPayment: без отметки' => [
+                self::STAGE_CUSTOMER_PAYMENT,
+                ['closing_documents'],
+                'Отметьте оплату Заказчика',
             ],
-            'AwaitingPayment: ок' => [
-                self::STAGE_AWAITING_PAYMENT,
-                ['work_order', 'invoice_submitted'],
+            'CustomerPayment: ок' => [
+                self::STAGE_CUSTOMER_PAYMENT,
+                ['closing_documents', 'customer_paid'],
                 null,
             ],
 
-            /* ─── PaymentReview (12) ─── */
-            'PaymentReview: без paid' => [
-                self::STAGE_PAYMENT_REVIEW,
-                ['work_order', 'invoice_submitted'],
-                'УК должна проверить оплату и закрытый счёт',
+            /* ─── Оплата в СТО (9) ─── */
+            'StationPayment: без отметки' => [
+                self::STAGE_STATION_PAYMENT,
+                ['closing_documents', 'customer_paid'],
+                'Отметьте оплату в пользу СТО',
             ],
-            'PaymentReview: paid без документа' => [
-                self::STAGE_PAYMENT_REVIEW,
-                ['work_order', 'invoice_paid_no_doc'],
-                'УК должна проверить оплату и закрытый счёт',
-            ],
-            'PaymentReview: ок' => [
-                self::STAGE_PAYMENT_REVIEW,
-                ['work_order', 'invoice_paid_ok'],
+            'StationPayment: ок' => [
+                self::STAGE_STATION_PAYMENT,
+                ['closing_documents', 'customer_paid', 'station_paid'],
                 null,
             ],
         ];
@@ -380,18 +381,24 @@ final class RepairRequestValidateNextTest extends TestCase
                     'status'      => 'received',
                 ]),
                 'work_order'       => $this->createWorkOrder($request),
-                'invoice_issued'   => $this->createInvoice($request, ['status' => 'issued']),
-                'invoice_wrong_total' => $this->createInvoice($request, ['status' => 'issued', 'amount' => 999]),
-                'invoice_submitted'   => $this->createInvoice($request, ['status' => 'submitted']),
-                'invoice_paid_ok'     => $this->createInvoice($request, [
-                    'status'                      => 'paid',
-                    'paid_amount'                 => 100,
-                    'paid_document_attachment_id' => $this->makeAttachment($request)->id,
+                'transfer_act'        => $this->createDocument($request, RequestDocumentType::TransferAct),
+                'transfer_act_signed' => $this->createDocument($request, RequestDocumentType::TransferAct, [
+                    'signed_attachment_id'      => $this->makeAttachment($request)->id,
+                    'driver_documents_verified' => true,
+                    'signed_at'                 => now(),
                 ]),
-                'invoice_paid_no_doc' => $this->createInvoice($request, [
-                    'status'      => 'paid',
-                    'paid_amount' => 100,
-                ]),
+                'closing_documents'   => array_map(
+                    fn (RequestDocumentType $type) => $this->createDocument($request, $type),
+                    RequestDocumentType::closing(),
+                ),
+                'customer_paid'       => RequestDocument::query()
+                    ->where('repair_request_id', $request->id)
+                    ->where('type', RequestDocumentType::CustomerInvoice->value)
+                    ->update(['paid_at' => now()->toDateString(), 'paid_amount' => 100]),
+                'station_paid'        => RequestDocument::query()
+                    ->where('repair_request_id', $request->id)
+                    ->where('type', RequestDocumentType::StationInvoice->value)
+                    ->update(['paid_at' => now()->toDateString(), 'paid_amount' => 90]),
                 'approval_stage3_ok'            => $this->createApproval($request, 3, 'accepted'),
                 'approval_stage3_wrong_version' => $this->createApproval($request, 3, 'accepted', 999),
                 'part_received_ok'              => $this->createPart($request, [
@@ -554,17 +561,19 @@ final class RepairRequestValidateNextTest extends TestCase
         ]);
     }
 
-    private function createInvoice(RepairRequest $request, array $overrides = []): Invoice
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    private function createDocument(RepairRequest $request, RequestDocumentType $type, array $overrides = []): RequestDocument
     {
-        $document = $this->makeAttachment($request);
-
-        return Invoice::query()->create(array_merge([
-            'uuid'                    => (string) Str::uuid(),
-            'repair_request_id'       => $request->id,
-            'number'                  => 'СЧ-1',
-            'amount'                  => 100,
-            'status'                  => 'issued',
-            'document_attachment_id'  => $document->id,
+        return RequestDocument::query()->create(array_merge([
+            'tenant_id'         => $request->tenant_id,
+            'repair_request_id' => $request->id,
+            'type'              => $type->value,
+            'number'            => $request->numberWithPrefix($type->prefix()) . $type->suffix(),
+            'document_date'     => now()->toDateString(),
+            'amount'            => $type->isStationSide() ? 90 : 100,
+            'payload'           => [],
         ], $overrides));
     }
 

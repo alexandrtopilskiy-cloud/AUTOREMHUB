@@ -44,6 +44,37 @@
       >
         ▣ Архив
       </button>
+      <button
+        class="nav-item"
+        :class="{ active: active?.kind === 'report' }"
+        @click="$emit('open-report')"
+      >
+        ▦ Отчёт
+      </button>
+
+      <!-- Справочники: один выпадающий пункт, набор зависит от ЛК -->
+      <template v-if="catalogKeys.length">
+        <button
+          class="nav-item nav-group"
+          :class="{ active: catalogActive && !catalogsOpen }"
+          :aria-expanded="catalogsOpen"
+          @click="toggleCatalogs"
+        >
+          ☷ Справочники
+          <span class="nav-chevron" aria-hidden="true">{{ catalogsOpen ? "▾" : "▸" }}</span>
+        </button>
+        <div v-if="catalogsOpen" class="nav-submenu">
+          <button
+            v-for="key in catalogKeys"
+            :key="key"
+            class="nav-item"
+            :class="{ active: active?.key === key }"
+            @click="$emit('open-list', key)"
+          >
+            {{ catalogNames[key] }}
+          </button>
+        </div>
+      </template>
 
       <!-- Уведомления -->
       <span class="nav-caption notification-caption">
@@ -82,20 +113,6 @@
         </button>
       </div>
 
-      <!-- Справочники -->
-      <template v-if="catalogKeys.length">
-        <span class="nav-caption">Справочники</span>
-        <button
-          v-for="key in catalogKeys"
-          :key="key"
-          class="nav-item"
-          :class="{ active: active?.key === key }"
-          @click="$emit('open-list', key)"
-        >
-          {{ catalogNames[key] }}
-        </button>
-      </template>
-
       <div class="menu-info">
         <strong>{{ user.organization }}</strong>
         <p>{{ user.label }}</p>
@@ -110,6 +127,16 @@
 
 <script>
 import { formatDateTime, catalogNames } from "../data/permissions";
+
+const CATALOGS_OPEN_KEY = "autoremhub.menu.catalogsOpen";
+
+function readCatalogsOpen() {
+  try {
+    return localStorage.getItem(CATALOGS_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export default {
   name: "SidebarMenu",
@@ -128,6 +155,7 @@ export default {
   emits: [
     "open-list",
     "open-recommendations",
+    "open-report",
     "open-notification",
     "open-unread-chat",
     "collapse",
@@ -135,14 +163,49 @@ export default {
   data() {
     return {
       catalogNames,
+      catalogsOpen: readCatalogsOpen() || this.catalogKeys.includes(this.active?.key),
     };
+  },
+  computed: {
+    catalogActive() {
+      return this.catalogKeys.includes(this.active?.key);
+    },
+  },
+  watch: {
+    catalogActive(value) {
+      if (value) this.catalogsOpen = true;
+    },
   },
   methods: {
     formatDateTime,
+    toggleCatalogs() {
+      this.catalogsOpen = !this.catalogsOpen;
+      try {
+        localStorage.setItem(CATALOGS_OPEN_KEY, this.catalogsOpen ? "1" : "0");
+      } catch {
+        /* хранилище недоступно — состояние только в памяти */
+      }
+    },
   },
 };
 </script>
 
 <style scoped>
-/* Перенесите сюда стили для .menu-area, .nav-item и т.д. или оставьте глобальными */
+.nav-group {
+  display: flex;
+  align-items: center;
+}
+
+.nav-chevron {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nav-submenu {
+  display: grid;
+  margin: 0 0 4px 14px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+}
 </style>
