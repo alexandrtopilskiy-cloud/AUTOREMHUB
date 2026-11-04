@@ -24,7 +24,10 @@ final class StoreAttachmentRequest extends FormRequest
             'revision' => ['required', 'regex:/^\d+$/'],
             'purpose'  => [
                 'required',
-                'in:' . implode(',', AttachmentPurpose::values()),
+                'in:' . implode(',', array_map(
+                    static fn (AttachmentPurpose $purpose): string => $purpose->value,
+                    array_filter(AttachmentPurpose::cases(), static fn (AttachmentPurpose $purpose): bool => !$purpose->isSystem()),
+                )),
             ],
         ];
     }

@@ -24,11 +24,10 @@ final class RepairStageTest extends TestCase
             'customer approval' => [RepairStage::CustomerApproval, UserRole::Customer],
             'waiting vehicle' => [RepairStage::WaitingVehicle, UserRole::Station],
             'repair in progress' => [RepairStage::RepairInProgress, UserRole::Station],
-            'ready' => [RepairStage::Ready, UserRole::Manager],
-            'vehicle issue' => [RepairStage::VehicleIssue, UserRole::Customer],
-            'closing documents' => [RepairStage::ClosingDocuments, UserRole::Manager],
-            'awaiting payment' => [RepairStage::AwaitingPayment, UserRole::Customer],
-            'payment review' => [RepairStage::PaymentReview, UserRole::Manager],
+            'ready for handover' => [RepairStage::Ready, UserRole::Station],
+            'issued, documents' => [RepairStage::Issued, UserRole::Manager],
+            'customer payment' => [RepairStage::CustomerPayment, UserRole::Manager],
+            'station payment' => [RepairStage::StationPayment, UserRole::Manager],
             'closed' => [RepairStage::Closed, null],
         ];
     }
@@ -44,7 +43,7 @@ final class RepairStageTest extends TestCase
 
     public function test_stage_values_are_contiguous_and_complete(): void
     {
-        $this->assertSame(range(0, 11), RepairStage::values());
+        $this->assertSame(range(0, 10), RepairStage::values());
         $this->assertCount(count(self::ownerRoleProvider()), RepairStage::cases());
     }
 
@@ -70,7 +69,7 @@ final class RepairStageTest extends TestCase
     {
         $this->assertNull(RepairStage::Draft->previous());
         $this->assertSame(RepairStage::ManagerRouting, RepairStage::Draft->next());
-        $this->assertSame(RepairStage::PaymentReview, RepairStage::Closed->previous());
+        $this->assertSame(RepairStage::StationPayment, RepairStage::Closed->previous());
         $this->assertNull(RepairStage::Closed->next());
     }
 }

@@ -11,10 +11,12 @@ use App\Http\Controllers\DiagnosticController;
 use App\Http\Controllers\DocumentLockController;
 use App\Http\Controllers\EdoDocumentController;
 use App\Http\Controllers\EdoSettingsController;
-use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\ClosingDocumentController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationPersonController;
 use App\Http\Controllers\PartController;
+use App\Http\Controllers\PartManufacturerController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\RequestChatController;
 use App\Http\Controllers\RepairRequestController;
@@ -189,15 +191,19 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         });
     });
 
-    /* ─── Счёт и оплата ─── */
+    /* ─── Закрытие ЗР: акт передачи ТС, документы, оплаты ─── */
 
-    Route::prefix('requests/{id}')->name('invoice.')->group(function (): void {
-        Route::post('/invoice', [InvoiceController::class, 'issue'])->name('issue');
-        Route::post('/payment', [InvoiceController::class, 'payment'])->name('payment');
-        Route::post('/payment/verify', [InvoiceController::class, 'verify'])->name('verify');
+    Route::prefix('requests/{id}')->name('closing.')->group(function (): void {
+        Route::post('/documents/generate', [ClosingDocumentController::class, 'generate'])->name('documents.generate');
+        Route::post('/transfer-act/signed', [ClosingDocumentController::class, 'signTransferAct'])->name('transfer-act.signed');
+        Route::post('/payments/customer', [ClosingDocumentController::class, 'customerPayment'])->name('payments.customer');
+        Route::post('/payments/station', [ClosingDocumentController::class, 'stationPayment'])->name('payments.station');
     });
 
     /* ─── ЭДО ─── */
+
+    Route::get('/request-documents/{documentId}/pdf', [ClosingDocumentController::class, 'pdf'])->whereUuid('documentId')->name('request-documents.pdf');
+    Route::get('/reports/requests', [ReportController::class, 'requests'])->name('reports.requests');
 
     Route::prefix('edo')->name('edo.')->group(function (): void {
         Route::post('/connect', [EdoSettingsController::class, 'connect']);

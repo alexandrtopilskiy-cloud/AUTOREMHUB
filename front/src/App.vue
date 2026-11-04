@@ -2,6 +2,7 @@
 import { matchesReference } from "./utils/referenceSearch.js";
 import LoginForm from "./features/auth/LoginForm.vue";
 import RepairEditor from "./features/requests/RepairEditor.vue";
+import RequestReport from "./features/reports/RequestReport.vue";
 import UnsavedChangesDialog from "./features/requests/UnsavedChangesDialog.vue";
 import RequestPreview from "./features/requests/RequestPreview.vue";
 import SupplierEditor from "./features/catalogs/SupplierEditor.vue";
@@ -25,7 +26,15 @@ import WorkspaceAlerts from "./components/WorkspaceAlerts.vue";
 import { createRequestStore } from "./stores/requestStore.js";
 import { marketplaceApi, restoreToken, clearToken } from "./api/marketplace.js";
 import { http } from "./api/client.js";
-import { workflow, statusClass } from "./data/workflow.js";
+import { workflow, statusClass, CLOSED_STAGE } from "./data/workflow.js";
+
+/** Действия, после которых ЗР закрывается у текущего пользователя. */
+const CLOSING_ACTIONS = [
+    "transition",
+    "stationDecision",
+    "customerSlotDecision",
+    "workChangeDecision",
+];
 import { APP_VERSION } from "./data/version.js";
 import {
     money,
@@ -43,6 +52,7 @@ export default {
     components: {
         LoginForm,
         RepairEditor,
+        RequestReport,
         UnsavedChangesDialog,
         RequestPreview,
         CatalogEditor,
@@ -255,7 +265,7 @@ export default {
                         r.permissions.canAdvance,
                 );
             if (this.active.key === "archive")
-                rows = rows.filter((r) => r.stage === 11);
+                rows = rows.filter((r) => r.stage === CLOSED_STAGE);
             const filters = this.active.filters || {};
 
             return rows.filter((row) =>
@@ -1288,6 +1298,15 @@ export default {
                 });
             await this.activate(id);
         },
+        async openReport() {
+            const id = "report:requests";
+            if (!this.tabs.some((tab) => tab.id === id))
+                this.tabs.push({ id, kind: "report", title: "Отчёт" });
+            await this.activate(id);
+        },
+        async openReportRow(row) {
+            await this.openRecord({ id: row.id, number: row.number });
+        },
         async openAllRecommendations() {
             const id = "recommendations:all";
             if (!this.tabs.some((tab) => tab.id === id))
@@ -1355,9 +1374,16 @@ export default {
 
         async perform(method, ...args) {
             const key = this.current?.id;
+            const tabId = this.activeId;
             if (!key) throw new Error("Заявка не выбрана");
             try {
                 const result = await this.store.act(key, method, ...args);
+                // «Далее по маршруту», «Вернуть», «Согласовать» / «Не согласовано»:
+                // решение принято — ЗР закрывается у текущего пользователя.
+                if (CLOSING_ACTIONS.includes(method)) {
+                    this.removeTab(tabId);
+                    this.notify(`${result?.number || "Заявка"}: ${result?.statusLabel || "решение сохранено"}`);
+                }
                 await this.synchronizeRequestLocks();
 
                 return result;
@@ -1877,6 +1903,7 @@ export default {
                 :catalog-keys="catalogKeys"
                 @open-list="openList"
                 @open-recommendations="openAllRecommendations"
+                @open-report="openReport"
                 @open-notification="openNotification"
                 @open-unread-chat="openUnreadChat"
                 @collapse="collapse"
@@ -2189,6 +2216,12 @@ export default {
                             :vehicle-id="active.recordId"
                         />
                         <EdoDocuments v-else-if="active?.kind === 'edo'" />
+                        <RequestReport
+                            v-else-if="active?.kind === 'report'"
+                            :key="active.id"
+                            :user="user"
+                            @open="openReportRow"
+                        />
                     </div>
                 </template>
 

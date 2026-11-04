@@ -1,7 +1,7 @@
 /**
  * Workflow заявки: этапы, владельцы и действия перехода.
  *
- * Индекс в каждом массиве соответствует номеру этапа заявки (0–11).
+ * Индекс в каждом массиве соответствует номеру этапа заявки (0–10).
  * Эти данные должны совпадать с backend (Workflow::STAGES в PHP).
  */
 
@@ -15,12 +15,11 @@ const STATUSES = [
   'Согласование Заказчика',   // 3
   'Ожидание ТС на СТО',       // 4
   'В работе',                 // 5
-  'Готово',                   // 6
-  'Выдача автомобиля',        // 7
-  'Закрывающие документы',    // 8
-  'Ожидает оплаты',           // 9
-  'Оплата на проверке УК',    // 10
-  'Заявка закрыта',           // 11
+  'ТС готово к выдаче Заказчику',   // 6
+  'Выдан. Подготовка документов',   // 7
+  'Подтверждение оплаты Заказчика', // 8
+  'Оплата в СТО',                   // 9
+  'Заявка на ремонт закрыта',       // 10
 ];
 
 /** Владельцы этапов (индекс = номер этапа). */
@@ -31,10 +30,9 @@ const OWNERS = [
   'Заказчик',
   'СТО-партнёр',
   'СТО-партнёр',
+  'СТО-партнёр',
   'УК',
-  'Заказчик',
   'УК',
-  'Заказчик',
   'УК',
   'Архив',
 ];
@@ -47,18 +45,17 @@ const NEXT_ACTIONS = [
   'Подтвердить финальную заявку',
   'Оформить приём ТС',
   'Подтвердить завершение работ',
-  'Разрешить выдачу',
-  'Подтвердить приёмку',
-  'Передать счёт Заказчику',
-  'Отправить оплату на проверку',
-  'Закрыть оплаченную заявку',
+  'Выдать ТС Заказчику',
+  'Документы сформированы',
+  'Оплата Заказчика получена',
+  'Оплата в СТО произведена',
   'Завершено',
 ];
 
 /* ─── Классы этапов ─── */
 
 /** Номер последнего этапа («Заявка закрыта»). */
-const CLOSED_STAGE = 11;
+export const CLOSED_STAGE = 10;
 
 const CLASS_GREEN = 'green';
 
@@ -90,6 +87,6 @@ export const workflow = STATUSES.map((status, index) => ({
  */
 export function statusClass(stage, permissions = {}) {
   if (stage === CLOSED_STAGE) return CLASS_GREEN;
-  const actionable = permissions.requiresAction ?? ['canAdvance', 'canReturn', 'canStationDecide', 'canCustomerSlotDecide', 'canAcceptVehicle', 'canDiagnose', 'canIssueInvoice', 'canSubmitPayment', 'canVerifyPayment'].some(key => permissions[key] === true);
+  const actionable = permissions.requiresAction ?? ['canAdvance', 'canReturn', 'canStationDecide', 'canCustomerSlotDecide', 'canAcceptVehicle', 'canDiagnose', 'canSignTransferAct', 'canGenerateDocuments', 'canMarkCustomerPayment', 'canMarkStationPayment'].some(key => permissions[key] === true);
   return actionable ? 'red' : 'gray';
 }

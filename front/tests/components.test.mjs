@@ -1625,6 +1625,103 @@ test("Options API component rendering and interactive methods", async (context) 
                 );
             },
         );
+
+        await context.test(
+            "side menu: report item and one collapsible catalogs item",
+            async () => {
+                const { default: SidebarMenu } = await server.ssrLoadModule(
+                    "/src/components/SidebarMenu.vue",
+                );
+                const render = (role, catalogKeys, active = null) =>
+                    renderToString(
+                        createSSRApp(SidebarMenu, {
+                            user: { role, organization: "Org", label: "User" },
+                            panel: { menu: true },
+                            catalogKeys,
+                            active,
+                        }),
+                    );
+
+                const collapsed = await render("station", ["parts", "suppliers"]);
+                assert.match(collapsed, /Отчёт/);
+                assert.match(collapsed, /Справочники/);
+                assert.doesNotMatch(collapsed, /Справочник запчастей/);
+
+                const opened = await render("station", ["parts", "suppliers"], {
+                    kind: "list",
+                    key: "parts",
+                });
+                assert.match(opened, /Справочник запчастей/);
+                assert.match(opened, /Поставщики/);
+
+                const customer = await render("customer", []);
+                assert.match(customer, /Отчёт/);
+                assert.doesNotMatch(customer, /☷ Справочники/);
+            },
+        );
+
+        await context.test(
+            "closing panel: station signs transfer act, manager sees seven documents",
+            async () => {
+                const { default: ClosingPanel } = await server.ssrLoadModule(
+                    "/src/features/requests/ClosingPanel.vue",
+                );
+                const transferAct = {
+                    id: "a1", type: "transfer_act", label: "Акт передачи ТС",
+                    number: "APP-000005/2", date: "2026-11-04", amount: 0,
+                    driver: { fullName: "Петров Пётр", phone: "+7" },
+                    powerOfAttorney: { number: "DV-000005", date: null },
+                    driverDocumentsVerified: false,
+                };
+                const station = await renderToString(
+                    createSSRApp(ClosingPanel, {
+                        request: {
+                            ...request(),
+                            stage: 6,
+                            attachments: [],
+                            closing: { transferAct, documents: [] },
+                            permissions: { canSignTransferAct: true, canGenerateDocuments: true },
+                        },
+                        perform: async () => {},
+                    }),
+                );
+                assert.match(station, /APP-000005\/2/);
+                assert.match(station, /DV-000005/);
+                assert.match(station, /Загрузить скан акта/);
+                assert.match(station, /Подтвердить выдачу ТС/);
+
+                const doc = (type, side, label, amount) => ({
+                    id: type, type, side, label, number: `X-${type}`,
+                    date: "2026-11-04", seller: "S", buyer: "B", amount, vatAmount: 0,
+                });
+                const documents = [
+                    doc("station_work_order", "station", "Заказ-наряд", 1350),
+                    doc("station_upd", "station", "УПД", 1350),
+                    doc("station_invoice", "station", "Счёт на оплату", 1350),
+                    doc("customer_work_order", "customer", "Заказ-наряд", 1500),
+                    doc("customer_upd", "customer", "УПД", 1500),
+                    doc("customer_invoice", "customer", "Счёт на оплату", 1500),
+                    doc("agent_report", "customer", "Отчёт агента", 1500),
+                ];
+                const manager = await renderToString(
+                    createSSRApp(ClosingPanel, {
+                        request: {
+                            ...request(),
+                            stage: 8,
+                            attachments: [],
+                            closing: { transferAct: { ...transferAct, driverDocumentsVerified: true }, documents },
+                            permissions: { canMarkCustomerPayment: true },
+                        },
+                        perform: async () => {},
+                    }),
+                );
+                assert.equal((manager.match(/>PDF</g) || []).length, 8);
+                assert.match(manager, /СТО → УК/);
+                assert.match(manager, /Отчёт агента/);
+                assert.match(manager, /Оплата Заказчика по счёту X-customer_invoice/);
+                assert.doesNotMatch(manager, /Загрузить скан акта/);
+            },
+        );
     } finally {
         await server.close();
     }

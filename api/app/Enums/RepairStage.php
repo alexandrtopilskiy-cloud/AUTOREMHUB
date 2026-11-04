@@ -13,11 +13,10 @@ enum RepairStage: int
     case WaitingVehicle = 4;
     case RepairInProgress = 5;
     case Ready = 6;
-    case VehicleIssue = 7;
-    case ClosingDocuments = 8;
-    case AwaitingPayment = 9;
-    case PaymentReview = 10;
-    case Closed = 11;
+    case Issued = 7;
+    case CustomerPayment = 8;
+    case StationPayment = 9;
+    case Closed = 10;
 
     public function label(): string
     {
@@ -28,12 +27,11 @@ enum RepairStage: int
             self::CustomerApproval => 'Согласование Заказчика',
             self::WaitingVehicle => 'Ожидание ТС на СТО',
             self::RepairInProgress => 'В работе',
-            self::Ready => 'Готово',
-            self::VehicleIssue => 'Выдача автомобиля',
-            self::ClosingDocuments => 'Закрывающие документы',
-            self::AwaitingPayment => 'Ожидает оплаты',
-            self::PaymentReview => 'Оплата на проверке УК',
-            self::Closed => 'Заявка закрыта',
+            self::Ready => 'ТС готово к выдаче Заказчику',
+            self::Issued => 'Выдан. Подготовка документов',
+            self::CustomerPayment => 'Подтверждение оплаты Заказчика',
+            self::StationPayment => 'Оплата в СТО',
+            self::Closed => 'Заявка на ремонт закрыта',
         };
     }
 
@@ -45,12 +43,11 @@ enum RepairStage: int
     public function ownerRole(): ?UserRole
     {
         return match ($this) {
-            self::Draft, self::CustomerApproval, self::VehicleIssue,
-            self::AwaitingPayment => UserRole::Customer,
-            self::ManagerRouting, self::Ready, self::ClosingDocuments,
-            self::PaymentReview => UserRole::Manager,
+            self::Draft, self::CustomerApproval => UserRole::Customer,
+            self::ManagerRouting, self::Issued, self::CustomerPayment,
+            self::StationPayment => UserRole::Manager,
             self::StationApproval, self::WaitingVehicle,
-            self::RepairInProgress => UserRole::Station,
+            self::RepairInProgress, self::Ready => UserRole::Station,
             self::Closed => null,
         };
     }

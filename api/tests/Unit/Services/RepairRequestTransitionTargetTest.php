@@ -53,8 +53,8 @@ final class RepairRequestTransitionTargetTest extends TestCase
                 TransitionAction::Return,
                 RepairStage::RepairInProgress,
             ],
-            'payment review to closed' => [
-                RepairStage::PaymentReview,
+            'station payment to closed' => [
+                RepairStage::StationPayment,
                 TransitionAction::Next,
                 RepairStage::Closed,
             ],

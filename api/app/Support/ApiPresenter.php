@@ -75,6 +75,8 @@ final class ApiPresenter
             'workOrder.items',
             'invoice',
             'acceptanceAct.attachment',
+            'documents.attachment',
+            'documents.signedAttachment',
         ]);
 
         $data = $this->resolveData($request);
@@ -155,6 +157,7 @@ final class ApiPresenter
             'workOrder'              => $this->workOrder($request),
             'invoice'                => $this->presentInvoice($request),
             'acceptanceAct'          => $this->presentAcceptanceAct($request),
+            'closing'                => app(\App\Services\ClosingDocumentService::class)->present($request, $user),
             'permissions' => array_merge(Workflow::permissions($request, $user), [
                 'canViewRepairEstimate' => $user->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
                     || $request->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
@@ -432,6 +435,8 @@ final class ApiPresenter
         $periods = RequestStatusPeriod::query()->whereIn('id', $periodIds)->get()->keyBy('id');
 
         return $request->attachments
+            ->reject(fn ($attachment) => $attachment->purpose === \App\Enums\AttachmentPurpose::GeneratedDocument)
+            ->values()
             ->map(fn ($attachment) => [
                 'id'       => $attachment->uuid,
                 'name'     => $attachment->original_name,

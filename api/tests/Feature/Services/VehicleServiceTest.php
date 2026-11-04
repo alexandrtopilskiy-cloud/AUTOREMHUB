@@ -398,7 +398,7 @@ final class VehicleServiceTest extends TestCase
             ),
             'works'                    => [],
             'history'                  => [],
-            'stage'                    => 11,
+            'stage'                    => 10,
             'revision'                 => 1,
             'created_by'               => $this->customer->id,
         ]);

@@ -379,7 +379,7 @@ function goReturn() {
 
       <div class="action-buttons">
         <button
-          v-if="request.stage > 0 && request.stage < 11"
+          v-if="request.stage > 0 && request.stage < 10"
           class="ghost-btn"
           :disabled="!canAct"
           @click="goReturn"
@@ -389,7 +389,7 @@ function goReturn() {
 
         <button
           class="primary-btn"
-          :disabled="!canAct || request.stage === 11"
+          :disabled="!canAct || request.stage === 10"
           @click="goNext"
         >
           Далее по маршруту <span>→</span>

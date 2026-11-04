@@ -17,7 +17,7 @@ const UPLOAD_TIMEOUT_MS = 180_000;
 const REQUEST_NUMBER_PATTERN = /^ZR-\d{6,}$/;
 
 /** Максимальный номер этапа (11 — «Заявка закрыта»). */
-const MAX_STAGE = 11;
+const MAX_STAGE = 10;
 
 /** Ключ для сохранения токена только в текущей вкладке браузера. */
 const TOKEN_STORAGE_KEY = "api_token";
@@ -1136,36 +1136,84 @@ export const marketplaceApi = {
         );
     },
 
-    /* ─── Счёт и оплата ─── */
+    /* ─── Закрытие ЗР: акт передачи ТС, документы, оплаты ─── */
 
     /**
+     * Переформировать документы: СТО — акт передачи ТС, УК — комплект документов.
+     *
      * @param {string} key
      * @param {number} revision
-     * @param {object} body
      * @returns {Promise<object>}
      */
-    invoice(key, revision, body) {
-        return command(key, "/invoice", revision, body);
+    generateDocuments(key, revision) {
+        return command(key, "/documents/generate", revision);
     },
 
     /**
+     * СТО: подписанный водителем акт передачи ТС и сверка с доверенностью.
+     *
      * @param {string} key
      * @param {number} revision
-     * @param {object} body
+     * @param {{attachmentId: string, driverDocumentsVerified: boolean}} body
      * @returns {Promise<object>}
      */
-    payment(key, revision, body) {
-        return command(key, "/payment", revision, body);
+    signTransferAct(key, revision, body) {
+        return command(key, "/transfer-act/signed", revision, body);
     },
 
     /**
+     * УК: отметка об оплате Заказчика.
+     *
      * @param {string} key
      * @param {number} revision
-     * @param {object} body
+     * @param {{paidAt: string, amount: number|string, comment?: string}} body
      * @returns {Promise<object>}
      */
-    verifyPayment(key, revision, body) {
-        return command(key, "/payment/verify", revision, body);
+    markCustomerPayment(key, revision, body) {
+        return command(key, "/payments/customer", revision, body);
+    },
+
+    /**
+     * УК: отметка об оплате в пользу СТО.
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @param {{paidAt: string, amount: number|string, comment?: string}} body
+     * @returns {Promise<object>}
+     */
+    markStationPayment(key, revision, body) {
+        return command(key, "/payments/station", revision, body);
+    },
+
+    /**
+     * PDF документа по заявке.
+     *
+     * @param {string} documentId
+     * @returns {Promise<Blob>}
+     */
+    async requestDocumentPdf(documentId) {
+        const response = await fetch(
+            `${apiConfig.baseUrl}/request-documents/${encodeId(documentId)}/pdf`,
+            { headers: { Authorization: `Bearer ${http.getToken()}` } },
+        );
+
+        if (!response.ok) {
+            throw new ApiError("Не удалось скачать документ", response.status);
+        }
+
+        return response.blob();
+    },
+
+    /* ─── Отчёт ─── */
+
+    /**
+     * ЗР на этапах «Подтверждение оплаты Заказчика», «Оплата в СТО»,
+     * «Заявка на ремонт закрыта» (по видимости ЛК).
+     *
+     * @returns {Promise<{rows: object[], stages: {value: number, label: string}[]}>}
+     */
+    async reportRequests() {
+        return http.request("/reports/requests");
     },
 
     /* ─── Вложения ─── */

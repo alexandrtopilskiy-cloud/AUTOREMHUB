@@ -302,6 +302,21 @@ final class RepairRequest extends Entity
         return $query->firstOrFail();
     }
 
+    /** @return HasMany<RequestDocument, $this> */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(RequestDocument::class);
+    }
+
+    public function document(\App\Enums\RequestDocumentType $type): ?RequestDocument
+    {
+        if ($this->relationLoaded('documents')) {
+            return $this->documents->first(fn (RequestDocument $doc): bool => $doc->type === $type);
+        }
+
+        return $this->documents()->where('type', $type->value)->first();
+    }
+
     public function edoDocuments(): HasMany
     {
         return $this->hasMany(EdoDocument::class, 'source_id')
