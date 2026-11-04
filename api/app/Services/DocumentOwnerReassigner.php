@@ -16,11 +16,8 @@ final class DocumentOwnerReassigner
      *
      * @param array<int, int> $formerUserIds
      */
-    public function reassign(
-        Organization $organization,
-        User $owner,
-        array $formerUserIds,
-    ): int {
+    public function reassign(Organization $organization, User $owner, array $formerUserIds, )
+    {
         $formerUserIds = array_values(array_unique(array_map(
             'intval',
             $formerUserIds,

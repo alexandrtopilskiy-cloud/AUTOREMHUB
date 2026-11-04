@@ -7,7 +7,7 @@ namespace App\DTO;
 use App\Enums\ApprovalDecision;
 use App\Http\Requests\StationDecisionRequest;
 
-final class StationDecisionDto
+final readonly class StationDecisionDto
 {
     public function __construct(
         public readonly string $requestKey,

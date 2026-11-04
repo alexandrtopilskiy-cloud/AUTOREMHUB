@@ -21,6 +21,5 @@ final readonly class EdoDocumentDto
         public ?string $receiverName = null,
         public ?EdoFile $content = null,
         public array $raw = [],
-    ) {
-    }
+    ) {}
 }

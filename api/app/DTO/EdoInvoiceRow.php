@@ -15,6 +15,5 @@ final readonly class EdoInvoiceRow
         public string $vatSum,      // НДС
         public string $totalSum,    // с НДС
         public string $vatType,     // "20%" | "без НДС"
-    ) {
-    }
+    ) {}
 }

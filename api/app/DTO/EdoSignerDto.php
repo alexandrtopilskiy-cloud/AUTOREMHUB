@@ -10,7 +10,6 @@ use App\Exceptions\EdoException;
  * Подписант документа ЭДО (XML УПД/УКД).
  *
  * На первом этапе — только руководитель (authorityScope=1).
- * МЧД (authorityScope=3) — TODO, отдельный этап.
  */
 final readonly class EdoSignerDto
 {

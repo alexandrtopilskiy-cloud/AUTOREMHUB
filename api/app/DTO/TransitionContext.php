@@ -9,7 +9,7 @@ use App\Enums\RepairStage;
 use App\Enums\TransitionAction;
 use App\Models\Attachment;
 
-final class TransitionContext
+final readonly class TransitionContext
 {
     /**
      * @param array<int, Attachment> $files

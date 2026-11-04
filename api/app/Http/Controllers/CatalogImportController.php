@@ -19,8 +19,7 @@ final class CatalogImportController
     public function __construct(
         private readonly CatalogExcelImportService $importer,
         private readonly XlsxTemplateWriter $writer,
-    ) {
-    }
+    ) {}
 
     public function template(Request $request, string $kind): BinaryFileResponse
     {

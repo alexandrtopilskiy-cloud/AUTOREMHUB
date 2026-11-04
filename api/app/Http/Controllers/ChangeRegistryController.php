@@ -12,8 +12,7 @@ final class ChangeRegistryController
 {
     public function __construct(
         private readonly ChangeRegistryService $service,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {

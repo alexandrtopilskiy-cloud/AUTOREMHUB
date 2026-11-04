@@ -13,6 +13,5 @@ final readonly class EdoSyncResult
         public array $events,
         public int $lastEventId,
         public readonly bool $hasMore = false,
-    ) {
-    }
+    ) {}
 }

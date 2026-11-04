@@ -11,8 +11,7 @@ final readonly class EdoFile
         public readonly string $filename,
         public readonly string $mimeType,
         public readonly bool $isBase64 = true,
-    ) {
-    }
+    ) {}
 
     public static function fromBase64(string $filename, string $mimeType, string $base64): self
     {
@@ -29,7 +28,7 @@ final readonly class EdoFile
         return base64_decode($this->content, true) ?: '';
     }
 
-    public function raw(): string
+    public function raw()
     {
         return $this->isBase64 ? base64_decode($this->content, true) : $this->content;
     }

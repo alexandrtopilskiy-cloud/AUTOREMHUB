@@ -8,6 +8,7 @@ use App\Enums\CatalogKind;
 use App\Models\CatalogChangeEvent;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 
 final class CatalogAuditService
 {
@@ -55,22 +56,31 @@ final class CatalogAuditService
      */
     private function changedFields(?array $before, array $after): array
     {
+        $afterFiltered = Arr::except($after, self::IGNORED_FIELDS);
+
         if ($before === null) {
-            return array_values(array_diff(
-                array_keys($after),
-                self::IGNORED_FIELDS,
-            ));
+            return array_values($afterFiltered);
         }
 
-        $keys = array_diff(
-            array_unique([...array_keys($before), ...array_keys($after)]),
-            self::IGNORED_FIELDS,
-        );
+        $beforeFiltered = Arr::except($before, self::IGNORED_FIELDS);
 
-        return array_values(array_filter(
-            $keys,
-            static fn (string $key): bool => ($before[$key] ?? null) !== ($after[$key] ?? null),
-        ));
+        // Ищем ключи, которые есть в after, но отличаются от before (или отсутствуют в before)
+        $changedKeys = [];
+        foreach ($afterFiltered as $key => $value) {
+            // Если ключа нет в before или значение отличается (с учетом null)
+            if (!array_key_exists($key, $beforeFiltered) || $beforeFiltered[$key] !== $value) {
+                $changedKeys[] = $key;
+            }
+        }
+
+        // На случай, если в before были ключи, которых нет в after (удаленные поля)
+        foreach ($beforeFiltered as $key => $value) {
+            if (!array_key_exists($key, $afterFiltered)) {
+                $changedKeys[] = $key;
+            }
+        }
+
+        return array_values($changedKeys);
     }
 
     /**
@@ -78,20 +88,18 @@ final class CatalogAuditService
      */
     private function label(array $attributes): string
     {
+        // 1. Блок с ФИО (если есть фамилия и имя)
         if (isset($attributes['last_name'], $attributes['first_name'])) {
-            return trim(implode(' ', array_filter([
+            return collect([
                 $attributes['last_name'],
                 $attributes['first_name'],
                 $attributes['middle_name'] ?? null,
-            ])));
+            ])->filter()->implode(' ');
         }
 
-        return (string) (
-            $attributes['name']
-            ?? $attributes['vehicle']
-            ?? $attributes['article']
-            ?? $attributes['payload']['vehicle']
-            ?? ''
-        );
+        // 2. Fallback (если ФИО нет)
+        $label  = $attributes['name'] ?? $attributes['vehicle'] ?? $attributes['article'] ?? data_get($attributes, 'payload.vehicle');
+
+        return (string) ($label ?? '');
     }
 }

@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\DocumentLock;
+use App\Models\Recommendation;
 use App\Models\RepairRequest;
 use App\Models\User;
 use App\Support\DomainInput as Input;
@@ -159,7 +160,9 @@ final class DocumentLockService
         }
 
         if ($type === 'recommendation') {
-            $doc = \App\Models\Recommendation::forUser($user)->where('uuid', $key)->firstOrFail();
+            $doc = Recommendation::forUser($user)
+                ->where('uuid', $key)
+                ->firstOrFail();
             return [$doc->uuid, $doc->number];
         }
 

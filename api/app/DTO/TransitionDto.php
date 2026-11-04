@@ -7,7 +7,7 @@ namespace App\DTO;
 use App\Enums\TransitionAction;
 use App\Http\Requests\TransitionRequest;
 
-final class TransitionDto
+final readonly class TransitionDto
 {
     /**
      * @param array<int, string> $attachmentIds

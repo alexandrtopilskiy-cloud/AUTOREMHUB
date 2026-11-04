@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\DTO;
 
 use App\Models\RepairRequest;
-use App\Models\User;
 
-final class RequestEventDto
+final readonly class RequestEventDto
 {
     public function __construct(
         public readonly int $requestId,
@@ -22,15 +21,16 @@ final class RequestEventDto
 
     public static function fromRequest(
         RepairRequest $request,
-        User $user,
+        int $userId,
+        string $actorLabel,
         string $action,
         string $comment = '',
         array $details = []
     ): self {
         return new self(
             requestId: $request->id,
-            userId: $user->id,
-            actorLabel: $user->roleLabel(),
+            userId: $userId,
+            actorLabel: $actorLabel(),
             stage: $request->stage->value,
             revision: $request->revision,
             action: $action,

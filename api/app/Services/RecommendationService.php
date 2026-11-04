@@ -80,9 +80,7 @@ final class RecommendationService
                 'created_by'                => $user->id,
             ]);
 
-            $doc->forceFill([
-                'number' => 'REC-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT)
-            ])->save();
+            $doc->forceFill(['number' => $this->getRecNumber($doc->id)])->save();
 
             $actorLabel = match ($user->role) {
                 UserRole::Manager   => 'У',
@@ -120,6 +118,11 @@ final class RecommendationService
             'request' => $this->presenter->document($request, $user),
             'recommendation' => $this->present($doc->fresh(['items', 'vehicle']), $user)
         ];
+    }
+
+    private function getRecNumber($id)
+    {
+        return 'REC-' . str_pad((string) $id, 6, '0', STR_PAD_LEFT);
     }
 
     public function restore(User $user, string $id, int $revision, array $itemIds, ?string $requestId, ?int $requestRevision): array

@@ -6,7 +6,7 @@ namespace App\DTO;
 
 use App\Models\User;
 
-final class NotificationDto
+final readonly class NotificationDto
 {
     /**
      * @param iterable<int, User> $recipients

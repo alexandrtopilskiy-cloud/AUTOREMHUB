@@ -25,6 +25,5 @@ final readonly class EdoUcdPayload
         public ?\DateTimeImmutable $invoiceRevisionDate = null,
         public ?string $revisionNumber = null,
         public ?\DateTimeImmutable $revisionDate = null,
-    ) {
-    }
+    ) {}
 }

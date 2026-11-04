@@ -14,6 +14,5 @@ final readonly class EdoAccountInfoDto
         public int $availableDocuments,
         public int $consumedDocuments,
         public ?float $balance,
-    ) {
-    }
+    ) {}
 }

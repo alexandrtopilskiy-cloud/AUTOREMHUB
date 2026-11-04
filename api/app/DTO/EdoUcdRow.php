@@ -22,6 +22,5 @@ final readonly class EdoUcdRow
         public string $vatTypeAfter,
         public string $totalSumBefore,
         public string $totalSumAfter,
-    ) {
-    }
+    ) {}
 }

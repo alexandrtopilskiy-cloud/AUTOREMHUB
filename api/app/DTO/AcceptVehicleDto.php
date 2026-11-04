@@ -6,7 +6,7 @@ namespace App\DTO;
 
 use App\Http\Requests\AcceptVehicleRequest;
 
-final class AcceptVehicleDto
+final readonly class AcceptVehicleDto
 {
     /**
      * @param array<int, string> $defectTypes

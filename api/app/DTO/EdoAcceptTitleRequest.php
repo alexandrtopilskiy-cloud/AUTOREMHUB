@@ -15,6 +15,5 @@ final readonly class EdoAcceptTitleRequest
         public string $dealSummary,
         public \DateTimeImmutable $date,
         public EdoSignerInfo $signer,
-    ) {
-    }
+    ) {}
 }

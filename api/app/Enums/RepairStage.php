@@ -22,18 +22,18 @@ enum RepairStage: int
     public function label(): string
     {
         return match ($this) {
-            self::Draft => 'Черновик',
-            self::ManagerRouting => 'Маршрутизация УК',
-            self::StationApproval => 'Согласование СТО',
-            self::CustomerApproval => 'Согласование Заказчика',
-            self::WaitingVehicle => 'Ожидание ТС на СТО',
-            self::RepairInProgress => 'В работе',
-            self::Ready => 'Готово',
-            self::VehicleIssue => 'Выдача автомобиля',
-            self::ClosingDocuments => 'Закрывающие документы',
-            self::AwaitingPayment => 'Ожидает оплаты',
-            self::PaymentReview => 'Оплата на проверке УК',
-            self::Closed => 'Заявка закрыта',
+            self::Draft => 'Черновик', // 0
+            self::ManagerRouting => 'Маршрутизация УК', // 1
+            self::StationApproval => 'Согласование СТО', // 2
+            self::CustomerApproval => 'Согласование Заказчика', // 3
+            self::WaitingVehicle => 'Ожидание ТС на СТО', // 4
+            self::RepairInProgress => 'В работе', // 5
+            self::Ready => 'Готово', // 6
+            self::VehicleIssue => 'Выдача автомобиля', // 7
+            self::ClosingDocuments => 'Закрывающие документы', // 8
+            self::AwaitingPayment => 'Ожидает оплаты', // 9
+            self::PaymentReview => 'Оплата на проверке УК', // 10
+            self::Closed => 'Заявка закрыта', // 11
         };
     }
 
@@ -45,12 +45,9 @@ enum RepairStage: int
     public function ownerRole(): ?UserRole
     {
         return match ($this) {
-            self::Draft, self::CustomerApproval, self::VehicleIssue,
-            self::AwaitingPayment => UserRole::Customer,
-            self::ManagerRouting, self::Ready, self::ClosingDocuments,
-            self::PaymentReview => UserRole::Manager,
-            self::StationApproval, self::WaitingVehicle,
-            self::RepairInProgress => UserRole::Station,
+            self::Draft, self::CustomerApproval, self::VehicleIssue, self::AwaitingPayment => UserRole::Customer,
+            self::ManagerRouting, self::Ready, self::ClosingDocuments, self::PaymentReview => UserRole::Manager,
+            self::StationApproval, self::WaitingVehicle, self::RepairInProgress => UserRole::Station,
             self::Closed => null,
         };
     }

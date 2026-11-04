@@ -45,4 +45,9 @@ enum CatalogKind: string
     {
         return array_column(self::cases(), 'value');
     }
+
+    public function requiresName(): bool
+    {
+        return $this !== self::TimeNorms;
+    }
 }

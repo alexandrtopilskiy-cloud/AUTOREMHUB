@@ -14,9 +14,9 @@ use Illuminate\Support\Facades\DB;
 
 final class PartManufacturerService
 {
-    public function __construct(private readonly CatalogAuditService $audit)
-    {
-    }
+    public function __construct(
+        private readonly CatalogAuditService $audit
+    ) {}
 
     public function write(User $user, ?PartManufacturer $record, array $payload): array
     {
@@ -103,7 +103,20 @@ final class PartManufacturerService
 
     public function present(PartManufacturer $record, User $user): array
     {
-        return ['id' => $record->uuid, 'kind' => 'partManufacturers', 'name' => $record->name, 'active' => $record->active, 'status' => $record->status, 'proposedName' => $record->proposed_name, 'proposedActive' => $record->proposed_active, 'revision' => $record->revision, 'permissions' => ['canEdit' => in_array($user->role, [UserRole::Manager, UserRole::Station], true) && $record->proposed_name === null, 'canReview' => $user->role === UserRole::Manager && $record->proposed_name !== null]];
+        return [
+            'id' => $record->uuid,
+            'kind' => 'partManufacturers',
+            'name' => $record->name,
+            'active' => $record->active,
+            'status' => $record->status,
+            'proposedName' => $record->proposed_name,
+            'proposedActive' => $record->proposed_active,
+            'revision' => $record->revision,
+            'permissions' => [
+                'canEdit' => in_array($user->role, [UserRole::Manager, UserRole::Station], true) && $record->proposed_name === null,
+                'canReview' => $user->role === UserRole::Manager && $record->proposed_name !== null
+            ]
+        ];
     }
 
     private function authorize(User $user): void

@@ -74,8 +74,7 @@ final class CatalogExcelImportService
         private readonly VehicleCatalogService $vehicles,
         private readonly OrganizationPersonService $people,
         private readonly VehicleReferenceService $vehicleReference,
-    ) {
-    }
+    ) {}
 
     /**
      * Проверяет весь файл и добавляет записи одной транзакцией.

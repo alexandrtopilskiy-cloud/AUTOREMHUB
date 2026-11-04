@@ -13,6 +13,7 @@ use App\Models\CatalogPart;
 use App\Models\MaintenanceRegulation;
 use App\Models\MaintenanceRegulationItem;
 use App\Models\Organization;
+use App\Models\PartManufacturer;
 use App\Models\ServiceReason;
 use App\Models\Station;
 use App\Models\Supplier;
@@ -29,8 +30,10 @@ use App\Models\VehicleTransmissionType;
 use App\Models\WorkType;
 use App\Support\DomainInput as Input;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 final class CatalogService
 {
@@ -97,7 +100,7 @@ final class CatalogService
         'timeNorms' => TimeNorm::class,
         'normApplicabilities' => TimeNormApplicability::class,
         'parts' => CatalogPart::class,
-        'partManufacturers' => \App\Models\PartManufacturer::class,
+        'partManufacturers' => PartManufacturer::class,
         'reasons' => ServiceReason::class,
         'regulations' => MaintenanceRegulation::class,
         'suppliers' => Supplier::class,
@@ -113,8 +116,7 @@ final class CatalogService
         private readonly OrganizationPersonService $organizationPersonService,
         private readonly DocumentLockService $documentLocks,
         private readonly UserDirectoryService $userDirectoryService,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -203,7 +205,7 @@ final class CatalogService
 
         return [
             'supplierLegalForms' => collect(config('supplier_legal_forms'))->map(fn ($form, $code) => ['id' => $code, ...$form])->values()->all(),
-            'partManufacturers' => $user->role === UserRole::Customer ? [] : \App\Models\PartManufacturer::query()->where('tenant_id', $tenantId)->where('status', 'approved')->where('active', true)->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $user))->all(),
+            'partManufacturers' => $user->role === UserRole::Customer ? [] : PartManufacturer::query()->where('tenant_id', $tenantId)->where('status', 'approved')->where('active', true)->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $user))->all(),
             'partUnits'     => config('sto.part_units'),
             'workGroups'    => config('sto.work_groups'),
             'organizations' => $user->role === UserRole::Manager
@@ -268,7 +270,7 @@ final class CatalogService
     {
         if ($user->role === UserRole::Station) {
             return [
-                ...\App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $user))->all(),
+                ...PartManufacturer::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $user))->all(),
                 ...CatalogPart::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => $this->present(CatalogKind::Parts, $row, $user))->all(),
                 ...Supplier::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => $this->present(CatalogKind::Suppliers, $row, $user))->all(),
             ];
@@ -483,7 +485,7 @@ final class CatalogService
      */
     public function update(User $user, string $id, array $patch): array
     {
-        $manufacturer = \App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->where('uuid', $id)->first();
+        $manufacturer = PartManufacturer::query()->where('tenant_id', $user->tenantId())->where('uuid', $id)->first();
         if ($manufacturer) {
             $this->documentLocks->assertAvailable($user, 'catalog_record', 'partManufacturers:' . $id);
             return app(PartManufacturerService::class)->write($user, $manufacturer, $patch);
@@ -1582,7 +1584,7 @@ final class CatalogService
                 'name' => ['required', 'string', 'max:500'],
                 'article'      => ['required', 'string', 'max:100'],
                 'manufacturer' => $text,
-                'unit'         => ['required', 'string', \Illuminate\Validation\Rule::in(config('sto.part_units'))],
+                'unit'         => ['required', 'string', Rule::in(config('sto.part_units'))],
                 'active'       => $bool,
             ],
             CatalogKind::Reasons => [
@@ -1642,22 +1644,15 @@ final class CatalogService
     /**
      * @param array<string, mixed> $payload
      */
-    private function validateRequiredFields(
-        array $payload,
-        CatalogKind $kind,
-        bool $create,
-    ): void {
+    private function validateRequiredFields(array $payload, CatalogKind $kind, bool $create, ): void
+    {
         foreach (['name', 'vehicle'] as $key) {
             if (isset($payload[$key]) && trim((string) $payload[$key]) === '') {
                 Input::fail('Название не может быть пустым');
             }
         }
 
-        if (
-            $create
-            && $kind !== CatalogKind::TimeNorms
-            && trim((string) ($payload['name'] ?? '')) === ''
-        ) {
+        if ($create && $kind->requiresName() && trim((string) ($payload['name'] ?? '')) === '') {
             Input::fail('Укажите название');
         }
     }
@@ -1731,17 +1726,30 @@ final class CatalogService
             $model->created_by_organization_id = $user->organization_id;
             $model->created_by_organization_name = $user->organization->name;
         }
-        $manufacturer = \App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->where('uuid', $payload['manufacturerId'])->where('status', 'approved')->where('active', true)->first();
+
+        $manufacturer = PartManufacturer::query()
+            ->where('tenant_id', $user->tenantId())
+            ->where('uuid', $payload['manufacturerId'])
+            ->where('status', 'approved')
+            ->where('active', true)
+            ->first();
         if (!$manufacturer) {
             Input::fail('Выберите производителя, согласованного УК', 'manufacturerId');
         }
-        $supplier = Supplier::query()->where('tenant_id', $user->tenantId())->where('uuid', $payload['supplierId'])->where('active', true)->first();
+
+        $supplier = Supplier::query()
+            ->where('tenant_id', $user->tenantId())
+            ->where('uuid', $payload['supplierId'])
+            ->where('active', true)
+            ->first();
         if (!$supplier) {
             Input::fail('Выберите действующего поставщика', 'supplierId');
         }
+
         if (trim((string) ($payload['article'] ?? '')) === '') {
             Input::fail('Укажите артикул', 'article');
         }
+
         $model->part_manufacturer_id = $manufacturer->id;
         $model->manufacturer = $manufacturer->name;
         $model->supplier_id = $supplier->id;
@@ -2440,7 +2448,7 @@ final class CatalogService
     /**
      * Подзапрос ID типов работ тенанта.
      */
-    private function workTypeIdsSubquery(int $tenantId): \Illuminate\Database\Query\Builder
+    private function workTypeIdsSubquery(int $tenantId): Builder
     {
         return WorkType::query()
             ->where('tenant_id', $tenantId)
@@ -2454,7 +2462,7 @@ final class CatalogService
         $regulationIds = $regulations->pluck('id');
 
         $items = MaintenanceRegulationItem::query()
-        ->whereIn('maintenance_regulation_id', $regulationIds)
+            ->whereIn('maintenance_regulation_id', $regulationIds)
             ->with(['workType', 'timeNorm'])
             ->get()
             ->groupBy('maintenance_regulation_id');

@@ -16,6 +16,5 @@ final readonly class EdoSignerInfo
         public string $authority,
         public int $authorityScope,
         public int $condition,
-    ) {
-    }
+    ) {}
 }

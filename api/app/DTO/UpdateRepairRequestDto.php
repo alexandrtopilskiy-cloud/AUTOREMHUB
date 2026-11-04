@@ -6,7 +6,7 @@ namespace App\DTO;
 
 use App\Http\Requests\UpdateRepairRequestRequest;
 
-final class UpdateRepairRequestDto
+final readonly class UpdateRepairRequestDto
 {
     /**
      * @param array<string, mixed> $rawPatch Оригинальный массив (для тех полей, которые мы пока не вынесли)

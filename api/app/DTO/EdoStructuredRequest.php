@@ -6,7 +6,7 @@ namespace App\DTO;
 
 use App\Enums\Edo\EdoDocumentType;
 
-final class EdoStructuredRequest
+final readonly class EdoStructuredRequest
 {
     /**
      * @param array<int, array{name: string, quantity: string, price: string, sum: string, vatRate: string, vatSum: string}> $items
@@ -22,6 +22,5 @@ final class EdoStructuredRequest
         public readonly string $vatSum,
         public readonly bool $vatIncluded,
         public readonly array $meta = [],
-    ) {
-    }
+    ) {}
 }
