@@ -1705,6 +1705,88 @@ label > span {
   margin: 0 0 14px;
 }
 
+/* ─── Изменение работ и ЗЧ на стадии «В работе» ─── */
+
+.work-change-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.work-change-panel p {
+  margin: 0;
+}
+
+.work-change-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.work-change-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--amber-overdue);
+}
+
+.work-change-rejection {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--red-error);
+  background: var(--red-error-bg);
+}
+
+.work-change-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.work-change-item {
+  display: grid;
+  gap: 4px;
+}
+
+.work-change-item.line-added > span:first-child { color: var(--brand-teal-dark); }
+.work-change-item.line-removed > span:first-child { color: var(--red-error); text-decoration: line-through; }
+
+.work-change-note {
+  display: grid;
+  gap: 2px;
+  max-width: 520px;
+  font-size: 0.85rem;
+}
+
+.work-change-note-text {
+  color: var(--muted);
+}
+
+.work-change-decision {
+  display: grid;
+  gap: 8px;
+}
+
+.work-change-decision textarea {
+  min-height: 60px;
+  width: 100%;
+}
+
+/* Строки таблиц работ и запчастей, изменённые в ходе ремонта */
+.excel-grid tr.line-added > td { background: var(--brand-teal-soft); }
+.excel-grid tr.line-changed > td { background: #fff7e6; }
+
+.excel-grid .line-comment-cell input {
+  width: 100%;
+  min-width: 0;
+}
+
+.excel-grid input.missing-note {
+  border-color: var(--red-error);
+  background: var(--red-error-bg);
+}
+
 .confirmed-datetime {
   min-width: 0;
 }
@@ -3901,3 +3983,9 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
   font-size: 12px;
   font-weight: 500;
 }
+
+/* Комментарии и примечания к изменениям в разделе 04 */
+.works-grid .work-comment-column { width: 160px; }
+.excel-grid.works-grid { min-width: 1200px; }
+.parts-panel .parts-grid { min-width: 1150px !important; }
+.parts-panel .parts-grid.with-change-notes { min-width: 1280px !important; }

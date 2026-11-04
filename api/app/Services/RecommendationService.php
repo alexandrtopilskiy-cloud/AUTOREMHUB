@@ -84,6 +84,10 @@ final class RecommendationService
                 app(RequestPartService::class)->assertEditable($part);
             }
 
+            // На стадии «В работе» перенос в рекомендации — изменение сметы,
+            // которое СТО отправляет на согласование УК и Заказчику.
+            WorkChangeService::begin($request);
+
             $display = $this->presenter->document($request, $user);
             $doc = Recommendation::query()->create([
                 'tenant_id'                 => $request->tenant_id,
@@ -105,20 +109,24 @@ final class RecommendationService
             };
             $actor = "{$user->display_name} ($actorLabel)";
 
+            $deferredLineIds = [];
+            $deferredItemIds = [];
             foreach (['work' => $works, 'part' => $parts] as $kind => $lines) {
                 foreach ($lines as $line) {
                     $shown = collect($display[$kind === 'work' ? 'works' : 'parts'])->firstWhere('id', $line->uuid);
-                    RecommendationItem::query()->create([
+                    $deferredLineIds[] = $line->uuid;
+                    $deferredItemIds[] = RecommendationItem::query()->create([
                         'recommendation_id'     => $doc->id,
                         'kind'                  => $kind,
                         'snapshot'              => $line->attributesToArray(),
                         'display'               => $shown,
                         'actor_id'              => $user->id,
                         'actor_label'           => $actor,
-                    ]);
+                    ])->uuid;
                     $line->delete();
                 }
             }
+            WorkChangeService::recordDeferred($request, $deferredLineIds, $deferredItemIds, (string) $doc->number);
             $this->requests->recommendationEstimateChanged($request, $user, false);
 
             return [

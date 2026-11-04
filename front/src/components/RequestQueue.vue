@@ -20,7 +20,7 @@ const visible = computed(() => {
     <div class="queue-filters"><button class="filter active">В работе <b>{{ requests.length }}</b></button></div>
     <div class="request-list">
       <button v-for="item in visible" :key="item.id" class="request-card" :class="{ active: item.id === currentId }" @click="$emit('open', item.id)">
-        <div class="card-line"><strong>{{ item.id }}</strong><span class="status" :class="statusClass(item.stage)">{{ workflow[item.stage].status }}</span></div>
+        <div class="card-line"><strong>{{ item.id }}</strong><span class="status" :class="statusClass(item.stage)">{{ item.statusLabel || workflow[item.stage].status }}</span></div>
         <h3>{{ item.vehicle || 'Автомобиль не указан' }}</h3>
         <p>{{ [item.plate, item.reason].filter(Boolean).join(' · ') || 'Новая незаполненная заявка' }}</p>
         <div class="card-foot"><span>{{ item.company || 'Организация не указана' }}</span><time>{{ formatDateTime(item.updatedAt) }}</time></div>

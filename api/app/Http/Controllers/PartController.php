@@ -21,6 +21,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Services\CatalogAuditService;
 use App\Services\RepairRequestService;
+use App\Services\WorkChangeService;
 use App\Support\ApiInput;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
@@ -54,6 +55,7 @@ final class PartController
             'part_removed',
             function (RepairRequest $repairRequest) use ($request, $partId): array {
                 $this->service->flag($repairRequest, $request->user(), 'canEditParts');
+                WorkChangeService::begin($repairRequest);
 
                 $part = $repairRequest->parts()->where('uuid', $partId)->firstOrFail();
 
@@ -68,10 +70,7 @@ final class PartController
                 $name = $part->name;
                 $part->delete();
 
-                $repairRequest->estimate_version++;
-                RequestPart::query()
-                    ->where('repair_request_id', $repairRequest->id)
-                    ->update(['approved_version' => null]);
+                $this->service->markEstimateChanged($repairRequest);
 
                 return ['comment' => 'Удалена несогласованная позиция: ' . $name];
             },
@@ -254,6 +253,7 @@ final class PartController
                 $partId,
             ): array {
                 $this->service->flag($repairRequest, $request->user(), 'canEditParts');
+                WorkChangeService::begin($repairRequest);
 
                 $part = $partId
                     ? $repairRequest->parts()->where('uuid', $partId)->firstOrFail()
@@ -291,10 +291,7 @@ final class PartController
 
                 $part->save();
 
-                $repairRequest->estimate_version++;
-                RequestPart::query()
-                    ->where('repair_request_id', $repairRequest->id)
-                    ->update(['approved_version' => null]);
+                $this->service->markEstimateChanged($repairRequest);
 
                 return ['comment' => 'Сохранена запчасть: ' . $part->name];
             },

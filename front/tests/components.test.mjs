@@ -8,7 +8,7 @@ import {
     applyVehicleSelection,
     resetReasonSubtype,
 } from "../src/features/requests/formState.js";
-import { APP_VERSION } from "../src/data/version.js";
+import { APP_VERSION, formatVersion } from "../src/data/version.js";
 import { calculatePlannedCompletion } from "../src/utils/plannedCompletion.js";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -100,7 +100,10 @@ test("planned completion includes all request work norms", () => {
 });
 
 test("Options API component rendering and interactive methods", async (context) => {
-    assert.equal(APP_VERSION, "ver. 0.38.4");
+    // Версия под логотипом: x.xx.xxx из semver package.json.
+    assert.match(APP_VERSION, /^ver\. \d\.\d{2}\.\d{3}$/);
+    assert.equal(formatVersion("0.39.1"), "0.39.001");
+    assert.equal(formatVersion("1.5.12"), "1.05.012");
 
     const server = await createServer({
         root,

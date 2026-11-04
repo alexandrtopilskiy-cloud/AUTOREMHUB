@@ -18,6 +18,7 @@ use App\Models\WorkOrder;
 use App\Models\WorkType;
 use App\Services\RepairRequestCalculator;
 use App\Services\Workflow;
+use App\Services\WorkChangeService;
 
 final class ApiPresenter
 {
@@ -95,12 +96,9 @@ final class ApiPresenter
             'estimateVersion'        => $request->estimate_version,
             'reviewContext'          => $request->review_context,
             'declinedStationIds' => $request->data['declinedStationIds'] ?? [],
-            'statusLabel' => $request->stage === RepairStage::ManagerRouting
-                ? match ($request->review_context) {
-                    'station_changes' => 'Согласование работ / з/ч',
-                    'station_declined' => 'Маршрутизация УК (отказ СТО)',
-                    default => $request->stage->label(),
-                } : $request->stage->label(),
+            'statusLabel' => Workflow::statusLabel($request),
+            'ownerLabel' => Workflow::ownerLabel($request),
+            'workChange' => app(WorkChangeService::class)->present($request, $user),
             'reviewBaselineVersion'  => $request->review_baseline_version,
             'vehicleId'              => $vehicle?->uuid ?? '',
             'vehicle'                => $vehicle?->name ?? '',
@@ -308,6 +306,8 @@ final class ApiPresenter
                 'normOverrideReason' => $work->norm_override_reason,
                 'normHours'   => $work->norm_hours !== null ? (float) $work->norm_hours : null,
                 'actualHours' => $work->actual_hours !== null ? (float) $work->actual_hours : null,
+                'comment'     => (string) ($work->comment ?? ''),
+                'changeNote'  => (string) ($work->change_note ?? ''),
             ], AgentDiscount::visibleTo($user) ? AgentDiscount::workFields($work) : []))
             ->all();
     }
@@ -342,6 +342,8 @@ final class ApiPresenter
                     'returnedQty'     => (float) $part->returned_quantity,
                     'status'          => $part->status->value,
                     'approvedVersion' => $part->approved_version,
+                    'comment'         => (string) ($part->comment ?? ''),
+                    'changeNote'      => (string) ($part->change_note ?? ''),
                 ], AgentDiscount::visibleTo($user) ? AgentDiscount::partFields($part) : []);
             })
             ->all();

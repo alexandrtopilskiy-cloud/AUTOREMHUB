@@ -18,6 +18,7 @@ use App\Http\Controllers\PartController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\RequestChatController;
 use App\Http\Controllers\RepairRequestController;
+use App\Http\Controllers\WorkChangeController;
 use App\Http\Controllers\TimeNormController;
 use App\Http\Controllers\VehicleController;
 use App\Http\Controllers\VehicleCatalogController;
@@ -83,6 +84,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::post('/{id}/station-decision', [RepairRequestController::class, 'stationDecision'])->name('station-decision');
         Route::post('/{id}/customer-slot-decision', [RepairRequestController::class, 'customerSlotDecision'])->name('customer-slot-decision');
         Route::post('/{id}/acceptance-act', [RepairRequestController::class, 'acceptVehicle'])->name('acceptance-act');
+        Route::post('/{id}/work-change/submit', [WorkChangeController::class, 'submit'])->name('work-change.submit');
+        Route::post('/{id}/work-change/decision', [WorkChangeController::class, 'decide'])->name('work-change.decision');
+        Route::post('/{id}/work-change/discard', [WorkChangeController::class, 'discard'])->name('work-change.discard');
         Route::get('/{id}/history', [RepairRequestController::class, 'history'])->name('history');
         Route::get('/{id}/work-order', [RepairRequestController::class, 'workOrder'])->name('workOrder');
         Route::get('/{id}/chat', [RequestChatController::class, 'show'])->name('chat.show');
