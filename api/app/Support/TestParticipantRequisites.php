@@ -11,7 +11,7 @@ use App\Models\User;
 
 /**
  * Полные (вымышленные) реквизиты тестовых участников: УК, Заказчиков
- * (ООО «Альфа», «Бетта») и СТО (ООО «КУБ», «Овал»).
+ * (ООО «Альфа», «Бетта», «Тест») и СТО (ООО «КУБ», «Овал», «СТО-партнёр»).
  *
  * ИНН, ОГРН и расчётные счета проходят контрольные суммы, БИК и
  * корреспондентские счета — реальные банковские. Заполняются только
@@ -81,6 +81,25 @@ final class TestParticipantRequisites
             'correspondent_account' => '30101810700000000187',
             'tax_regime'            => 'УСН «доходы минус расходы»',
             'vat_rate'              => 0,
+        ],
+        'ООО "Тест"' => [
+            'short_name'            => 'ООО «Тест»',
+            'inn'                   => '7852601815',
+            'kpp'                   => '785201001',
+            'ogrn'                  => '1167859083017',
+            'legal_address'         => '191186, г. Санкт-Петербург, наб. реки Мойки, д. 42, литера А, пом. 7-Н',
+            'actual_address'        => '191186, г. Санкт-Петербург, наб. реки Мойки, д. 42, литера А, пом. 7-Н',
+            'postal_address'        => '191186, г. Санкт-Петербург, наб. реки Мойки, д. 42, литера А, пом. 7-Н',
+            'director_name'         => 'Смирнов Алексей Николаевич',
+            'contact'               => 'Фёдорова Наталья Игоревна, логист автопарка',
+            'phone'                 => '+78125556677',
+            'email'                 => 'fleet@test-org.example.ru',
+            'bank_name'             => 'Северо-Западный банк ПАО Сбербанк',
+            'bik'                   => '044030653',
+            'settlement_account'    => '40702810266131860913',
+            'correspondent_account' => '30101810500000000653',
+            'tax_regime'            => 'ОСН',
+            'vat_rate'              => 20,
         ],
     ];
 
@@ -214,6 +233,70 @@ final class TestParticipantRequisites
                 'yearsOperating'              => 6,
             ],
         ],
+        'СТО-партнёр' => [
+            'organization' => [
+                'short_name'            => 'ООО «СТО-партнёр»',
+                'inn'                   => '7790996039',
+                'kpp'                   => '779001001',
+                'ogrn'                  => '1147708246289',
+                'legal_address'         => '109428, г. Москва, Рязанский пр-т, д. 24, корп. 2',
+                'actual_address'        => '109428, г. Москва, Рязанский пр-т, д. 24, корп. 2',
+                'postal_address'        => '109428, г. Москва, Рязанский пр-т, д. 24, корп. 2',
+                'director_name'         => 'Захаров Виктор Степанович',
+                'contact'               => 'Николаев Артём Валерьевич, мастер-приёмщик',
+                'phone'                 => '+74956667788',
+                'email'                 => 'service@sto-partner.example.ru',
+                'bank_name'             => 'Филиал «Центральный» Банка ВТБ (ПАО)',
+                'bik'                   => '044525411',
+                'settlement_account'    => '40702810019482199351',
+                'correspondent_account' => '30101810145250000411',
+                'tax_regime'            => 'ОСН',
+                'vat_rate'              => 20,
+            ],
+            'station' => [
+                'address'                => 'г. Москва, Рязанский пр-т, д. 24, корп. 2',
+                'contact'                => 'Николаев Артём Валерьевич, +74956667788',
+                'rating'                 => 4.5,
+                'agent_discount_percent' => 10,
+            ],
+            'profile' => [
+                'mechanicalBays'              => 6,
+                'lifts'                       => 5,
+                'mechanicsCount'              => 7,
+                'electriciansCount'           => 2,
+                'electricianBays'             => 1,
+                'alignmentBays'               => 1,
+                'engineBays'                  => 1,
+                'paintBooths'                 => 1,
+                'frameRacks'                  => 0,
+                'bodyworkBays'                => 1,
+                'engineRepair'                => true,
+                'automaticTransmissionRepair' => false,
+                'manualTransmissionRepair'    => true,
+                'steeringRackRepair'          => true,
+                'bodyRepair'                  => true,
+                'brakeDiscSkimming'           => false,
+                'wheelAlignment'              => true,
+                'tireService'                 => true,
+                'tireStorage'                 => true,
+                'evacuation'                  => false,
+                'warrantyService'             => true,
+                'reception'                   => true,
+                'waitingArea'                 => true,
+                'photoVideoFixation'          => true,
+                'itAccounting'                => true,
+                'insuranceFleetExperience'    => true,
+                'trainingCertificates'        => false,
+                'passengerCars'               => true,
+                'lcv'                         => true,
+                'trucks'                      => false,
+                'slaDescription'              => 'Приёмка в день обращения, согласование сметы — до 2 часов.',
+                'vehicleRestrictions'         => 'Легковые и LCV полной массой до 3,5 т.',
+                'customerAmenities'           => 'Зона ожидания, Wi-Fi, кофе, подменный автомобиль по запросу.',
+                'uniqueServices'              => 'Гарантийное ТО с сохранением гарантии производителя.',
+                'yearsOperating'              => 9,
+            ],
+        ],
     ];
 
     /**
@@ -244,7 +327,14 @@ final class TestParticipantRequisites
         }
 
         foreach (self::STATIONS as $name => $spec) {
-            $organization = self::organization($tenantId, OrganizationKind::Station, $name);
+            $organization = self::organization($tenantId, OrganizationKind::Station, $name)
+                ?? Organization::query()->whereKey(
+                    Station::query()
+                        ->where('tenant_id', $tenantId)
+                        ->get()
+                        ->first(static fn (Station $station): bool => self::sameName($station->name, $name))
+                        ?->organization_id,
+                )->first();
 
             if ($organization === null) {
                 continue;
@@ -291,8 +381,8 @@ final class TestParticipantRequisites
         return Organization::query()
             ->where('tenant_id', $tenantId)
             ->where('kind', $kind->value)
-            ->where('name', $name)
-            ->first();
+            ->get()
+            ->first(static fn (Organization $organization): bool => self::sameName($organization->name, $name));
     }
 
     /**
@@ -315,7 +405,17 @@ final class TestParticipantRequisites
         return true;
     }
 
-    private static function isEmpty(mixed $value): bool
+/** Сравнение названий без учёта регистра, пробелов и вида кавычек. */
+    private static function sameName(string $left, string $right): bool
+    {
+        $normalize = static fn (string $value): string => mb_strtolower(
+            (string) preg_replace(['/[«»“”„"\']/u', '/\s+/u'], ['"', ' '], trim($value)),
+        );
+
+        return $normalize($left) === $normalize($right);
+    }
+
+        private static function isEmpty(mixed $value): bool
     {
         return $value === null || (is_string($value) && trim($value) === '');
     }
