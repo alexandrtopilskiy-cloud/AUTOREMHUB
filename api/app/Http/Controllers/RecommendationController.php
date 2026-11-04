@@ -17,8 +17,12 @@ final class RecommendationController
 
     public function index(Request $request): JsonResponse
     {
-        $data = $request->validate(['vehicleId' => ['required', 'uuid']]);
-        return response()->json(['recommendations' => $this->service->forVehicle($request->user(), $data['vehicleId'])]);
+        $data = $request->validate(['vehicleId' => ['nullable', 'uuid']]);
+        $vehicleId = $data['vehicleId'] ?? null;
+
+        return response()->json(['recommendations' => $vehicleId === null
+            ? $this->service->all($request->user())
+            : $this->service->forVehicle($request->user(), $vehicleId)]);
     }
 
     public function defer(Request $request, string $id): JsonResponse

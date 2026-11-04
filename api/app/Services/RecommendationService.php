@@ -37,6 +37,20 @@ final class RecommendationService
             ->all();
     }
 
+    /**
+     * Все рекомендации, видимые пользователю: Заказчику — по ТС своей
+     * организации, УК — по всем ТС тенанта.
+     */
+    public function all(User $user): array
+    {
+        return Recommendation::forUser($user)
+            ->with(['items', 'vehicle'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn ($doc) => $this->present($doc, $user))
+            ->all();
+    }
+
     public function defer(User $user, string $key, int $revision, array $selection): array
     {
         Input::validate($selection, [

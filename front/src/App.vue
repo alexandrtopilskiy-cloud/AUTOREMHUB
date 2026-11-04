@@ -1276,9 +1276,35 @@ export default {
                     kind: "recommendations",
                     vehicleId: request.vehicleId,
                     requestId: request.id,
-                    title: `Рекомендации · ${request.vin}`,
+                    vehicleInfo: {
+                        make: request.make || "",
+                        model: request.model || "",
+                        plate: request.plate || "",
+                        vin: request.vin || "",
+                    },
+                    title: `Рекомендации · ${request.plate || request.vin}`,
                 });
             await this.activate(id);
+        },
+        async openAllRecommendations() {
+            const id = "recommendations:all";
+            if (!this.tabs.some((tab) => tab.id === id))
+                this.tabs.push({
+                    id,
+                    kind: "recommendations",
+                    vehicleId: "",
+                    title: "Рекомендации",
+                });
+            await this.activate(id);
+        },
+        openVehicleRecommendations(vehicle) {
+            return this.openRecommendations({
+                vehicleId: vehicle.id || vehicle.vehicleId,
+                make: vehicle.make,
+                model: vehicle.model,
+                plate: vehicle.plate,
+                vin: vehicle.vin,
+            });
         },
         async recommendationsRestored(request) {
             this.store.accept(request);
@@ -1848,6 +1874,7 @@ export default {
                 :chat-unread-total="store.chatUnreadTotal"
                 :catalog-keys="catalogKeys"
                 @open-list="openList"
+                @open-recommendations="openAllRecommendations"
                 @open-notification="openNotification"
                 @open-unread-chat="openUnreadChat"
                 @collapse="collapse"
@@ -2079,6 +2106,7 @@ export default {
                             @saved="catalogSaved"
                             @saved-and-exit="catalogSavedAndExit"
                             @deleted="vehicleDeleted"
+                            @recommendations="openVehicleRecommendations"
                         />
                         <PersonCatalogEditor
                             v-else-if="
@@ -2148,9 +2176,11 @@ export default {
                             v-else-if="active?.kind === 'recommendations'"
                             :key="active.id"
                             :vehicle-id="active.vehicleId"
+                            :vehicle-info="active.vehicleInfo"
                             :requests="store.requests"
                             :pending="store.pending"
                             @restored="recommendationsRestored"
+                            @open-vehicle="openVehicleRecommendations"
                         />
                         <VehicleHistory
                             v-else-if="active?.kind === 'vehicle-history'"

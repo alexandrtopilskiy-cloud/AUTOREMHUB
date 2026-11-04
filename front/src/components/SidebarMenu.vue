@@ -21,6 +21,16 @@
         ▤ Заявки на ремонт <b>{{ requests.length }}</b>
       </button>
       <button
+        v-if="user.role === 'customer'"
+        class="nav-item"
+        :class="{
+          active: active?.kind === 'recommendations' && !active.vehicleId,
+        }"
+        @click="$emit('open-recommendations')"
+      >
+        ☰ Рекомендации
+      </button>
+      <button
         class="nav-item"
         :class="{ active: active?.key === 'action' }"
         @click="$emit('open-list', 'action')"
@@ -115,7 +125,13 @@ export default {
     chatUnreadTotal: { type: Number, default: 0 },
     catalogKeys: { type: Array, default: () => [] },
   },
-  emits: ["open-list", "open-notification", "open-unread-chat", "collapse"],
+  emits: [
+    "open-list",
+    "open-recommendations",
+    "open-notification",
+    "open-unread-chat",
+    "collapse",
+  ],
   data() {
     return {
       catalogNames,

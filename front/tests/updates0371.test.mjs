@@ -276,15 +276,44 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
                         ],
                     },
                 ];
-                const items = Recommendations.computed.items.call({
-                    documents,
-                });
-                const groups = Recommendations.computed.groups.call({ items });
+                const groups = Recommendations.methods.groupsOf(documents);
                 assert.deepEqual(
                     groups.map((g) => [g.title, g.items.map((i) => i.id)]),
                     [
                         ["Работы", ["w"]],
                         ["ЗЧ", ["p"]],
+                    ],
+                );
+            },
+        );
+        await t.test(
+            "customer recommendations list groups documents by vehicle",
+            () => {
+                const item = (id, kind) => ({
+                    id,
+                    kind,
+                    createdAt: "2026-10-15T10:00:00Z",
+                });
+                const documents = [
+                    { id: "a", vehicleId: "v2", make: "Lada", plate: "B222BB", vin: "V2", items: [item("w2", "work")] },
+                    { id: "b", vehicleId: "v1", make: "Kia", plate: "A111AA", vin: "V1", items: [item("p1", "part")] },
+                    { id: "c", vehicleId: "v2", make: "Lada", plate: "B222BB", vin: "V2", items: [item("p2", "part")] },
+                    { id: "d", vehicleId: "v3", make: "Gaz", vin: "V3", items: [] },
+                ];
+                const ctx = {
+                    documents,
+                    allVehicles: true,
+                    ...Recommendations.methods,
+                };
+                const sections = Recommendations.computed.sections.call(ctx);
+                assert.deepEqual(
+                    sections.map((s) => [
+                        s.vehicleId,
+                        s.groups.map((g) => g.items.map((i) => i.id)),
+                    ]),
+                    [
+                        ["v1", [[], ["p1"]]],
+                        ["v2", [["w2"], ["p2"]]],
                     ],
                 );
             },

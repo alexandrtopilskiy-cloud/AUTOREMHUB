@@ -1003,6 +1003,10 @@ export const marketplaceApi = {
         return command(key, "/diagnostics", revision, body);
     },
 
+    async allRecommendations() {
+        const result = await http.request("/recommendations");
+        return result.recommendations;
+    },
     /**
      * @param {string} key
      * @param {number} revision

@@ -321,6 +321,27 @@ final class SupplierAndRecommendationsTest extends TestCase
         $this->assertSame($doc['id'], $rows[0]['id']);
     }
 
+    public function test_recommendations_list_without_vehicle_is_limited_to_customer_organization(): void
+    {
+        $part = $this->part();
+        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [], 'partIds' => [$part->uuid]])['recommendation'];
+
+        $this->actingAs($this->customer)->getJson('/api/recommendations')
+            ->assertOk()
+            ->assertJsonCount(1, 'recommendations')
+            ->assertJsonPath('recommendations.0.id', $doc['id'])
+            ->assertJsonPath('recommendations.0.vehicleId', $this->vehicle->uuid)
+            ->assertJsonMissingPath('recommendations.0.items.0.position.purchasePrice');
+        $this->actingAs($this->manager)->getJson('/api/recommendations')
+            ->assertOk()
+            ->assertJsonPath('recommendations.0.id', $doc['id']);
+
+        $otherOrg = Organization::query()->create(['tenant_id' => $this->customer->tenantId(), 'kind' => 'customer', 'name' => 'Другой заказчик']);
+        $other = User::query()->create(['organization_id' => $otherOrg->id, 'login' => 'other' . Str::random(8), 'display_name' => 'Другой', 'password' => bcrypt('test'), 'role' => 'customer', 'active' => true]);
+        $this->assertSame([], app(RecommendationService::class)->all($other));
+        $this->actingAs($other)->getJson('/api/recommendations?vehicleId=not-a-uuid')->assertUnprocessable();
+    }
+
     public function test_estimate_visibility_survives_return_from_customer_to_manager(): void
     {
         $presenter = app(ApiPresenter::class);
