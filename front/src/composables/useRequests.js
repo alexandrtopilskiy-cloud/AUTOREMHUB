@@ -8,7 +8,7 @@ const emptyFields = {
 }
 
 const seedRequests = () => [{
-  id: 'RP-0248', stage: 1, createdAt: '2026-09-06T10:42:00.000Z', updatedAt: '2026-09-06T10:44:00.000Z',
+  id: 'ZR-000248', stage: 1, createdAt: '2026-09-06T10:42:00.000Z', updatedAt: '2026-09-06T10:44:00.000Z',
   company: 'ООО «СеверТранс»', vehicle: 'Jetour X70 Plus, 2026', vin: 'LVUDB21B2RA042817',
   plate: 'К123АА 178', mileage: '24 650', contact: 'Иванов Сергей · +7 921 555-18-20',
   reason: 'Техническое обслуживание', diagnostics: 'Диагностика ходовой части',
@@ -21,7 +21,7 @@ const seedRequests = () => [{
     { name: 'Масло моторное 5W-30', type: 'Материал', qty: 6, price: 1250 },
   ],
   history: [
-    { time: '06.09 · 10:42', who: 'Заказчик', text: 'Создана заявка RP-0248' },
+    { time: '06.09 · 10:42', who: 'Заказчик', text: 'Создана заявка ZR-000248' },
     { time: '06.09 · 10:44', who: 'УК', text: 'Заявка принята на ручную проверку' },
   ],
 }]
@@ -43,7 +43,7 @@ export function useRequests() {
 
   function nextId() {
     const max = requests.value.reduce((result, item) => Math.max(result, Number(item.id.replace(/\D/g, '')) || 0), 0)
-    return `RP-${String(max + 1).padStart(4, '0')}`
+    return `ZR-${String(max + 1).padStart(6, '0')}`
   }
 
   function createRequest() {

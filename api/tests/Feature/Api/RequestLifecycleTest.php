@@ -32,7 +32,7 @@ final class RequestLifecycleTest extends TestCase
         $first = $this->draft();
         $second = $this->draft();
 
-        $this->assertSame('RP-' . str_pad((string) $first['systemId'], 6, '0', STR_PAD_LEFT), $first['number']);
+        $this->assertSame('ZR-' . str_pad((string) $first['systemId'], 6, '0', STR_PAD_LEFT), $first['number']);
         $this->assertSame($first['systemId'] + 1, $second['systemId']);
         $this->assertNull($first['previousServiceMileage']);
     }

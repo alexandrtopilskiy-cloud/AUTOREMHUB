@@ -51,7 +51,7 @@ final class EdoPowerOfAttorneyService
                     'organization_id'   => $sender->id, // Кто отправляет
                     'counterparty_id'   => $receiver->id, // Кому отправляем
                     'provider'          => $sender->edo_provider ?? 'diadoc',
-                    'number'            => 'POA-' . $request->number,
+                    'number'            => $request->numberWithPrefix('DV'),
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
                     'source_type'       => RepairRequest::class,

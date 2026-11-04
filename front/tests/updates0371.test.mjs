@@ -35,7 +35,7 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
         const request = {
             ...Object.fromEntries(requestFields.map((key) => [key, ""])),
             id: "r",
-            number: "RP-000001",
+            number: "ZR-000001",
             stage: 0,
             revision: 0,
             works: [],

@@ -452,7 +452,7 @@ final class RepairRequestValidateNextTest extends TestCase
             'repair_request_id' => $request->id,
             'station_id'        => $this->station->id,
             'created_by'        => $this->manager->id,
-            'number'            => 'AP-' . $request->number,
+            'number'            => $request->numberWithPrefix('APP'),
             'mode'              => 'electronic',
             'vehicle_snapshot'  => ['vin' => $this->vehicle->vin],
             'mileage'           => 15000,

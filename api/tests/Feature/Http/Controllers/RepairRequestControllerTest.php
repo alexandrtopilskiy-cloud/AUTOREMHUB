@@ -474,7 +474,7 @@ final class RepairRequestControllerTest extends TestCase
             'repair_request_id' => $request->id,
             'station_id'        => $this->stationRecord->id,
             'created_by'        => $this->station->id,
-            'number'            => 'AP-' . $request->number,
+            'number'            => $request->numberWithPrefix('APP'),
             'mode'              => 'electronic',
             'vehicle_snapshot'  => [],
             'mileage'           => 100,

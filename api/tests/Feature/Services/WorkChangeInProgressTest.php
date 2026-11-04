@@ -285,22 +285,49 @@ final class WorkChangeInProgressTest extends TestCase
         $this->assertSame(3, $doc['parts'][0]['approvedVersion']);
     }
 
-    public function test_completion_is_blocked_while_changes_are_not_approved(): void
+    public function test_next_is_inactive_until_changes_are_fully_approved(): void
     {
+        $this->assertTrue($this->document($this->station)['permissions']['canAdvance']);
+
         $doc = $this->document($this->station);
         $doc['works'][0]['qty'] = 3;
         $doc['works'][0]['changeNote'] = 'Объём работ вырос';
-        $this->patchLines($this->station, ['works' => $doc['works']]);
+        $doc = $this->patchLines($this->station, ['works' => $doc['works']]);
+        $this->assertFalse($doc['permissions']['canAdvance']);
+        $this->assertTrue($doc['permissions']['advanceBlockedByWorkChange']);
 
-        $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('Изменения работ и запчастей не согласованы');
-        app(RepairRequestService::class)->transition($this->station, new TransitionDto(
-            requestKey: $this->request->uuid,
-            revision: $this->revision(),
-            action: TransitionAction::Next,
-            comment: 'Готово',
-            attachmentIds: [],
-        ));
+        $service = app(WorkChangeService::class);
+        $service->submit($this->station, $this->request->uuid, $this->revision(), []);
+        $service->decide($this->manager, $this->request->uuid, $this->revision(), true, '');
+        // Согласования одной УК недостаточно.
+        $this->assertFalse($this->document($this->station)['permissions']['canAdvance']);
+
+        try {
+            app(RepairRequestService::class)->transition($this->station, new TransitionDto(
+                requestKey: $this->request->uuid,
+                revision: $this->revision(),
+                action: TransitionAction::Next,
+                comment: 'Готово',
+                attachmentIds: [],
+            ));
+            $this->fail('Переход дальше до согласования Заказчиком недопустим');
+        } catch (ApiException) {
+        }
+
+        $service->decide($this->customer, $this->request->uuid, $this->revision(), true, '');
+        $doc = $this->document($this->station);
+        $this->assertTrue($doc['permissions']['canAdvance']);
+        $this->assertFalse($doc['permissions']['advanceBlockedByWorkChange']);
+    }
+
+    public function test_comment_only_save_keeps_next_active(): void
+    {
+        $doc = $this->document($this->station);
+        $doc['works'][0]['comment'] = 'Только комментарий';
+        $doc = $this->patchLines($this->station, ['works' => $doc['works']]);
+
+        $this->assertNull($this->request->fresh()->work_change);
+        $this->assertTrue($doc['permissions']['canAdvance']);
     }
 
     public function test_station_can_move_lines_to_recommendations_in_work(): void

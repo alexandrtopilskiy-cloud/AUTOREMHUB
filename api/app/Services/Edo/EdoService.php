@@ -383,15 +383,15 @@ final class EdoService
 
     private function generateNumber(RepairRequest $request, EdoDocumentType $type): string
     {
+        // Латинские префиксы и номер ЗР: UPD-000005, AVR-000005 …
         $prefix = match ($type) {
-            EdoDocumentType::UpdSf     => 'УПД',
-            EdoDocumentType::UpdSfDop  => 'УПД-ДОП',
-            EdoDocumentType::UcdCsf    => 'УКД',
-            EdoDocumentType::ActWorks  => 'АКТ',
-            default                    => 'ДОК',
+            EdoDocumentType::UpdSf, EdoDocumentType::UpdSfDop => 'UPD',
+            EdoDocumentType::UcdCsf    => 'UKD',
+            EdoDocumentType::ActWorks  => 'AVR',
+            default                    => 'DOC',
         };
 
-        return sprintf('%s-%s', $prefix, $request->number ?? $request->id);
+        return $request->numberWithPrefix($prefix);
     }
 
     /**

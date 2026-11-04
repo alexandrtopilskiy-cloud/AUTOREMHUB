@@ -51,7 +51,7 @@ final class EdoAgentReportService
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
                     'provider'          => $sender->edo_provider ?? 'diadoc',
-                    'number'            => 'REP-' . $request->number,
+                    'number'            => $request->numberWithPrefix('AO'),
                     'document_date'     => now()->toDateString(),
                     'status'            => 'draft',
                     'source_type'       => RepairRequest::class,

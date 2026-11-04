@@ -101,7 +101,7 @@ final class VehicleAcceptanceActTest extends TestCase
         )->assertOk();
 
         $response->assertJsonPath('request.stage', Workflow::STAGE_REPAIR_IN_PROGRESS);
-        $response->assertJsonPath('request.acceptanceAct.number', 'AP-' . $request->number);
+        $response->assertJsonPath('request.acceptanceAct.number', $request->numberWithPrefix('APP'));
         $response->assertJsonPath('request.acceptanceAct.immutable', true);
         $this->assertDatabaseHas('vehicle_acceptance_acts', [
             'repair_request_id' => $request->id,

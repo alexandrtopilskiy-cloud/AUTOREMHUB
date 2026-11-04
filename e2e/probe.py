@@ -17,16 +17,16 @@ veh=uk.call('GET','/vehicles')
 veh=(veh.get('vehicles') or veh.get('records') or veh.get('data'))[0]
 reason=next(r for r in recs if r['kind']=='reasons' and r['name']=='ТО')
 
-# 33: customer JSON of closed RP-000001 has no purchase / supplier data
-doc=cu.call('GET','/requests/RP-000001')
+# 33: customer JSON of closed ZR-000001 has no purchase / supplier data
+doc=cu.call('GET','/requests/ZR-000001')
 keys=walk_keys(doc,set())
 bad=[k for k in keys if any(x in k.lower() for x in ('purchase','supplier'))]
 check(33,'Заказчику не приходят supplier/purchase в JSON заявки', not bad, str(bad))
-ukdoc=uk.call('GET','/requests/RP-000001')
+ukdoc=uk.call('GET','/requests/ZR-000001')
 check(33,'УК видит закупочную цену в той же заявке', any('purchase' in k.lower() for k in walk_keys(ukdoc,set())))
 
-# 3: other station cannot read RP-000001; customer cannot read unknown uuid
-r=ov.call('GET','/requests/RP-000001', ok=False)
+# 3: other station cannot read ZR-000001; customer cannot read unknown uuid
+r=ov.call('GET','/requests/ZR-000001', ok=False)
 check(3,'Чужая СТО не открывает заявку по номеру', r.get('_status') in (403,404), str(r.get('_status')))
 
 # 26: norm resolve 1.25 x 2400 x 2 = 6000

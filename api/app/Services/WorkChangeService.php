@@ -410,6 +410,21 @@ final class WorkChangeService
         return false;
     }
 
+    /**
+     * После сохранения на стадии «В работе»: если смета совпадает с
+     * согласованной (правились только комментарии), согласование не нужно.
+     */
+    public function clearIfUnchanged(RepairRequest $request): void
+    {
+        if (WorkChangeStatus::forRequest($request) !== WorkChangeStatus::Editing) {
+            return;
+        }
+
+        $request->unsetRelation('workLines');
+        $request->unsetRelation('parts');
+        $this->hasPendingChanges($request);
+    }
+
     private function restoreBaseline(RepairRequest $request): void
     {
         $baseline = $request->work_change['baseline'] ?? null;

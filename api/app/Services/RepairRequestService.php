@@ -458,6 +458,7 @@ final class RepairRequestService
 
                 if ($dto->works !== null || $dto->laborRateType !== null || $dto->parts !== null) {
                     $this->markEstimateChanged($request);
+                    app(WorkChangeService::class)->clearIfUnchanged($request);
                 }
 
                 if ($this->touchFields($dto)) {
@@ -1353,7 +1354,7 @@ final class RepairRequestService
             'station_id'        => $request->assigned_station_id,
             'created_by'        => $user->id,
             'attachment_id'     => $attachment?->id,
-            'number'            => 'AP-' . $request->number,
+            'number'            => $request->numberWithPrefix('APP'),
             'mode'              => $dto->mode,
             'vehicle_snapshot'  => [
                 'make'  => $request->vehicleRecord?->make,

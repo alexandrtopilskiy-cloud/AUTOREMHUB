@@ -139,6 +139,9 @@ final class Workflow
         $isWorkChangeReviewer = $workChangeReview && $workChange->ownerRole() === $role;
         $isStationInWork = $isOwner && $role === UserRole::Station && $stage === RepairStage::RepairInProgress;
         $canChangeInWork = $isStationInWork && !$workChangeReview;
+        // Изменённые в ходе ремонта работы/ЗЧ: «Далее» недоступна до полного
+        // согласования УК и Заказчиком (или отмены изменений СТО).
+        $advanceBlockedByWorkChange = $isStationInWork && $workChange !== null;
         if ($workChangeReview) {
             $isOwner = false;
         }
@@ -185,6 +188,7 @@ final class Workflow
                 && $request->created_by === $user->id
                 && !self::wasRouted($request),
             'canAdvance'       => $isOwner
+                && !$advanceBlockedByWorkChange
                 && !$isStationDecision
                 && !$isCustomerSlotDecision
                 && !$isVehicleAcceptance
@@ -212,6 +216,7 @@ final class Workflow
             'canSubmitWorkChange' => $canChangeInWork && $workChange !== null,
             'canDiscardWorkChange' => $canChangeInWork && $workChange !== null,
             'canDecideWorkChange' => $isWorkChangeReviewer,
+            'advanceBlockedByWorkChange' => $advanceBlockedByWorkChange,
             'canIssueInvoice'  => $isOwner && $stage === RepairStage::ClosingDocuments,
             'canSubmitPayment' => $isOwner && $stage === RepairStage::AwaitingPayment,
             'canVerifyPayment' => $isOwner && $stage === RepairStage::PaymentReview,

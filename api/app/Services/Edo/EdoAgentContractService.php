@@ -11,6 +11,7 @@ use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\Organization;
+use App\Models\RepairRequest;
 use App\Models\Tenant;
 use App\Services\Edo\Builders\AgentContractBuilder;
 use App\Traits\SendsEdoDocuments;
@@ -40,7 +41,7 @@ final class EdoAgentContractService
                     'tenant_id'         => $customer->tenant_id,
                     'organization_id'   => $ukTenant->id,
                     'provider'          => $ukTenant->edo_provider,
-                    'number'            => 'AG-' . $customer->id,
+                    'number'            => RepairRequest::documentNumber('AD', (int) $customer->id),
                     'document_date'     => now()->toDateString(),
                     'status'            => 'draft',
                     'source_type'       => Organization::class,
