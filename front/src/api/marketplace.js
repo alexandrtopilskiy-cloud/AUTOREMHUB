@@ -324,6 +324,44 @@ export const marketplaceApi = {
         return command(key, "/acceptance-act", revision, body);
     },
 
+    /* ─── Изменение работ и ЗЧ на стадии «В работе» ─── */
+
+    /**
+     * СТО отправляет изменения на согласование (УК → Заказчик).
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @param {Record<string, string>} removedNotes примечания к удалённым строкам
+     * @returns {Promise<object>}
+     */
+    workChangeSubmit(key, revision, removedNotes = {}) {
+        return command(key, "/work-change/submit", revision, { removedNotes });
+    },
+
+    /**
+     * Решение УК или Заказчика по изменениям.
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @param {'approved'|'rejected'} decision
+     * @param {string} comment
+     * @returns {Promise<object>}
+     */
+    workChangeDecision(key, revision, decision, comment = "") {
+        return command(key, "/work-change/decision", revision, { decision, comment });
+    },
+
+    /**
+     * СТО отменяет изменения и возвращает согласованную смету.
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @returns {Promise<object>}
+     */
+    workChangeDiscard(key, revision) {
+        return command(key, "/work-change/discard", revision);
+    },
+
     /* ─── Уведомления ─── */
 
     /**

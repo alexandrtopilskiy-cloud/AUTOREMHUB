@@ -8,6 +8,7 @@ use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Services\RepairRequestCalculator;
 use App\Services\Workflow;
+use App\Services\WorkChangeService;
 use App\Support\AgentDiscount;
 use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
@@ -77,12 +78,9 @@ final class RepairRequestResource extends JsonResource
             'estimateVersion'        => $this->estimate_version,
             'reviewContext'          => $this->review_context,
             'declinedStationIds'     => $this->data['declinedStationIds'] ?? [],
-            'statusLabel'            => $this->stage === RepairStage::ManagerRouting
-                ? match ($this->review_context) {
-                    'station_changes' => 'Согласование работ / з/ч',
-                    'station_declined' => 'Маршрутизация УК (отказ СТО)',
-                    default => $this->stage->label(),
-                } : $this->stage->label(),
+            'statusLabel'            => Workflow::statusLabel($this->resource),
+            'ownerLabel'             => Workflow::ownerLabel($this->resource),
+            'workChange'             => app(WorkChangeService::class)->present($this->resource, $user),
             'reviewBaselineVersion'  => $this->review_baseline_version,
 
             // Vehicle

@@ -31,6 +31,7 @@ use Illuminate\Support\Str;
  * @property string $review_context
  * @property int $review_baseline_version
  * @property array<string, mixed>|null $review_baseline_snapshot
+ * @property array<string, mixed>|null $work_change
  * @property CarbonImmutable|null $planned_completion_at
  * @property CarbonImmutable|null $repair_completed_at
  *
@@ -75,6 +76,7 @@ final class RepairRequest extends Entity
             'estimate_version'         => 'integer',
             'review_baseline_version'  => 'integer',
             'review_baseline_snapshot' => 'array',
+            'work_change'              => 'array',
             'planned_completion_at'    => 'immutable_datetime',
             'repair_completed_at'      => 'immutable_datetime',
         ];

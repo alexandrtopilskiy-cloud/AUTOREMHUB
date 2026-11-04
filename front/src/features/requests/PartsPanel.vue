@@ -15,6 +15,10 @@ const props = defineProps({
     selectable: Boolean,
     customerView: Boolean,
     stationAgentPercent: { type: Number, default: null },
+    /* Изменения на стадии «В работе»: столбец примечаний и подсветка строк. */
+    showChangeNotes: Boolean,
+    canChangeInWork: Boolean,
+    changeItems: { type: Map, default: () => new Map() },
 });
 const emit = defineEmits(["create-part", "touch", "update:selectedIds"]);
 const STATUS_LABELS = {
@@ -46,6 +50,8 @@ function emptyPart() {
         qty: 1,
         price: 0,
         status: "proposed",
+        comment: "",
+        changeNote: "",
     };
 }
 const placeholder = ref(emptyPart());
@@ -94,6 +100,11 @@ function editable(row) {
         canEditParts.value &&
         ["proposed", "approved", undefined].includes(row.status)
     );
+}
+function lineChange(row) {
+    if (!props.showChangeNotes) return "";
+    if (!row.id) return props.canChangeInWork && props.request.parts.includes(row) ? "added" : "";
+    return props.changeItems.get(`part:${row.id}`)?.action || "";
 }
 function ensureRow(row) {
     if (!props.request.parts.includes(row)) props.request.parts.push(row);
@@ -210,20 +221,25 @@ async function apply() {
     <div class="parts-panel estimate-section">
         <h3>Запчасти и поставщики</h3>
         <div class="table-wrap excel-grid-wrap">
-            <table class="excel-grid parts-grid">
+            <table
+                class="excel-grid parts-grid"
+                :class="{ 'with-change-notes': showChangeNotes }"
+            >
                 <colgroup>
                     <col v-if="selectable" style="width: 28px" />
-                    <col />
+                    <col style="width: 16%" />
                     <col style="width: 8%" />
-                    <col style="width: 10%" />
+                    <col style="width: 8%" />
                     <col style="width: 5%" />
                     <col v-if="!customerView" style="width: 11%" />
                     <col style="width: 6%" />
-                    <col style="width: 10%" />
-                    <col style="width: 10%" />
+                    <col style="width: 8%" />
+                    <col style="width: 8%" />
                     <col v-if="!customerView" style="width: 7%" />
                     <col v-if="!customerView" style="width: 8%" />
                     <col style="width: 8%" />
+                    <col style="width: 8%" />
+                    <col v-if="showChangeNotes" style="width: 9%" />
                     <col style="width: 26px" />
                 </colgroup>
                 <thead>
@@ -243,6 +259,10 @@ async function apply() {
                                     ? ['Агентская скидка, %', 'Скидка, ₽']
                                     : []),
                                 'Статус',
+                                'Комментарий',
+                                ...(showChangeNotes
+                                    ? ['Примечание к изменению']
+                                    : []),
                             ]"
                             :key="title"
                             class="resizable-column"
@@ -261,6 +281,7 @@ async function apply() {
                         v-for="row in rows"
                         :key="row.id || row._clientId"
                         class="part-draft-row"
+                        :class="lineChange(row) ? 'line-' + lineChange(row) : ''"
                     >
                         <td v-if="selectable">
                             <input
@@ -426,6 +447,39 @@ async function apply() {
                                 </option>
                             </select>
                             <span v-else>{{ statusLabel(row.status) }}</span>
+                        </td>
+                        <td class="line-comment-cell" :title="row.comment || ''">
+                            <input
+                                v-if="canEditParts"
+                                v-model="row.comment"
+                                type="text"
+                                maxlength="2000"
+                                :disabled="busy"
+                                placeholder="Комментарий"
+                                aria-label="Комментарий к запчасти (только для этой заявки)"
+                                @input="changed(row)"
+                            /><span v-else>{{ row.comment || "" }}</span>
+                        </td>
+                        <td
+                            v-if="showChangeNotes"
+                            class="line-comment-cell"
+                            :title="row.changeNote || ''"
+                        >
+                            <input
+                                v-if="canChangeInWork && canEditParts"
+                                v-model="row.changeNote"
+                                type="text"
+                                maxlength="2000"
+                                :disabled="busy"
+                                :class="{
+                                    'missing-note':
+                                        lineChange(row) &&
+                                        !String(row.changeNote || '').trim(),
+                                }"
+                                placeholder="Что и почему изменено"
+                                aria-label="Примечание к изменению запчасти"
+                                @input="changed(row)"
+                            /><span v-else>{{ row.changeNote || "" }}</span>
                         </td>
                         <td>
                             <button

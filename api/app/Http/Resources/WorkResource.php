@@ -36,6 +36,8 @@ final class WorkResource extends JsonResource
             'normOverrideReason' => $this->norm_override_reason,
             'normHours'   => $this->norm_hours !== null ? (float) $this->norm_hours : null,
             'actualHours' => $this->actual_hours !== null ? (float) $this->actual_hours : null,
+            'comment'     => (string) ($this->comment ?? ''),
+            'changeNote'  => (string) ($this->change_note ?? ''),
         ], AgentDiscount::visibleTo($request->user()) ? AgentDiscount::workFields($this->resource) : []);
     }
 

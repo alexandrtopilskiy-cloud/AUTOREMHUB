@@ -221,7 +221,7 @@ export default {
                 >
                   {{ item.statusLabel || step(item.stage).status }}
                 </span>
-                <small>{{ step(item.stage).owner }}</small>
+                <small>{{ item.ownerLabel || step(item.stage).owner }}</small>
                 <small v-if="item.overdueSeconds" class="overdue">
                   Превышен плановый срок
                 </small>

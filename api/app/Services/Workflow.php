@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
+use App\Enums\WorkChangeStatus;
 use App\Models\RepairRequest;
 use App\Models\User;
 
@@ -131,6 +132,16 @@ final class Workflow
         $role = $user->role;
         $ownerRole = $stage === RepairStage::Draft ? (($request->exists || $request->relationLoaded('creator') ? $request->creator?->role : null) ?? UserRole::Customer) : $stage->ownerRole();
         $isOwner = $ownerRole === $role;
+        // Стадия «В работе»: изменения работ/ЗЧ согласуют УК, затем Заказчик.
+        // Пока изменения на согласовании, переходы и правка сметы недоступны.
+        $workChange = WorkChangeStatus::forRequest($request);
+        $workChangeReview = $workChange?->isReview() ?? false;
+        $isWorkChangeReviewer = $workChangeReview && $workChange->ownerRole() === $role;
+        $isStationInWork = $isOwner && $role === UserRole::Station && $stage === RepairStage::RepairInProgress;
+        $canChangeInWork = $isStationInWork && !$workChangeReview;
+        if ($workChangeReview) {
+            $isOwner = false;
+        }
         $isStationDecision = $isOwner
             && $role === UserRole::Station
             && $stage === RepairStage::StationApproval;
@@ -164,6 +175,10 @@ final class Workflow
             ));
         }
 
+        if ($canChangeInWork) {
+            $editableFields = array_values(array_unique([...$editableFields, 'works', 'parts']));
+        }
+
         return [
             'editableFields'   => $editableFields,
             'canDeleteDraft'   => $stage === RepairStage::Draft
@@ -183,21 +198,54 @@ final class Workflow
             'canStationDecide' => $isStationDecision,
             'canCustomerSlotDecide' => $isCustomerSlotDecision,
             'canAcceptVehicle' => $isVehicleAcceptance,
-            'canEditParts'     => $isOwner && (self::isPartsEditableStage($stage) || ($stage === RepairStage::Draft && $role !== UserRole::Customer)),
-            'canDeferRecommendations' => $isOwner && in_array($stage, [RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true),
+            'canEditParts'     => $canChangeInWork || ($isOwner && (self::isPartsEditableStage($stage) || ($stage === RepairStage::Draft && $role !== UserRole::Customer))),
+            'canDeferRecommendations' => $canChangeInWork || ($isOwner && in_array($stage, [RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true)),
             'canRestoreRecommendations' => $isOwner && in_array($stage, [RepairStage::Draft, RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true),
-            'requiresAction' => $isOwner && $stage !== RepairStage::Closed,
-            'canDiagnose'      => $isOwner && $stage === RepairStage::RepairInProgress,
-            'canUpload'        => $isOwner && (
+            'requiresAction' => ($isOwner && $stage !== RepairStage::Closed) || $isWorkChangeReviewer,
+            'canDiagnose'      => $isStationInWork,
+            'canUpload'        => $isStationInWork || ($isOwner && (
                 $role !== UserRole::Manager
                 || $stage === RepairStage::ClosingDocuments
-            ),
-            'canManageParts'   => $isOwner
-                && $stage === RepairStage::RepairInProgress,
+            )),
+            'canManageParts'   => $isStationInWork,
+            // Изменение работ/ЗЧ на стадии «В работе».
+            'canSubmitWorkChange' => $canChangeInWork && $workChange !== null,
+            'canDiscardWorkChange' => $canChangeInWork && $workChange !== null,
+            'canDecideWorkChange' => $isWorkChangeReviewer,
             'canIssueInvoice'  => $isOwner && $stage === RepairStage::ClosingDocuments,
             'canSubmitPayment' => $isOwner && $stage === RepairStage::AwaitingPayment,
             'canVerifyPayment' => $isOwner && $stage === RepairStage::PaymentReview,
         ];
+    }
+
+    /**
+     * Название статуса заявки с учётом согласований внутри этапа.
+     */
+    public static function statusLabel(RepairRequest $request): string
+    {
+        if ($request->stage === RepairStage::ManagerRouting) {
+            return match ($request->review_context) {
+                'station_changes' => WorkChangeStatus::STATUS_LABEL,
+                'station_declined' => 'Маршрутизация УК (отказ СТО)',
+                default => $request->stage->label(),
+            };
+        }
+
+        if (WorkChangeStatus::forRequest($request)?->isReview()) {
+            return WorkChangeStatus::STATUS_LABEL;
+        }
+
+        return $request->stage->label();
+    }
+
+    /**
+     * Кто сейчас действует по заявке, если это не владелец этапа.
+     */
+    public static function ownerLabel(RepairRequest $request): ?string
+    {
+        $workChange = WorkChangeStatus::forRequest($request);
+
+        return $workChange?->isReview() ? $workChange->ownerLabel() : null;
     }
 
     /**

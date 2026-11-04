@@ -50,6 +50,7 @@ export function stripClientMetadata(value) {
 /** Снимок редактируемых полей запчастей для общего PATCH заявки. */
 export function serializeParts(parts = []) {
     const fields = ['id', 'catalogPartId', 'name', 'article', 'unit', 'supplierId', 'qty', 'price',
+        'comment', 'changeNote',
     ];
     return parts
         .filter((row ) => row.id || row.catalogPartId || String(row.name || '').trim(),

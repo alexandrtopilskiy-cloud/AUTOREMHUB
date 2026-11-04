@@ -37,6 +37,8 @@ final class RequestPartService
                 'supplierId' => ['required', 'uuid'],
                 'qty' => ['required', 'numeric', 'min:0.001', 'max:1000000', Input::numeric(3)],
                 'price' => ['required', 'numeric', 'min:0', 'max:1000000000', Input::numeric(2)],
+                'comment' => ['sometimes', 'nullable', 'string', 'max:2000'],
+                'changeNote' => ['sometimes', 'nullable', 'string', 'max:2000'],
             ]);
             $id = $row['id'] ?? '';
             if ($id !== '' && (!$existing->has($id) || in_array($id, $kept, true))) {
@@ -75,7 +77,16 @@ final class RequestPartService
                 $part->status = RequestPartStatus::Proposed;
                 $part->approved_version = null;
                 $part->save();
-            } elseif ($part->isDirty()) {
+            }
+            // Комментарий и примечание к изменению относятся только к этой
+            // заявке и не меняют статус позиции и справочник запчастей.
+            foreach (['comment' => 'comment', 'change_note' => 'changeNote'] as $column => $key) {
+                if (array_key_exists($key, $row)) {
+                    $text = trim((string) $row[$key]);
+                    $part->{$column} = $text !== '' ? $text : null;
+                }
+            }
+            if ($part->isDirty()) {
                 $part->save();
             }
             $kept[] = $part->uuid;

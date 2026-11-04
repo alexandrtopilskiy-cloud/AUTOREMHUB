@@ -13,6 +13,7 @@ import TransitionDialog from './TransitionDialog.vue';
 import StationDecisionDialog from './StationDecisionDialog.vue';
 import CustomerSlotDecisionDialog from './CustomerSlotDecisionDialog.vue';
 import AcceptanceActPanel from './AcceptanceActPanel.vue';
+import WorkChangePanel from './WorkChangePanel.vue';
 import ConfirmedDateTimeInput from '../../components/ConfirmedDateTimeInput.vue';
 import InfoHint from '../../components/InfoHint.vue';
 import { VISIT_TIME_END, VISIT_TIME_START } from '../../data/schedule.js';
@@ -152,6 +153,8 @@ function emptyWork() {
     normOverrideReason: '',
     normHours: null,
     actualHours: null,
+    comment: '',
+    changeNote: '',
   };
 }
 
@@ -216,6 +219,38 @@ const calculatedCompletionAt = computed(() => {
 const canWork = computed(
   () => props.user.role !== 'customer' && isAllowed('works'),
 );
+
+/* ─── Изменения работ и ЗЧ на стадии «В работе» ─── */
+
+const STAGE_IN_WORK = 5;
+
+/** СТО может менять работы и ЗЧ в ходе ремонта (не во время согласования). */
+const canChangeInWork = computed(
+  () => isStation.value && props.request.stage === STAGE_IN_WORK && canWork.value,
+);
+
+/** Столбец «Примечание к изменению» виден, пока изменения не согласованы. */
+const showChangeNotes = computed(
+  () => props.request.stage === STAGE_IN_WORK
+    && (canChangeInWork.value || Boolean(props.request.workChange)),
+);
+
+const changeItems = computed(() => new Map(
+  (props.request.workChange?.items || []).map((item) => [`${item.kind}:${item.id}`, item]),
+));
+
+/** Изменение строки относительно согласованной сметы (added/changed). */
+function lineChange(kind, line) {
+  if (!showChangeNotes.value) {
+    return '';
+  }
+
+  if (!line.id) {
+    return canChangeInWork.value ? 'added' : '';
+  }
+
+  return changeItems.value.get(`${kind}:${line.id}`)?.action || '';
+}
 
 const displayedWorks = computed(() => {
   if (props.request.works.length) {
@@ -1180,6 +1215,13 @@ onMounted(() => {
         финальную заявку, чтобы СТО ожидала автомобиль.
       </p>
 
+      <WorkChangePanel
+        :request="request"
+        :busy="busy"
+        :dirty="dirty"
+        :perform="perform"
+      />
+
       <div
         v-if="canSelectWorks"
         class="work-bulk-actions"
@@ -1263,6 +1305,18 @@ onMounted(() => {
                 Скидка, ₽
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
+              <th class="resizable-column work-comment-column">
+                Комментарий
+                <span class="column-resize-handle" @pointerdown="startColumnResize" />
+              </th>
+              <th
+                v-if="showChangeNotes"
+                class="resizable-column work-comment-column"
+                title="Обязательно для каждой добавленной или изменённой работы в ходе ремонта"
+              >
+                Примечание к изменению
+                <span class="column-resize-handle" @pointerdown="startColumnResize" />
+              </th>
               <th class="row-command-column" />
             </tr>
           </thead>
@@ -1270,6 +1324,7 @@ onMounted(() => {
             <tr
               v-for="(work, index) in displayedWorks"
               :key="work.id || work._clientId || index"
+              :class="lineChange('work', work) ? 'line-' + lineChange('work', work) : ''"
             >
               <td v-if="canSelectWorks" class="selection-col">
                 <input
@@ -1401,6 +1456,35 @@ onMounted(() => {
                 {{ workAgentDiscount(work) == null ? '—' : money(workAgentDiscount(work)) }}
               </td>
 
+              <td class="line-comment-cell" :title="work.comment || ''">
+                <input
+                  v-if="canWork && work !== placeholderWork"
+                  v-model="work.comment"
+                  type="text"
+                  maxlength="2000"
+                  :disabled="busy"
+                  placeholder="Комментарий"
+                  aria-label="Комментарий к работе (только для этой заявки)"
+                  @input="touch"
+                />
+                <span v-else>{{ work.comment || '' }}</span>
+              </td>
+
+              <td v-if="showChangeNotes" class="line-comment-cell" :title="work.changeNote || ''">
+                <input
+                  v-if="canChangeInWork && work !== placeholderWork"
+                  v-model="work.changeNote"
+                  type="text"
+                  maxlength="2000"
+                  :disabled="busy"
+                  :class="{ 'missing-note': lineChange('work', work) && !String(work.changeNote || '').trim() }"
+                  placeholder="Что и почему изменено"
+                  aria-label="Примечание к изменению работы"
+                  @input="touch"
+                />
+                <span v-else>{{ work.changeNote || '' }}</span>
+              </td>
+
               <td>
                 <button
                   v-if="canWork && work !== placeholderWork"
@@ -1455,6 +1539,9 @@ onMounted(() => {
         "
         @create-part="$emit('create-part', $event)"
         :selectable="canDefer"
+        :show-change-notes="showChangeNotes"
+        :can-change-in-work="canChangeInWork"
+        :change-items="changeItems"
         v-model:selected-ids="selectedPartIds"
         @touch="touch"
       />

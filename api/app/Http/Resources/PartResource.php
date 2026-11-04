@@ -30,6 +30,8 @@ final class PartResource extends JsonResource
             'returnedQty'     => (float) $this->returned_quantity,
             'status'          => $this->status->value,
             'approvedVersion' => $this->approved_version,
+            'comment'         => (string) ($this->comment ?? ''),
+            'changeNote'      => (string) ($this->change_note ?? ''),
         ], AgentDiscount::visibleTo($request->user()) ? AgentDiscount::partFields($this->resource) : []);
     }
 }

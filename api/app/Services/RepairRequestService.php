@@ -338,16 +338,30 @@ final class RepairRequestService
         return $request;
     }
 
-    public function recommendationEstimateChanged(RepairRequest $request, User $user, bool $restored): void
+    /**
+     * Смета изменена: новая версия требует согласования. На стадии «В работе»
+     * версия не меняется до согласования изменений (см. WorkChangeService),
+     * чтобы согласованные запчасти можно было продолжать заказывать и получать.
+     */
+    public function markEstimateChanged(RepairRequest $request): void
     {
-        if ($restored && $request->stage === RepairStage::Draft) {
-            $request->data = array_replace($request->data, ['recommendationVehicleLocked' => true]);
+        if ($request->stage === RepairStage::RepairInProgress) {
+            return;
         }
+
         $request->estimate_version++;
 
         RequestPart::query()
             ->where('repair_request_id', $request->id)
             ->update(['approved_version' => null]);
+    }
+
+    public function recommendationEstimateChanged(RepairRequest $request, User $user, bool $restored): void
+    {
+        if ($restored && $request->stage === RepairStage::Draft) {
+            $request->data = array_replace($request->data, ['recommendationVehicleLocked' => true]);
+        }
+        $this->markEstimateChanged($request);
 
         $this->recalculatePlannedCompletion($request);
         if ($restored && $user->role === UserRole::Customer && $request->stage === RepairStage::CustomerApproval) {
@@ -418,6 +432,11 @@ final class RepairRequestService
                 $this->assertMileageNotLessThanPrevious($request);
 
                 // 5. Работа с запчастями и работами
+                if ($dto->works !== null || $dto->parts !== null) {
+                    // На стадии «В работе» фиксируем согласованную смету до правки.
+                    WorkChangeService::begin($request);
+                }
+
                 if ($dto->parts !== null) {
                     app(RequestPartService::class)->replace($request, $dto->parts);
                 }
@@ -438,10 +457,7 @@ final class RepairRequestService
                 }
 
                 if ($dto->works !== null || $dto->laborRateType !== null || $dto->parts !== null) {
-                    $request->estimate_version++;
-                    RequestPart::query()
-                        ->where('repair_request_id', $request->id)
-                        ->update(['approved_version' => null]);
+                    $this->markEstimateChanged($request);
                 }
 
                 if ($this->touchFields($dto)) {
@@ -751,6 +767,13 @@ final class RepairRequestService
         $hourlyRate = $vehicle?->laborRate((string) ($request->data['laborRateType'] ?? 'general'));
         // Агентская скидка не редактируется в заявке: берётся из реквизитов СТО.
         $agentDiscount = self::stationAgentDiscount($request);
+        // Сохранённые строки сохраняют идентификатор: по нему отслеживаются
+        // изменения на стадии «В работе».
+        $existingIds = RequestWork::query()
+            ->where('repair_request_id', $request->id)
+            ->pluck('uuid')
+            ->all();
+        $usedIds = [];
 
         foreach ($works as $work) {
             if (!is_array($work)) {
@@ -785,6 +808,8 @@ final class RepairRequestService
                 'agentDiscountPercent' => ['sometimes', 'nullable'],
                 'agentDiscountAmount' => ['sometimes', 'nullable'],
                 'stationAmount' => ['sometimes', 'nullable'],
+                'comment' => ['sometimes', 'nullable', 'string', 'max:2000'],
+                'changeNote' => ['sometimes', 'nullable', 'string', 'max:2000'],
             ]);
 
             $type = $this->resolveWorkType($request, $work);
@@ -845,8 +870,19 @@ final class RepairRequestService
                 )
                 : null;
 
+            $id = (string) ($work['id'] ?? '');
+            $keepId = $id !== '' && in_array($id, $existingIds, true) && !in_array($id, $usedIds, true);
+            if ($keepId) {
+                $usedIds[] = $id;
+            }
+            $comment = trim((string) ($work['comment'] ?? ''));
+            $changeNote = trim((string) ($work['changeNote'] ?? ''));
+
             $rows[] = [
+                ...($keepId ? ['uuid' => $id] : []),
                 'repair_request_id' => $request->id,
+                'comment'           => $comment !== '' ? $comment : null,
+                'change_note'       => $changeNote !== '' ? $changeNote : null,
                 'name'              => $type?->name ?? trim((string) $work['name']),
                 'work_code_snapshot' => $type?->code ?? '',
                 'quantity'          => $work['qty'],
@@ -896,7 +932,7 @@ final class RepairRequestService
      * Расчётное завершение = время визита + 30 минут на приёмку + сумма
      * норм времени с учётом количества работ.
      */
-    private function recalculatePlannedCompletion(RepairRequest $request): void
+    public function recalculatePlannedCompletion(RepairRequest $request): void
     {
         $stationSlot = (string) ($request->data['stationSlot'] ?? '');
         $desiredSlot = (string) ($request->data['slot'] ?? '');
@@ -1760,7 +1796,7 @@ final class RepairRequestService
         };
     }
 
-    private function createApproval(ApprovalDto $dto): void
+    public function createApproval(ApprovalDto $dto): void
     {
         RequestApproval::query()->create([
             'repair_request_id' => $dto->requestId,
@@ -2071,7 +2107,7 @@ final class RepairRequestService
     /**
      * @return \Illuminate\Database\Eloquent\Collection<int, User>
      */
-    private function managerUsers(int $tenantId): Collection
+    public function managerUsers(int $tenantId): Collection
     {
         return User::query()
             ->where('active', true)
@@ -2087,7 +2123,7 @@ final class RepairRequestService
     /**
      * @return \Illuminate\Database\Eloquent\Collection<int, User>
      */
-    private function customerUsers(RepairRequest $request): Collection
+    public function customerUsers(RepairRequest $request): Collection
     {
         return User::query()
             ->where('active', true)
@@ -2100,7 +2136,7 @@ final class RepairRequestService
     /**
      * @return \Illuminate\Database\Eloquent\Collection<int, User>
      */
-    private function stationUsers(RepairRequest $request): Collection
+    public function stationUsers(RepairRequest $request): Collection
     {
         $organizationId = $request->stationRecord?->organization_id;
 
@@ -2115,7 +2151,7 @@ final class RepairRequestService
     /**
      * @param iterable<int, User> $recipients
      */
-    private function notifyUsers(NotificationDto $dto): void
+    public function notifyUsers(NotificationDto $dto): void
     {
         foreach ($dto->recipients as $recipient) {
             RequestNotification::query()->firstOrCreate(
@@ -2156,6 +2192,10 @@ final class RepairRequestService
         }
 
         if ($stage === RepairStage::RepairInProgress) {
+            if (app(WorkChangeService::class)->hasPendingChanges($request)) {
+                Input::fail('Изменения работ и запчастей не согласованы. Отправьте их на согласование или отмените.');
+            }
+
             if (!$request->acceptanceAct()->exists()) {
                 Input::fail('Сначала оформите акт приёма ТС');
             }
@@ -2270,7 +2310,7 @@ final class RepairRequestService
         }
     }
 
-    private function validateWorkPricing(RequestWork $work): void
+    public function validateWorkPricing(RequestWork $work): void
     {
         if (
             $work->work_type_id === null
