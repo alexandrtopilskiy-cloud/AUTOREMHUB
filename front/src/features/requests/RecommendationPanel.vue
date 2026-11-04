@@ -5,11 +5,13 @@ import { money } from "../../data/permissions.js";
 export default {
     name: "RecommendationPanel",
     props: {
-        vehicleId: { type: String, required: true },
+        // Пустой vehicleId — общий перечень рекомендаций по всем доступным ТС.
+        vehicleId: { type: String, default: "" },
+        vehicleInfo: { type: Object, default: () => ({}) },
         requests: { type: Array, default: () => [] },
         pending: { type: Object, default: () => ({}) },
     },
-    emits: ["restored"],
+    emits: ["restored", "open-vehicle"],
     data() {
         return {
             documents: [],
@@ -18,9 +20,13 @@ export default {
             busy: false,
             error: "",
             detailItem: null,
+            loaded: false,
         };
     },
     computed: {
+        allVehicles() {
+            return !this.vehicleId;
+        },
         document() {
             return this.documents[0];
         },
@@ -28,32 +34,42 @@ export default {
             return (
                 this.document ||
                 this.requests.find((row) => row.vehicleId === this.vehicleId) ||
+                this.vehicleInfo ||
                 {}
             );
         },
-        items() {
-            return this.documents
-                .flatMap((doc) =>
-                    doc.items.map((item) => ({
-                        ...item,
-                        documentId: doc.id,
-                        documentRevision: doc.revision,
-                    })),
+        sections() {
+            if (!this.allVehicles) {
+                return [
+                    {
+                        vehicleId: this.vehicleId,
+                        vehicle: this.vehicle,
+                        groups: this.groupsOf(this.documents),
+                    },
+                ];
+            }
+            const byVehicle = new Map();
+            for (const doc of this.documents) {
+                const key = doc.vehicleId || doc.vin;
+                if (!byVehicle.has(key)) byVehicle.set(key, []);
+                byVehicle.get(key).push(doc);
+            }
+            return [...byVehicle.entries()]
+                .map(([key, docs]) => ({
+                    vehicleId: docs[0].vehicleId,
+                    key,
+                    vehicle: docs[0],
+                    groups: this.groupsOf(docs),
+                }))
+                .filter((section) =>
+                    section.groups.some((group) => group.items.length),
                 )
-                .sort(
-                    (a, b) =>
-                        a.createdAt.localeCompare(b.createdAt) ||
-                        a.id.localeCompare(b.id),
+                .sort((a, b) =>
+                    this.vehicleTitle(a.vehicle).localeCompare(
+                        this.vehicleTitle(b.vehicle),
+                        "ru",
+                    ),
                 );
-        },
-        groups() {
-            return [
-                { kind: "work", title: "Работы" },
-                { kind: "part", title: "ЗЧ" },
-            ].map((group) => ({
-                ...group,
-                items: this.items.filter((item) => item.kind === group.kind),
-            }));
         },
         targets() {
             return this.requests.filter(
@@ -69,6 +85,35 @@ export default {
     },
     methods: {
         money,
+        vehicleTitle(vehicle) {
+            return (
+                [vehicle.make, vehicle.model, vehicle.plate]
+                    .filter(Boolean)
+                    .join(" · ") || vehicle.vin || "ТС"
+            );
+        },
+        groupsOf(documents) {
+            const items = documents
+                .flatMap((doc) =>
+                    doc.items.map((item) => ({
+                        ...item,
+                        documentId: doc.id,
+                        documentRevision: doc.revision,
+                    })),
+                )
+                .sort(
+                    (a, b) =>
+                        a.createdAt.localeCompare(b.createdAt) ||
+                        a.id.localeCompare(b.id),
+                );
+            return [
+                { kind: "work", title: "Работы" },
+                { kind: "part", title: "ЗЧ" },
+            ].map((group) => ({
+                ...group,
+                items: items.filter((item) => item.kind === group.kind),
+            }));
+        },
         parameterLabel(key) {
             return (
                 {
@@ -104,11 +149,15 @@ export default {
         },
         async load() {
             try {
-                this.documents = await marketplaceApi.vehicleRecommendations(
-                    this.vehicleId,
-                );
+                this.documents = this.allVehicles
+                    ? await marketplaceApi.allRecommendations()
+                    : await marketplaceApi.vehicleRecommendations(
+                          this.vehicleId,
+                      );
             } catch (exception) {
                 this.error = exception.message;
+            } finally {
+                this.loaded = true;
             }
         },
         async restore(createNew = false) {
@@ -174,19 +223,50 @@ export default {
     <section class="document-panel recommendation-panel">
         <div class="document-head">
             <div>
-                <span class="eyebrow">Рекомендации ТС</span>
-                <h1>
+                <span class="eyebrow">{{
+                    allVehicles ? "Документы" : "Рекомендации ТС"
+                }}</span>
+                <h1 v-if="allVehicles">
+                    Рекомендации <span class="count">{{ sections.length }}</span>
+                </h1>
+                <h1 v-else>
                     {{
                         [vehicle.make, vehicle.model, vehicle.plate]
                             .filter(Boolean)
                             .join(" · ") || "Рекомендации"
                     }}
                 </h1>
-                <p>VIN {{ vehicle.vin || "—" }}</p>
+                <p v-if="allVehicles">
+                    Рекомендации по всем ТС организации. Чтобы перенести позиции
+                    в заявку, откройте рекомендации конкретного ТС.
+                </p>
+                <p v-else>VIN {{ vehicle.vin || "—" }}</p>
             </div>
         </div>
+        <p v-if="allVehicles && loaded && !sections.length" class="muted">
+            Рекомендаций по ТС пока нет.
+        </p>
         <section
-            v-for="group in groups"
+            v-for="section in sections"
+            :key="section.key || section.vehicleId"
+            class="recommendation-vehicle"
+        >
+        <div v-if="allVehicles" class="recommendation-vehicle-head">
+            <div>
+                <h2>{{ vehicleTitle(section.vehicle) }}</h2>
+                <p>VIN {{ section.vehicle.vin || "—" }}</p>
+            </div>
+            <button
+                v-if="section.vehicleId"
+                type="button"
+                class="ghost-btn"
+                @click="$emit('open-vehicle', section.vehicle)"
+            >
+                Открыть рекомендации ТС
+            </button>
+        </div>
+        <section
+            v-for="group in section.groups"
             :key="group.kind"
             class="recommendation-group"
         >
@@ -195,7 +275,7 @@ export default {
                 <table class="excel-grid recommendation-grid">
                     <thead>
                         <tr>
-                            <th class="selection-col" />
+                            <th v-if="!allVehicles" class="selection-col" />
                             <th>Наименование</th>
                             <th>
                                 {{ group.kind === "work" ? "Код" : "Артикул" }}
@@ -212,7 +292,7 @@ export default {
                     </thead>
                     <tbody>
                         <tr v-for="item in group.items" :key="item.id">
-                            <td class="selection-col">
+                            <td v-if="!allVehicles" class="selection-col">
                                 <input
                                     v-if="!item.movedAt"
                                     v-model="selectedIds"
@@ -318,8 +398,9 @@ export default {
                 }}
             </p>
         </section>
+        </section>
         <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
-        <div class="record-editor-footer action-buttons">
+        <div v-if="!allVehicles" class="record-editor-footer action-buttons">
             <label
                 ><span>Заявка для этого VIN</span
                 ><select v-model="targetId">

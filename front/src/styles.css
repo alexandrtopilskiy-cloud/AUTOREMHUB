@@ -3838,6 +3838,11 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .recommendation-grid th:nth-child(2) { width: 24%; }
 .recommendation-grid .link-btn { display: block; font-size: 10px; padding: 0; }
 .recommendation-group { margin-bottom: 18px; }
+.recommendation-vehicle + .recommendation-vehicle { border-top: 1px solid var(--line); padding-top: 14px; }
+.recommendation-vehicle-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.recommendation-vehicle-head h2 { margin: 0; font-size: 16px; }
+.recommendation-vehicle-head p { margin: 2px 0 0; }
+.vehicle-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 /* Ссылка «формат» с рекомендациями по заполнению реквизитов */
 .format-hint {

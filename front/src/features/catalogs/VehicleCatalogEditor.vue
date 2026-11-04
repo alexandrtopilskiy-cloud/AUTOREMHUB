@@ -40,7 +40,7 @@ export default {
             required: true,
         },
     },
-    emits: ["saved", "saved-and-exit", "deleted"],
+    emits: ["saved", "saved-and-exit", "deleted", "recommendations"],
     data() {
         return {
             form: this.initialForm(),
@@ -265,8 +265,20 @@ export default {
 
 <template>
     <section class="document-panel vehicle-catalog-editor">
-        <span class="eyebrow">Справочник ТС Заказчиков</span>
-        <h1>{{ isNew ? "Новый автомобиль" : record.vehicle }}</h1>
+        <div class="vehicle-card-head">
+            <div>
+                <span class="eyebrow">Справочник ТС Заказчиков</span>
+                <h1>{{ isNew ? "Новый автомобиль" : record.vehicle }}</h1>
+            </div>
+            <button
+                v-if="!isNew && record.id"
+                type="button"
+                class="ghost-btn"
+                @click="$emit('recommendations', record)"
+            >
+                Рекомендации
+            </button>
+        </div>
         <p v-if="record.pendingApproval" class="info-banner">
             Изменение ожидает согласования Управляющей компании.
         </p>
