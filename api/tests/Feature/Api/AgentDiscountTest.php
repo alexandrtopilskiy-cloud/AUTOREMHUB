@@ -125,6 +125,20 @@ final class AgentDiscountTest extends TestCase
         $this->assertNotSame('', $kub->address);
 
         $this->assertSame([], TestParticipantRequisites::apply($this->tenant->id), 'повторный запуск ничего не меняет');
+
+        // Заказчик «ООО "Тест"» и СТО «СТО-партнёр» (кавычки «ёлочки», регистр).
+        $partnerOrganization = Organization::create([
+            'tenant_id' => $this->tenant->id, 'kind' => OrganizationKind::Station, 'name' => 'Партнёр',
+        ]);
+        Station::create([
+            'tenant_id' => $this->tenant->id, 'organization_id' => $partnerOrganization->id, 'name' => 'сто-партнёр',
+        ]);
+        Organization::query()->whereKey($this->actors['customer']->organization_id)->update(['name' => 'ООО «Тест»']);
+
+        TestParticipantRequisites::apply($this->tenant->id);
+
+        $this->assertSame('7852601815', Organization::query()->find($this->actors['customer']->organization_id)->inn);
+        $this->assertSame('7790996039', $partnerOrganization->refresh()->inn);
     }
 
     /** Front не отправляет служебную подпись применимости (см. stripClientMetadata). */
