@@ -13,8 +13,8 @@ import { roleLabels, requestFields } from "../data/permissions.js";
 /** Таймаут для загрузки файлов — 3 минуты. */
 const UPLOAD_TIMEOUT_MS = 180_000;
 
-/** Формат номера заявки: RP-000001 и более. */
-const REQUEST_NUMBER_PATTERN = /^RP-\d{6,}$/;
+/** Формат номера заявки: ZR-000001 и более. */
+const REQUEST_NUMBER_PATTERN = /^ZR-\d{6,}$/;
 
 /** Максимальный номер этапа (11 — «Заявка закрыта»). */
 const MAX_STAGE = 11;
@@ -125,7 +125,7 @@ export function restoreToken() {
 export function readRequest(request) {
     if (!isValidRequest(request)) {
         throw new ApiError(
-            "Ожидается формат заявки API v2 с номером RP-000001",
+            "Ожидается формат заявки API v2 с номером ZR-000001",
         );
     }
 

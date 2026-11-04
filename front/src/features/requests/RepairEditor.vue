@@ -224,6 +224,14 @@ const canWork = computed(
 
 const STAGE_IN_WORK = 5;
 
+const ADVANCE_BLOCKED_HINT = 'Работы или запчасти изменены: «Далее» станет доступна '
+  + 'после согласования изменений в ЛК УК и ЛК Заказчика';
+
+/** «Далее» неактивна, пока изменения работ/ЗЧ не согласованы УК и Заказчиком. */
+const advanceBlockedByWorkChange = computed(
+  () => props.request.permissions?.advanceBlockedByWorkChange === true,
+);
+
 /** СТО может менять работы и ЗЧ в ходе ремонта (не во время согласования). */
 const canChangeInWork = computed(
   () => isStation.value && props.request.stage === STAGE_IN_WORK && canWork.value,
@@ -1418,8 +1426,8 @@ onMounted(() => {
                   v-model.number="work.qty"
                   :title="String(work.qty ?? '')"
                   type="number"
-                  min="0.001"
-                  step="0.001"
+                  min="0.1"
+                  step="0.1"
                   :disabled="busy || !canWork || !work.workTypeId"
                   @input="workQuantityChanged(work)"
                 />
@@ -1692,6 +1700,9 @@ onMounted(() => {
         </strong>
         <strong v-else>{{ routeActionTitle }}</strong>
         <small v-if="dirty">Сначала сохраните внесённые изменения</small>
+        <small v-else-if="advanceBlockedByWorkChange" class="error-message">
+          {{ ADVANCE_BLOCKED_HINT }}
+        </small>
         <small v-else-if="canStationDecide">
           Комментарий к решению необязателен
         </small>
@@ -1765,20 +1776,22 @@ onMounted(() => {
           v-if="
             !canStationDecide &&
             !canCustomerSlotDecide &&
-            request.permissions.canAdvance
+            (request.permissions.canAdvance || advanceBlockedByWorkChange)
           "
           class="office-action primary-btn"
           :title="
-            managerReviewingStationChanges
-              ? routeActionTitle
-              : 'Далее по маршруту'
+            advanceBlockedByWorkChange
+              ? ADVANCE_BLOCKED_HINT
+              : managerReviewingStationChanges
+                ? routeActionTitle
+                : 'Далее по маршруту'
           "
           :aria-label="
             managerReviewingStationChanges
               ? routeActionTitle
               : 'Далее по маршруту'
           "
-          :disabled="busy || dirty"
+          :disabled="busy || dirty || advanceBlockedByWorkChange"
           @click="openNext"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6" /></svg>

@@ -51,7 +51,7 @@ async function pickPart(p, idx, q) {
 }
 // 2. UK routing
 const u = await login(b, 'uk.ivanov');
-await openRequest(u, 'RP-000001');
+await openRequest(u, 'ZR-000001');
 await u.locator('select', { has: u.locator('option', { hasText: 'ООО "КУБ"' }) }).selectOption({ label: 'ООО "КУБ"' });
 await pickWork(u, 0, 'масл фильтр');
 await u.getByRole('button', { name: 'Добавить строку работы' }).click();
@@ -72,7 +72,7 @@ async function buttons(p) {
 // 3. Station: changes estimate, confirms time -> УК (station_changes)
 const s = await login(b, 'kub.master');
 await shot(s, '03-station-home');
-await openRequest(s, 'RP-000001');
+await openRequest(s, 'ZR-000001');
 log('station buttons:', await buttons(s));
 await s.getByRole('button', { name: 'Добавить строку работы' }).click();
 await pickWork(s, 2, 'диагн ходов');
@@ -89,7 +89,7 @@ async function reload(p, number) {
   await openRequest(p, number);
 }
 // 4. УК: station_changes -> Return to station with mandatory comment
-await reload(u, 'RP-000001');
+await reload(u, 'ZR-000001');
 await shot(u, '04-uk-station-changes');
 log('uk buttons:', await buttons(u));
 await u.getByRole('button', { name: 'Вернуть в СТО для корректировки' }).click();
@@ -105,7 +105,7 @@ await ta.fill('Диагностику ходовой согласуем отде
 await confirmBtn.click(); await u.waitForTimeout(1200);
 log('uk status:', (await u.locator('main').innerText()).match(/Согласование СТО|Согласование работ \/ з\/ч/)?.[0]);
 // 5. Station removes the line, confirms -> УК again? (changed estimate) -> we check behaviour
-await reload(s, 'RP-000001');
+await reload(s, 'ZR-000001');
 await shot(s, '05-station-sees-return');
 await s.locator('button[aria-label="Удалить работу"]').nth(2).click();
 await saveForm(s);
@@ -115,14 +115,14 @@ log('station status:', (await s.locator('main').innerText()).match(/Соглас
 await shot(s, '05b-station-after-confirm');
 if (UNTIL <= 5) { await b.close(); process.exit(0); }
 // 6. УК approves -> customer
-await reload(u, 'RP-000001');
+await reload(u, 'ZR-000001');
 await u.getByRole('button', { name: 'Согласовать и направить Заказчику' }).click();
 await u.waitForTimeout(1200);
 d = await dialogInfo(u);
 if (d) { await d.locator('button.primary-btn, button[type=submit]').last().click(); await u.waitForTimeout(1200); }
 log('uk status:', (await u.locator('main').innerText()).match(/Согласование Заказчика|Согласование работ \/ з\/ч/)?.[0]);
 // 7. Customer final approval
-await reload(c, 'RP-000001');
+await reload(c, 'ZR-000001');
 await shot(c, '07-customer-final-approval');
 log('customer buttons:', await buttons(c));
 log('customer sees block 04:', await c.getByText('Работы, запчасти и ремонт').count(), ' supplier col:', await c.getByText('Поставщик', { exact: true }).count());
@@ -133,7 +133,7 @@ if (d) { await shot(c, '07b-customer-dialog'); await d.locator('button.primary-b
 log('customer status:', (await c.locator('main').innerText()).match(/Ожидание ТС на СТО|Согласование Заказчика/)?.[0]);
 if (UNTIL <= 7) { await b.close(); process.exit(0); }
 // 8. Station: acceptance act (electronic)
-await reload(s, 'RP-000001');
+await reload(s, 'ZR-000001');
 await s.getByRole('button', { name: 'Приём ТС', exact: true }).click();
 await s.waitForTimeout(500);
 const act = s.locator('form', { has: s.getByText('Сохранить акт и начать работы') });
@@ -146,7 +146,7 @@ await act.getByPlaceholder('Комментарий').first().fill('Царапи�
 await shot(s, '08-station-acceptance-act');
 await act.getByRole('button', { name: 'Сохранить акт и начать работы' }).click();
 await s.waitForTimeout(1500);
-log('station status:', (await s.locator('main').innerText()).match(/В работе|Ожидание ТС на СТО/)?.[0], '| act:', (await s.locator('main').innerText()).match(/AP-RP-\d+/)?.[0]);
+log('station status:', (await s.locator('main').innerText()).match(/В работе|Ожидание ТС на СТО/)?.[0], '| act:', (await s.locator('main').innerText()).match(/APP-\d+/)?.[0]);
 await shot(s, '08b-station-in-work');
 log('station buttons:', await buttons(s));
 if (UNTIL <= 8) { await b.close(); process.exit(0); }
@@ -186,17 +186,17 @@ async function confirmDialog(p, comment) {
 }
 const stageOf = async (p) => (await p.locator('.workspace .status-badge, main').first().innerText()).match(/Готово|Выдача автомобиля|Закрывающие документы|Ожидает оплаты|Оплата на проверке УК|Заявка закрыта/)?.[0];
 // 10. УК: 6 -> 7
-await reload(u, 'RP-000001');
+await reload(u, 'ZR-000001');
 log('uk buttons @6:', await buttons(u));
 await nextRoute(u); await confirmDialog(u, 'Ремонт принят, автомобиль к выдаче');
 log('after UK @6:', await stageOf(u));
 // 11. Customer: 7 -> 8
-await reload(c, 'RP-000001');
+await reload(c, 'ZR-000001');
 log('customer buttons @7:', await buttons(c));
 await nextRoute(c); await confirmDialog(c, 'Автомобиль получен');
 log('after customer @7:', await stageOf(c));
 // 12. УК: invoice (stage 8)
-await reload(u, 'RP-000001');
+await reload(u, 'ZR-000001');
 await shot(u, '12-uk-closing-docs');
 async function uploadFile(p, file, purposeLabel) {
   if (purposeLabel) await p.locator('main select', { has: p.locator('option', { hasText: purposeLabel }) }).last().selectOption({ label: purposeLabel });
@@ -214,7 +214,7 @@ log('after invoice @8:', await stageOf(u), '| uk buttons:', await buttons(u));
 if ((await stageOf(u)) === 'Закрывающие документы') { await nextRoute(u); await confirmDialog(u, 'Счёт выставлен'); }
 log('after UK @8:', await stageOf(u));
 // 13. Customer: payment (stage 9)
-await reload(c, 'RP-000001');
+await reload(c, 'ZR-000001');
 await uploadFile(c, 'platezhka-2026-001.pdf', 'Закрытый счёт');
 const pay = c.locator('form', { has: c.getByText('Сохранить подтверждение оплаты') });
 await pay.locator('input[type=number]').fill('5810');
@@ -228,7 +228,7 @@ log('after payment @9:', await stageOf(c), '| customer buttons:', await buttons(
 if ((await stageOf(c)) === 'Ожидает оплаты') { await nextRoute(c); await confirmDialog(c, 'Оплата отправлена'); }
 log('after customer @9:', await stageOf(c));
 // 14. УК verifies payment (stage 10)
-await reload(u, 'RP-000001');
+await reload(u, 'ZR-000001');
 const ver = u.locator('form', { has: u.getByRole('button', { name: 'Подтвердить оплату' }) });
 await ver.locator('textarea').fill('Оплата поступила в полном объёме');
 await ver.getByRole('button', { name: 'Подтвердить оплату' }).click();
@@ -237,6 +237,6 @@ log('after verify @10:', await stageOf(u), '| uk buttons:', await buttons(u));
 if ((await stageOf(u)) === 'Оплата на проверке УК') { await nextRoute(u); await confirmDialog(u, 'Закрыто'); }
 log('final:', await stageOf(u));
 await shot(u, '14-uk-closed');
-await reload(c, 'RP-000001');
+await reload(c, 'ZR-000001');
 await shot(c, '14b-customer-closed');
 await b.close();

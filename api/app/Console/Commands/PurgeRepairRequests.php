@@ -90,7 +90,7 @@ final class PurgeRepairRequests extends Command
             }
         }
 
-        $this->info('Удалено заявок: ' . $count . '. Следующий номер: RP-000001.');
+        $this->info('Удалено заявок: ' . $count . '. Следующий номер: ZR-000001.');
         return self::SUCCESS;
     }
 }

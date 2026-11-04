@@ -315,4 +315,18 @@ final class RepairRequest extends Entity
             ->latest('id')
             ->first();
     }
+
+    /**
+     * Номер документа по заявке: латинский префикс и 6-значный номер ЗР
+     * (ZR-000005, ZN-000005, SCH-000005, UPD-000005 …).
+     */
+    public static function documentNumber(string $prefix, int $id): string
+    {
+        return $prefix . '-' . str_pad((string) $id, 6, '0', STR_PAD_LEFT);
+    }
+
+    public function numberWithPrefix(string $prefix): string
+    {
+        return self::documentNumber($prefix, (int) $this->id);
+    }
 }

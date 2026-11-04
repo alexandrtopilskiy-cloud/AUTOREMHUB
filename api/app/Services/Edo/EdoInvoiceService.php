@@ -53,7 +53,7 @@ final class EdoInvoiceService
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
                     'provider'          => $ukOrg->edo_provider ?? 'diadoc',
-                    'number'            => 'INV-' . $invoice->number,
+                    'number'            => $invoice->number,
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
                     'source_type'       => RepairRequest::class,

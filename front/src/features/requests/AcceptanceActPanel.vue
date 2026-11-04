@@ -119,7 +119,7 @@ export default {
                 .replaceAll('"', "&quot;");
         },
         printBlankAct() {
-            const title = `Акт приёма AP-${this.escape(this.request.number)}`;
+            const title = `Акт приёма APP-${this.escape(String(this.request.number || "").replace(/^ZR-/, ""))}`;
             const vehicle = this.escape(
                 `${this.request.vehicle} · VIN ${this.request.vin} · ${this.request.plate || "—"}`,
             );

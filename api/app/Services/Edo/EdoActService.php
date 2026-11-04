@@ -46,7 +46,7 @@ final class EdoActService
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
                     'provider'          => $sender->edo_provider ?? 'diadoc',
-                    'number'            => 'ACT-' . $workOrder->number,
+                    'number'            => $request->numberWithPrefix('AVR'),
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
                     'source_type'       => RepairRequest::class,

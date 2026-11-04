@@ -31,7 +31,7 @@ final class InvoiceService
             throw new \RuntimeException('Заказ-наряд ещё не сформирован');
         }
 
-        $number = 'INV-' . $request->number;
+        $number = $request->numberWithPrefix('SCH');
         $invoiceUuid = (string) Str::uuid();
 
         $invoice = new Invoice();

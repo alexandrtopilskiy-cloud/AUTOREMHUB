@@ -674,6 +674,8 @@ export default {
                     "canSubmitPayment",
                     "canVerifyPayment",
                     "canDeleteDraft",
+                    "canDecideWorkChange",
+                    "canDeferRecommendations",
                 ].some((key) => request.permissions[key] === true)
             );
         },

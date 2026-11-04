@@ -17,7 +17,7 @@ const request = () => ({
         requestFields.map((key) => [key, key === "works" ? [] : ""]),
     ),
     id: "28b677ae-a3d6-4c72-99e9-dd65cf5f85ca",
-    number: "RP-000001",
+    number: "ZR-000001",
     stage: 0,
     revision: 0,
     vehicle: "",
@@ -140,7 +140,7 @@ test("Options API component rendering and interactive methods", async (context) 
                     createSSRApp(RepairEditor, props),
                 );
 
-                assert.match(html, /RP-000001/);
+                assert.match(html, /ZR-000001/);
                 assert.match(html, /Предыдущий пробег и дата заполнения/);
                 assert.match(
                     html,
@@ -1112,7 +1112,7 @@ test("Options API component rendering and interactive methods", async (context) 
             async () => {
                 const { default: App } =
                     await server.ssrLoadModule("/src/App.vue");
-                const linked = { id: "request-1", number: "RP-000001" };
+                const linked = { id: "request-1", number: "ZR-000001" };
                 const calls = [];
 
                 await App.methods.openNotification.call(
@@ -1462,7 +1462,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 );
                 const html = await renderToString(
                     createSSRApp(Dialog, {
-                        title: "RP-000001",
+                        title: "ZR-000001",
                         busy: false,
                     }),
                 );
