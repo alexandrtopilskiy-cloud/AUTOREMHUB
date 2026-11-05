@@ -23,7 +23,7 @@ final readonly class UserDto
     public static function fromUserModel(User $user): self
     {
         return new self(
-            id: $user->id,
+            userId: $user->id,
             tenantId: $user->tenantId(),
             organizationId: $user->organization_id,
             role: $user->role,

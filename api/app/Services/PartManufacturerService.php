@@ -66,7 +66,7 @@ final class PartManufacturerService
                 Input::fail('Производитель с таким названием уже существует', 'name');
             }
 
-            $before = $record->attributesToArray();
+            $before = $record?->attributesToArray();
             $record ??= new PartManufacturer([
                 'tenant_id' => $dto->tenantId,
                 'name' => $name,

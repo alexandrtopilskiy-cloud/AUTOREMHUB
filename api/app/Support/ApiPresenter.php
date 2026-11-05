@@ -63,7 +63,7 @@ final class ApiPresenter
         }
 
         // 2. Если в кэше нет — идем в базу
-        $dto = UserDto::fromUser($user);
+        $dto = UserDto::fromUserModel($user);
 
         $recommendations = Recommendation::forUser($dto)
         ->where('vehicle_id', $request->vehicle_id)
@@ -167,7 +167,7 @@ final class ApiPresenter
             'repairCompletedAt'      => $request->repair_completed_at?->toISOString(),
             'overdueSeconds'         => $this->calculateOverdueSeconds($request),
             'statusPeriods'          => $this->presentStatusPeriods($request),
-            'recommendations' => $this->recommendationSummary($request, $user),
+            'recommendations'        => $this->recommendationSummary($request, $user),
             'works'                  => $this->presentWorks($request, $user),
             'partMovements'          => $this->presentPartMovements($request),
             'parts'                  => $this->presentParts($request, $user),

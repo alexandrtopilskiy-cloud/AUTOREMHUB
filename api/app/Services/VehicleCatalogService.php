@@ -773,7 +773,7 @@ final class VehicleCatalogService
     /**
      * @param array<string, mixed> $payload
      */
-    private function organizationForPayload(string $tenantId, array $payload): Organization
+    private function organizationForPayload(int $tenantId, array $payload): Organization
     {
         return Organization::query()
             ->where('tenant_id', $tenantId)

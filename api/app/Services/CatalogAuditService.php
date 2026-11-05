@@ -31,7 +31,7 @@ final class CatalogAuditService
         ?array $before,
         array $after,
     ): CatalogChangeEvent {
-        $tenantId = $dto->tenantId;
+        $tenantId = $dto?->tenantId;
         if ($dto === null) {
             $tenantId = 1;
         }
