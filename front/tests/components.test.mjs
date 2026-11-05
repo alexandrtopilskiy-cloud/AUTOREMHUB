@@ -487,6 +487,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 const current = {
                     ...request(),
                     stage: 3,
+                    works: [{ id: "w1", name: "Диагностика", qty: 1, price: 1000 }],
                     permissions: {
                         editableFields: [],
                         canCustomerSlotDecide: true,
@@ -503,6 +504,32 @@ test("Options API component rendering and interactive methods", async (context) 
                 assert.match(html, /Финальное согласование/);
                 assert.match(html, /Подтвердить финальную заявку/);
                 assert.match(html, /Ожидание ТС на СТО/);
+                assert.doesNotMatch(html, /В ЗР нет работ/);
+            },
+        );
+
+        await context.test(
+            "request without works cannot be moved further by customer or manager",
+            async () => {
+                for (const [role, stage, permissions] of [
+                    ["customer", 3, { editableFields: [], canCustomerSlotDecide: true }],
+                    ["manager", 1, { editableFields: ["works"], canAdvance: true }],
+                ]) {
+                    const html = await renderToString(
+                        createSSRApp(RepairEditor, {
+                            ...props,
+                            user: { role },
+                            request: { ...request(), stage, works: [], permissions },
+                        }),
+                    );
+
+                    assert.match(html, /В ЗР нет работ/, role);
+                    assert.match(
+                        html,
+                        /<button[^>]*title="В ЗР нет работ[^"]*"[^>]*disabled/,
+                        role,
+                    );
+                }
             },
         );
 

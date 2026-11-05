@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleContact;
 use App\Models\WorkType;
+use App\Services\RepairRequestService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -219,6 +220,31 @@ final class CustomerSlotDecisionTest extends TestCase
                 'comment'  => 'ok',
             ],
         )->assertUnprocessable();
+    }
+
+    public function test_accepted_without_works_is_rejected(): void
+    {
+        // Заказчик перенёс все работы в Рекомендации: ЗР без работ
+        // нельзя перевести далее по маршруту.
+        $request = $this->requestAtSlotReview();
+        RepairRequest::query()->where('uuid', $request['id'])->firstOrFail()->workLines()->delete();
+
+        $this->actingAs($this->customer);
+        $this->postJson(
+            '/api/requests/' . $request['id'] . '/customer-slot-decision',
+            [
+                'revision' => $request['revision'],
+                'decision' => 'accepted',
+                'comment'  => 'ok',
+            ],
+        )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.message', RepairRequestService::NO_WORKS_MESSAGE);
+
+        $this->assertSame(
+            self::STAGE_SLOT_REVIEW,
+            RepairRequest::query()->where('uuid', $request['id'])->firstOrFail()->stage->value,
+        );
     }
 
     public function test_rescheduled_without_slot_is_rejected(): void

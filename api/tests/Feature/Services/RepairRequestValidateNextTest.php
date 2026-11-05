@@ -193,7 +193,7 @@ final class RepairRequestValidateNextTest extends TestCase
             'Review: без работ (validateManagerReviewStage)' => [
                 self::STAGE_REVIEW,
                 ['vehicle', 'reason', 'mileage', 'contact', 'slot', 'station'],
-                'Добавьте хотя бы одну работу',
+                RepairRequestService::NO_WORKS_MESSAGE,
             ],
             'Review: пустое имя работы' => [
                 self::STAGE_REVIEW,

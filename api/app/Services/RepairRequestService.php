@@ -61,6 +61,8 @@ use Throwable;
 
 final class RepairRequestService
 {
+    public const NO_WORKS_MESSAGE = 'В ЗР нет работ. Добавьте хотя бы одну работу, чтобы перевести ЗР далее по маршруту';
+
     private const DB_DEADLOCK_RETRIES = 3;
     private const QUANTITY_SCALE = 3;
 
@@ -1234,6 +1236,7 @@ final class RepairRequestService
         $stationSlot = (string) ($request->data['stationSlot'] ?? '');
 
         if ($dto->decision === ApprovalDecision::Accepted) {
+            $this->assertHasWorks($request);
             if ($stationSlot === '') {
                 Input::fail('СТО не указала новое время визита');
             }
@@ -2219,9 +2222,7 @@ final class RepairRequestService
 
     private function validateManagerReviewStage(RepairRequest $request): void
     {
-        if (!$request->workLines()->exists()) {
-            Input::fail('Добавьте хотя бы одну работу');
-        }
+        $this->assertHasWorks($request);
 
         foreach ($request->workLines()->get() as $work) {
             if (trim((string) $work->name) === '' || $work->quantity <= 0) {
@@ -2229,6 +2230,17 @@ final class RepairRequestService
             }
 
             $this->validateWorkPricing($work);
+        }
+    }
+
+    /**
+     * ЗР без единой строки работ нельзя перевести далее по маршруту
+     * (УК и Заказчик могут удалить работы или перенести их в Рекомендации).
+     */
+    public function assertHasWorks(RepairRequest $request): void
+    {
+        if (!$request->workLines()->exists()) {
+            Input::fail(self::NO_WORKS_MESSAGE);
         }
     }
 
