@@ -12,11 +12,11 @@ const vehicleTitle = computed(() => {
   return [doc.make, doc.model].filter(Boolean).join(' ') || 'ТС';
 });
 
-// Хронология: добавление строк из ЗР и перенос строк в ЗР, новые сверху.
+// Хронология: добавление строк из ЗР, перенос в ЗР и удаление, новые сверху.
 const events = computed(() => {
   const rows = [];
-  for (const item of props.doc?.items || []) {
-    const name = item.position?.name || '—';
+  for (const item of props.doc?.history || []) {
+    const name = item.name || '—';
     rows.push({
       id: `${item.id}:add`,
       at: item.createdAt,
@@ -29,6 +29,14 @@ const events = computed(() => {
         at: item.movedAt,
         text: `Перенесено в ${item.targetRequestNumber || 'заявку'}: ${name}`,
         who: '',
+      });
+    }
+    if (item.deletedAt) {
+      rows.push({
+        id: `${item.id}:delete`,
+        at: item.deletedAt,
+        text: `Удалено: ${name}`,
+        who: item.deletedBy || '',
       });
     }
   }
@@ -70,6 +78,8 @@ const events = computed(() => {
       <dd>{{ doc.openWorks }} / {{ doc.openParts }}</dd>
       <dt>Перенесено в заявки</dt>
       <dd>{{ doc.movedCount }}</dd>
+      <dt>Удалено</dt>
+      <dd>{{ doc.deletedCount || 0 }}</dd>
       <dt>Из заявок</dt>
       <dd>{{ (doc.sourceRequests || []).join(', ') || '—' }}</dd>
       <dt>Создан</dt>

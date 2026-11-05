@@ -222,8 +222,9 @@ const calculatedCompletionAt = computed(() => {
     || '');
 });
 
+// Заказчик вносит работы только в Черновике (без норм времени и стоимости).
 const canWork = computed(
-  () => props.user.role !== 'customer' && isAllowed('works'),
+  () => isAllowed('works') && (!isCustomer.value || props.request.stage === 0),
 );
 
 /* ─── Изменения работ и ЗЧ на стадии «В работе» ─── */
@@ -297,7 +298,8 @@ const canAddWork = computed(() => {
   return Boolean(last?.workTypeId || String(last?.name || '').trim());
 });
 
-const draftRepairBlock = computed(
+/** Черновик в ЛК Заказчика: только перечень работ, без норм и стоимости. */
+const customerDraftWorks = computed(
   () => isCustomer.value && props.request.stage === 0,
 );
 
@@ -625,6 +627,11 @@ async function workTypeChanged(row, workType) {
   row._normMessage = '';
   recalculateWork(row);
   touch();
+
+  // Заказчик в Черновике нормы не заполняет: их подберёт сервер и проверит УК.
+  if (customerDraftWorks.value) {
+    return;
+  }
 
   if (!workType?.id || !props.request.vehicleId) {
     row._normMessage = props.request.vehicleId
@@ -1219,16 +1226,16 @@ onMounted(() => {
 
     <!-- 04. Работы -->
     <section
-      v-if="showRepairBlock"
+      v-if="showRepairBlock || customerDraftWorks"
       class="repair-calculation-section"
-      :class="{ 'draft-disabled-section': draftRepairBlock }"
     >
       <div class="section-title">
         <span>04</span>
         <div>
           <h3>Работы</h3>
-          <p v-if="draftRepairBlock">
-            Блок станет активным после обработки заявки Управляющей компанией.
+          <p v-if="customerDraftWorks">
+            Укажите работы, которые нужно выполнить. Нормы времени и стоимость
+            заполнит Управляющая компания.
           </p>
         </div>
       </div>
@@ -1318,7 +1325,7 @@ onMounted(() => {
       </div>
 
       <div class="table-wrap excel-grid-wrap">
-        <table class="excel-grid works-grid">
+        <table class="excel-grid works-grid" :class="{ 'customer-draft-grid': customerDraftWorks }">
           <thead>
             <tr>
               <th v-if="canSelectWorks" class="selection-col">
@@ -1335,19 +1342,19 @@ onMounted(() => {
                 Наименование работы
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
-              <th class="resizable-column work-norm-column">
+              <th v-if="!customerDraftWorks" class="resizable-column work-norm-column">
                 Норма времени
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
-              <th class="resizable-column">
+              <th class="resizable-column work-qty-column">
                 Кол-во
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
-              <th class="resizable-column">
+              <th v-if="!customerDraftWorks" class="resizable-column">
                 Стоимость нормо/часа, ₽
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
-              <th class="resizable-column">
+              <th v-if="!customerDraftWorks" class="resizable-column">
                 Стоимость, ₽
                 <span class="column-resize-handle" @pointerdown="startColumnResize" />
               </th>
@@ -1402,13 +1409,14 @@ onMounted(() => {
                   :name="work.name"
                   :options="references.workTypes"
                   :disabled="busy"
+                  :create-label="customerDraftWorks ? '' : 'Добавить работу'"
                   @select="workTypeChanged(work, $event)"
                   @edit="workNameEdited(work, $event)"
                   @create="createWork(work, $event)"
                 />
                 <span v-else>{{ work.name || '—' }}</span>
                 <small
-                  v-if="work.workTypeId || work.normId"
+                  v-if="!customerDraftWorks && (work.workTypeId || work.normId)"
                   class="norm-applicability"
                   :title="
                     work.normApplicabilityLabel || work._normApplicabilityLabel
@@ -1423,7 +1431,7 @@ onMounted(() => {
                 >
               </td>
 
-              <td>
+              <td v-if="!customerDraftWorks">
                 <div v-if="canWork" class="norm-time-control">
                   <div class="manual-norm-field">
                     <input
@@ -1483,7 +1491,7 @@ onMounted(() => {
                 />
               </td>
 
-              <td>
+              <td v-if="!customerDraftWorks">
                 <input
                   :value="work.hourlyRate ?? request.laborHourRate ?? ''"
                   :title="
@@ -1495,7 +1503,7 @@ onMounted(() => {
                 />
               </td>
 
-              <td>
+              <td v-if="!customerDraftWorks">
                 {{ workAmount(work) == null ? 'Не рассчитано' : money(workAmount(work)) }}
               </td>
 
@@ -1565,7 +1573,7 @@ onMounted(() => {
           v-if="canWork"
           type="button"
           class="grid-add-row"
-          :disabled="busy || request.laborHourRate == null || !canAddWork"
+          :disabled="busy || (request.laborHourRate == null && !customerDraftWorks) || !canAddWork"
           aria-label="Добавить строку работы"
           title="Добавить строку"
           @click="addWork"
@@ -1573,7 +1581,7 @@ onMounted(() => {
           ＋
         </button>
 
-        <div class="total">
+        <div v-if="!customerDraftWorks" class="total">
           <span>Работы и запчасти</span>
           <strong>{{ money(total(request)) }} ₽</strong>
           <small v-if="showAgentDiscount" class="agent-discount-total">

@@ -51,6 +51,16 @@ final class RecommendationController
         return response()->json($this->service->restoreMany($request->user(), $documents, $requestId, $requestRevision));
     }
 
+    public function deleteItems(Request $request, string $id): JsonResponse
+    {
+        ApiInput::only($request, ['revision', 'itemIds']);
+        $itemIds = $request->json('itemIds');
+        if (!is_array($itemIds)) {
+            throw new \App\Exceptions\ApiException(422, 'VALIDATION_ERROR', 'Передайте список itemIds');
+        }
+        return response()->json($this->service->deleteItems($request->user(), $id, ApiInput::revision($request), $itemIds));
+    }
+
     public function restore(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['revision', 'itemIds', 'requestId', 'requestRevision']);

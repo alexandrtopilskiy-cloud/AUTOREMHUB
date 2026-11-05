@@ -445,7 +445,7 @@ final class RepairRequestService
 
                 if ($dto->works !== null || $dto->laborRateType !== null) {
                     $works = $dto->works ?? app(ApiPresenter::class)->document($request, $user)['works'];
-                    $this->replaceWorks($request, $works);
+                    $this->replaceWorks($request, $works, $userDto->role === UserRole::Customer);
                 }
 
                 // Смена СТО: строки получают агентскую скидку новой СТО.
@@ -758,7 +758,13 @@ final class RepairRequestService
             : (string) Station::DEFAULT_AGENT_DISCOUNT_PERCENT;
     }
 
-        private function replaceWorks(RepairRequest $request, array $works): void
+    /**
+     * @param bool $customerEntry Работы вносит Заказчик (черновик): нормы
+     *                            времени он не заполняет — норма подбирается
+     *                            из справочника, если она однозначна, а
+     *                            ранее заданная УК норма строки сохраняется.
+     */
+    private function replaceWorks(RepairRequest $request, array $works, bool $customerEntry = false): void
     {
         $works = array_values(array_filter(
             $works,
@@ -773,10 +779,11 @@ final class RepairRequestService
         $agentDiscount = self::stationAgentDiscount($request);
         // Сохранённые строки сохраняют идентификатор: по нему отслеживаются
         // изменения на стадии «В работе».
-        $existingIds = RequestWork::query()
+        $existingWorks = RequestWork::query()
             ->where('repair_request_id', $request->id)
-            ->pluck('uuid')
-            ->all();
+            ->get()
+            ->keyBy('uuid');
+        $existingIds = $existingWorks->keys()->all();
         $usedIds = [];
 
         foreach ($works as $work) {
@@ -826,7 +833,24 @@ final class RepairRequestService
                     'conflicts' => [],
                 ];
 
-            if ($selection['status'] === TimeNormSelectionService::STATUS_CONFLICT) {
+            if ($customerEntry) {
+                $previous = $existingWorks->get((string) ($work['id'] ?? ''));
+                $keepPrevious = $previous !== null
+                    && $previous->work_type_id === $type?->id
+                    && $previous->norm_is_manual
+                    && $previous->norm_hours !== null;
+                $work['normHours'] = $keepPrevious ? (string) $previous->norm_hours : null;
+                $work['normIsManual'] = $keepPrevious;
+                $work['normOverrideReason'] = $keepPrevious ? $previous->norm_override_reason : null;
+                $work['timeNormId'] = '';
+
+                if ($selection['status'] === TimeNormSelectionService::STATUS_CONFLICT) {
+                    // Конфликт норм разрешает УК, Заказчику он не мешает.
+                    $selection = [...$selection, 'norm' => null, 'scope' => null];
+                }
+            }
+
+            if ($selection['status'] === TimeNormSelectionService::STATUS_CONFLICT && !$customerEntry) {
                 throw new ApiException(
                     422,
                     'TIME_NORM_CONFLICT',

@@ -161,6 +161,12 @@ final class Workflow
             $editableFields = array_values(array_unique([...array_diff($editableFields, ['vehicleId', 'mileage']), 'works', 'parts']));
         }
 
+        // Черновик Заказчика: Заказчик сам указывает нужные работы, нормы
+        // времени и стоимость заполняет УК при обработке заявки.
+        if ($isOwner && $stage === RepairStage::Draft && $role === UserRole::Customer) {
+            $editableFields = array_values(array_unique([...$editableFields, 'works']));
+        }
+
         if ($stage === RepairStage::Draft && ($request->data['recommendationVehicleLocked'] ?? false)) {
             $editableFields = array_values(array_diff($editableFields, ['vehicleId']));
         }

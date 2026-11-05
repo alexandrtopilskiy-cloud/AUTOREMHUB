@@ -1065,6 +1065,13 @@ export const marketplaceApi = {
         );
         return { ...result, request: readRequest(result.request) };
     },
+    async deleteRecommendationItems(id, revision, itemIds) {
+        const result = await http.request(
+            `/recommendations/${encodeId(id)}/delete-items`,
+            { method: "POST", body: { revision, itemIds } },
+        );
+        return result.recommendation;
+    },
     async restoreRecommendations(
         id,
         revision,

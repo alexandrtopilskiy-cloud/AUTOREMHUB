@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 
 final class RecommendationService
 {
-    private const RELATIONS = ['items.sourceRequest', 'items.targetRequest', 'vehicle', 'customerOrganization'];
+    private const RELATIONS = ['items.sourceRequest', 'items.targetRequest', 'items.deletedBy', 'vehicle', 'customerOrganization'];
 
     public function __construct(
         private readonly RepairRequestService $requests,
@@ -97,12 +97,7 @@ final class RecommendationService
 
             $display = $this->presenter->document($request, $user);
             $doc = $this->documentForVehicle($request, $user);
-            $actorLabel = match ($user->role) {
-                UserRole::Manager   => 'У',
-                UserRole::Station   => 'С',
-                default             => 'З'
-            };
-            $actor = "{$user->display_name} ($actorLabel)";
+            $actor = self::actorLabel($user);
 
             $deferredLineIds = [];
             $deferredItemIds = [];
@@ -183,6 +178,61 @@ final class RecommendationService
         return $doc;
     }
 
+    private static function actorLabel(User $user): string
+    {
+        $label = match ($user->role) {
+            UserRole::Manager   => 'У',
+            UserRole::Station   => 'С',
+            default             => 'З'
+        };
+
+        return "{$user->display_name} ($label)";
+    }
+
+    /**
+     * Удаление выбранных строк из Рекомендаций ТС (Заказчик и УК). Строка
+     * пропадает из документа, в истории остаются автор и время удаления.
+     */
+    public function deleteItems(User $user, string $id, int $revision, array $itemIds): array
+    {
+        Input::validate(['itemIds' => $itemIds], [
+            'itemIds' => ['required', 'array', 'list', 'min:1', 'max:200'],
+            'itemIds.*' => ['required', 'uuid', 'distinct'],
+        ]);
+
+        if (!in_array($user->role, [UserRole::Customer, UserRole::Manager], true)) {
+            throw new ApiException(403, 'FORBIDDEN', 'Удалять рекомендации могут Заказчик и УК');
+        }
+
+        return DB::transaction(function () use ($user, $id, $revision, $itemIds): array {
+            $dto = UserDto::fromUserModel($user);
+            $doc = Recommendation::forUser($dto)->where('uuid', $id)->lockForUpdate()->firstOrFail();
+            $this->locks->assertAvailable($dto, 'recommendation', $doc->uuid);
+
+            if ($doc->revision !== $revision) {
+                throw new ApiException(409, 'REVISION_CONFLICT', 'Рекомендации уже изменены. Обновите документ.');
+            }
+
+            $items = $doc->items()
+                ->whereIn('uuid', $itemIds)
+                ->whereNull('moved_at')
+                ->whereNull('deleted_at')
+                ->lockForUpdate()
+                ->get();
+            if ($items->count() !== count($itemIds)) {
+                Input::fail('Некоторые позиции уже перенесены, удалены или не принадлежат рекомендациям');
+            }
+
+            RecommendationItem::query()
+                ->whereIn('id', $items->pluck('id'))
+                ->update(['deleted_at' => now(), 'deleted_by' => $user->id]);
+            $doc->revision++;
+            $doc->save();
+
+            return ['recommendation' => $this->present($doc->fresh(self::RELATIONS), $user)];
+        }, 3);
+    }
+
     public function restore(User $user, string $id, int $revision, array $itemIds, ?string $requestId, ?int $requestRevision): array
     {
         $result = $this->restoreMany(
@@ -242,10 +292,11 @@ final class RecommendationService
                 $selected = $doc->items()
                     ->whereIn('uuid', $selection['itemIds'])
                     ->whereNull('moved_at')
+                    ->whereNull('deleted_at')
                     ->lockForUpdate()
                     ->get();
                 if ($selected->count() !== count($selection['itemIds'])) {
-                    Input::fail('Некоторые позиции уже перенесены или не принадлежат рекомендациям');
+                    Input::fail('Некоторые позиции уже перенесены, удалены или не принадлежат рекомендациям');
                 }
 
                 $items = $items->concat($selected);
@@ -363,9 +414,11 @@ final class RecommendationService
     {
         $doc->loadMissing(self::RELATIONS);
 
-        $items = $doc->items;
-        $open = $items->whereNull('moved_at');
-        $sources = $items
+        $all = $doc->items;
+        // В документе остаются только невыполненные строки: перенесённые в ЗР
+        // и удалённые исчезают из таблиц и видны лишь в истории.
+        $open = $all->filter(fn (RecommendationItem $item) => $item->isOpen())->values();
+        $sources = $all
             ->map(fn (RecommendationItem $item) => $item->sourceRequest?->number)
             ->filter()
             ->unique()
@@ -386,23 +439,32 @@ final class RecommendationService
             'createdAt' => $doc->created_at->toISOString(),
             'updatedAt' => $doc->updated_at?->toISOString(),
             'openCount' => $open->count(),
-            'movedCount' => $items->count() - $open->count(),
+            'movedCount' => $all->whereNotNull('moved_at')->count(),
+            'deletedCount' => $all->whereNull('moved_at')->whereNotNull('deleted_at')->count(),
             'openWorks' => $open->where('kind', 'work')->count(),
             'openParts' => $open->where('kind', 'part')->count(),
-            'lastAddedAt' => $items->max('created_at')?->toISOString(),
+            'lastAddedAt' => $all->max('created_at')?->toISOString(),
             'sourceRequests' => $sources,
-            'items' => $items->map(fn (RecommendationItem $item) => [
+            'items' => $open->map(fn (RecommendationItem $item) => [
                 'id' => $item->uuid,
                 'kind' => $item->kind,
                 'position' => $item->display,
                 'actor' => $item->actor_label,
                 'createdAt' => $item->created_at->toISOString(),
-                'movedAt' => $item->moved_at?->toISOString(),
                 'sourceRequestId' => $item->sourceRequest?->uuid,
                 'sourceRequestNumber' => $item->sourceRequest?->number,
-                'targetRequestId' => $item->targetRequest?->uuid,
+            ])->all(),
+            'history' => $all->map(fn (RecommendationItem $item) => [
+                'id' => $item->uuid,
+                'name' => (string) ($item->display['name'] ?? ''),
+                'actor' => $item->actor_label,
+                'createdAt' => $item->created_at->toISOString(),
+                'sourceRequestNumber' => $item->sourceRequest?->number,
+                'movedAt' => $item->moved_at?->toISOString(),
                 'targetRequestNumber' => $item->targetRequest?->number,
-            ])->values()->all()
+                'deletedAt' => $item->deleted_at?->toISOString(),
+                'deletedBy' => $item->deletedBy === null ? null : self::actorLabel($item->deletedBy),
+            ])->values()->all(),
         ];
 
         return $user === null ? $data : CommercialVisibility::forUser($data, $user);

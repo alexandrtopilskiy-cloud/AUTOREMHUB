@@ -61,15 +61,11 @@ final class RequestValidationTest extends TestCase
         ])->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_ERROR');
     }
 
-    public function test_customer_cannot_modify_works_or_stage(): void
+    public function test_customer_cannot_modify_stage(): void
     {
+        // Работы Заказчик может вносить в Черновике (без норм времени).
         $request = $this->draft();
         $new = $this->patchRequest($request, ['description' => 'Версия 1']);
-
-        $this->api('PATCH', "/requests/{$request['id']}", [
-            'revision' => $new['revision'],
-            'works'    => [],
-        ])->assertForbidden();
 
         $this->api('PATCH', "/requests/{$request['id']}", [
             'revision' => $new['revision'],

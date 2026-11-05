@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $actor_id
  * @property int|null $target_request_id
  * @property CarbonImmutable|null $moved_at
+ * @property CarbonImmutable|null $deleted_at
+ * @property int|null $deleted_by
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  *
@@ -34,6 +36,7 @@ final class RecommendationItem extends Entity
             'snapshot'   => 'array',
             'display'    => 'array',
             'moved_at'   => 'immutable_datetime',
+            'deleted_at' => 'immutable_datetime',
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
         ];
@@ -43,6 +46,18 @@ final class RecommendationItem extends Entity
     public function recommendation(): BelongsTo
     {
         return $this->belongsTo(Recommendation::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function deletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    /** Строка ещё в документе: не перенесена в ЗР и не удалена. */
+    public function isOpen(): bool
+    {
+        return $this->moved_at === null && $this->deleted_at === null;
     }
 
     /** @return BelongsTo<RepairRequest, $this> */

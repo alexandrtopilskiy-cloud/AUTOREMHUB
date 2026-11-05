@@ -223,7 +223,9 @@ final class RecommendationAndEstimateTest extends TestCase
 
         $this->assertSame(1500.0, $restored['request']['works'][0]['lineAmount']);
         $this->assertSame(250.0, $restored['request']['parts'][0]['price']);
-        $this->assertNotNull($restored['recommendation']['items'][0]['movedAt']);
+        // Перенесённые строки исчезают из документа и остаются в истории.
+        $this->assertSame([], $restored['recommendation']['items']);
+        $this->assertNotNull($restored['recommendation']['history'][0]['movedAt']);
         $this->expectException(ApiException::class);
 
         $service->restore(
@@ -360,7 +362,8 @@ final class RecommendationAndEstimateTest extends TestCase
         // Заявка у УК (этап 1), переносит Заказчик — не владелец этапа.
         $result = $service->restore($this->customer, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
         $this->assertCount(1, $result['request']['works']);
-        $this->assertSame($this->request->fresh()->number, $result['recommendation']['items'][0]['targetRequestNumber']);
+        $this->assertSame([], $result['recommendation']['items']);
+        $this->assertSame($this->request->fresh()->number, $result['recommendation']['history'][0]['targetRequestNumber']);
     }
 
     public function test_recommendation_document_can_be_locked_before_transfer(): void
@@ -407,13 +410,47 @@ final class RecommendationAndEstimateTest extends TestCase
 
         $result = $service->restore($this->manager, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
         $this->assertNotNull($this->request->fresh()->work_change);
-        $this->assertNotNull($result['recommendation']['items'][0]['movedAt']);
+        $this->assertSame([], $result['recommendation']['items']);
 
         app(\App\Services\WorkChangeService::class)->discard($this->station, $this->request->uuid, 2);
         $this->assertSame(0, $this->request->workLines()->count());
         $item = \App\Models\RecommendationItem::query()->where('uuid', $doc['items'][0]['id'])->firstOrFail();
         $this->assertNull($item->moved_at);
         $this->assertNull($item->target_request_id);
+    }
+
+    public function test_selected_rows_are_deleted_from_recommendations(): void
+    {
+        $service = app(RecommendationService::class);
+        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => [$this->part()->uuid]])['recommendation'];
+        $this->assertCount(2, $doc['items']);
+
+        $result = $service->deleteItems($this->customer, $doc['id'], 0, [$doc['items'][0]['id']])['recommendation'];
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(1, $result['openCount']);
+        $this->assertSame(1, $result['deletedCount']);
+        $this->assertSame(1, $result['revision']);
+        $deleted = collect($result['history'])->firstWhere('id', $doc['items'][0]['id']);
+        $this->assertNotNull($deleted['deletedAt']);
+        $this->assertStringEndsWith('(З)', $deleted['deletedBy']);
+
+        // Удалённую строку нельзя перенести в ЗР.
+        $this->expectException(ApiException::class);
+        $service->restore($this->manager, $doc['id'], 1, [$doc['items'][0]['id']], $this->request->uuid, 1);
+    }
+
+    public function test_station_cannot_delete_recommendations_via_http(): void
+    {
+        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $this->actingAs($this->station)
+            ->postJson('/api/recommendations/' . $doc['id'] . '/delete-items', ['revision' => 0, 'itemIds' => [$doc['items'][0]['id']]])
+            ->assertForbidden();
+        $this->actingAs($this->manager)
+            ->postJson('/api/recommendations/' . $doc['id'] . '/delete-items', ['revision' => 0, 'itemIds' => [$doc['items'][0]['id']]])
+            ->assertOk()
+            ->assertJsonCount(0, 'recommendation.items');
+        $this->getJson('/api/requests/' . $this->request->uuid)
+            ->assertJsonPath('request.recommendations.0.openItems', 0);
     }
 
     public function test_catalog_manual_creation_is_manager_only_and_rejects_exact_duplicates(): void

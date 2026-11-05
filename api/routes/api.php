@@ -101,6 +101,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/recommendations', [RecommendationController::class, 'index']);
     Route::post('/requests/{id}/recommendations', [RecommendationController::class, 'defer']);
     Route::post('/recommendations/{id}/restore', [RecommendationController::class, 'restore'])->whereUuid('id');
+    Route::post('/recommendations/{id}/delete-items', [RecommendationController::class, 'deleteItems'])->whereUuid('id');
 
     Route::get('/chats/summary', [RequestChatController::class, 'summary'])->name('chats.summary');
     Route::get('/chat-files/{fileId}/download', [RequestChatController::class, 'download'])->whereUuid('fileId')->name('chat-files.download');
