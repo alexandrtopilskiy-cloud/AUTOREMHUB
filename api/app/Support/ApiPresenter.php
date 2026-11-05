@@ -44,7 +44,7 @@ final class ApiPresenter
 
         $docs = Recommendation::forUser($dto)
             ->whereIn('vehicle_id', $vehicleIds)
-            ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')])
+            ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')->whereNull('deleted_at')])
             ->orderByDesc('id')
             ->get(['id', 'vehicle_id', 'uuid', 'number']);
         foreach ($docs as $doc) {
@@ -76,7 +76,7 @@ final class ApiPresenter
         // 2. Если в кэше нет — идем в базу
         $recommendations = Recommendation::forUser($dto)
             ->where('vehicle_id', $request->vehicle_id)
-            ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')])
+            ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')->whereNull('deleted_at')])
             ->orderByDesc('id')
             ->get(['id', 'uuid', 'number'])
             ->map(fn ($doc) => self::recommendationLink($doc))

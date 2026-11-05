@@ -29,6 +29,7 @@ export default {
             detailItem: null,
             loaded: false,
             filter: "",
+            confirmDelete: false,
         };
     },
     computed: {
@@ -109,8 +110,16 @@ export default {
         canCreateRequest() {
             return this.userRole === "customer";
         },
+        // Удалять строки могут Заказчик и УК.
+        canDelete() {
+            return ["customer", "manager"].includes(this.userRole);
+        },
         selectable() {
-            return Boolean(this.sourceRequest) || this.canCreateRequest;
+            return (
+                Boolean(this.sourceRequest) ||
+                this.canCreateRequest ||
+                this.canDelete
+            );
         },
     },
     mounted() {
@@ -202,6 +211,39 @@ export default {
                 this.loaded = true;
             }
         },
+        async removeSelected() {
+            const doc = this.document;
+            const itemIds = (doc?.items || [])
+                .filter((item) => this.selectedIds.includes(item.id))
+                .map((item) => item.id);
+            this.confirmDelete = false;
+            if (!doc || !itemIds.length || !this.canDelete) return;
+            this.busy = true;
+            this.error = "";
+            let lock = null;
+            try {
+                lock = await marketplaceApi.acquireDocumentLock(
+                    "recommendation",
+                    doc.id,
+                    "Рекомендации ТС",
+                );
+                await marketplaceApi.deleteRecommendationItems(
+                    doc.id,
+                    doc.revision,
+                    itemIds,
+                );
+                this.selectedIds = [];
+                await this.load();
+            } catch (exception) {
+                this.error = exception.message;
+            } finally {
+                if (lock?.id)
+                    await marketplaceApi
+                        .releaseDocumentLock(lock.id)
+                        .catch(() => {});
+                this.busy = false;
+            }
+        },
         async restore(createNew = false) {
             const target = this.sourceRequest;
             if (createNew ? !this.canCreateRequest : !target || this.transferBlock) {
@@ -215,8 +257,7 @@ export default {
                     itemIds: doc.items
                         .filter(
                             (item) =>
-                                this.selectedIds.includes(item.id) &&
-                                !item.movedAt,
+                                this.selectedIds.includes(item.id),
                         )
                         .map((item) => item.id),
                 }))
@@ -399,14 +440,12 @@ export default {
                             <th>Из заявки</th>
                             <th>Кто добавил</th>
                             <th>Дата</th>
-                            <th>Состояние</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="item in group.items" :key="item.id">
                             <td v-if="selectable" class="selection-col">
                                 <input
-                                    v-if="!item.movedAt"
                                     v-model="selectedIds"
                                     type="checkbox"
                                     class="selection-checkbox"
@@ -496,21 +535,6 @@ export default {
                                     )
                                 }}
                             </td>
-                            <td
-                                :title="
-                                    item.movedAt
-                                        ? 'Перенесено в заявку ' +
-                                          (item.targetRequestNumber || '')
-                                        : 'Рекомендовано'
-                                "
-                            >
-                                {{
-                                    item.movedAt
-                                        ? "Перенесено " +
-                                          (item.targetRequestNumber || "")
-                                        : "Рекомендовано"
-                                }}
-                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -547,11 +571,38 @@ export default {
             >
                 Создать заявку из выбранного
             </button>
-            <span v-if="!selectable" class="muted">
+            <button
+                v-if="canDelete"
+                class="danger-btn"
+                :disabled="busy || !selectedIds.length"
+                @click="confirmDelete = true"
+            >
+                Удалить выбранное ({{ selectedIds.length }})
+            </button>
+            <span v-if="!sourceRequest && !canCreateRequest" class="muted">
                 Чтобы перенести позиции, откройте Рекомендации из заявки на
                 ремонт по этому ТС.
             </span>
         </div>
+        <dialog v-if="confirmDelete" open class="action-dialog">
+            <h3>Удалить из рекомендаций?</h3>
+            <p>
+                Выбрано позиций: {{ selectedIds.length }}. Они исчезнут из
+                документа, в истории останется запись об удалении.
+            </p>
+            <div class="action-buttons">
+                <button class="danger-btn" type="button" @click="removeSelected">
+                    Удалить
+                </button>
+                <button
+                    class="ghost-btn"
+                    type="button"
+                    @click="confirmDelete = false"
+                >
+                    Отмена
+                </button>
+            </div>
+        </dialog>
         <dialog
             v-if="detailItem"
             open
