@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\AttachmentPurpose;
 use App\Enums\RepairStage;
 use App\Enums\RequestDocumentType;
-use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\RepairRequest;
 use App\Models\RequestDocument;
@@ -108,11 +108,14 @@ final class ClosingDocumentController
     public function pdf(Request $request, string $documentId): StreamedResponse
     {
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
+        $repqirRequestQuery = RepairRequest::forUser($dto)->select('id');
+
         /** @var RequestDocument $document */
         $document = RequestDocument::query()
             ->with('attachment')
             ->where('uuid', $documentId)
-            ->whereIn('repair_request_id', RepairRequest::forUser($user)->select('id'))
+            ->whereIn('repair_request_id', $repqirRequestQuery)
             ->firstOrFail();
 
         if (!$document->type->visibleTo($user->role) || $document->attachment === null) {

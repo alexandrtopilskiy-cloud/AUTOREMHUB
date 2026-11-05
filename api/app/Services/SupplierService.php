@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
@@ -17,28 +18,50 @@ use Illuminate\Validation\Rule;
 final class SupplierService
 {
     public const FIELDS = [
-        'legalFormName', 'shortName', 'kpp', 'ogrn', 'registrationDate',
-        'legalAddress', 'actualAddress', 'postalAddress', 'directorName',
-        'lastName', 'firstName', 'middleName', 'okpo', 'oktmo', 'okved',
-        'bankName', 'bik', 'settlementAccount', 'correspondentAccount',
-        'treasuryAccount', 'taxRegime', 'vatRate',
+        'legalFormName',
+        'shortName',
+        'kpp',
+        'ogrn',
+        'registrationDate',
+        'legalAddress',
+        'actualAddress',
+        'postalAddress',
+        'directorName',
+        'lastName',
+        'firstName',
+        'middleName',
+        'okpo',
+        'oktmo',
+        'okved',
+        'bankName',
+        'bik',
+        'settlementAccount',
+        'correspondentAccount',
+        'treasuryAccount',
+        'taxRegime',
+        'vatRate',
     ];
 
     public function write(User $user, ?Supplier $supplier, array $values): Supplier
     {
-        if (!in_array($user->role, [UserRole::Manager, UserRole::Station], true)) {
+        $dto = UserDto::fromUserModel($user);
+
+        if (!in_array($dto->role, [UserRole::Manager, UserRole::Station], true)) {
             throw new ApiException(403, 'FORBIDDEN', 'Поставщиков создают УК и СТО');
         }
-        return DB::transaction(function () use ($user, $supplier, $values): Supplier {
+        return DB::transaction(function () use ($dto, $supplier, $values): Supplier {
             if ($supplier !== null) {
-                $supplier = Supplier::query()->where('tenant_id', $user->tenantId())->whereKey($supplier->id)->lockForUpdate()->firstOrFail();
-                if ($user->role === UserRole::Station && $supplier->created_by_organization_id !== $user->organization_id) {
+                $supplier = Supplier::query()->where('tenant_id', $dto->tenantId)->whereKey($supplier->id)->lockForUpdate()->firstOrFail();
+                if ($dto->role === UserRole::Station && $supplier->created_by_organization_id !== $dto->organizationId) {
                     throw new ApiException(403, 'FORBIDDEN', 'СТО может изменять только созданных своей организацией поставщиков');
                 }
             }
-            $data = array_replace($supplier?->requisites ?? [], $supplier === null ? [] : [
-                'name' => $supplier->name, 'taxId' => $supplier->tax_id,
-                'legalForm' => $supplier->legal_form, 'contacts' => $supplier->contacts ?? [], 'active' => $supplier->active,
+            $data = array_replace($supplier->requisites ?? [], $supplier === null ? [] : [
+                'name' => $supplier->name,
+                'taxId' => $supplier->tax_id,
+                'legalForm' => $supplier->legal_form,
+                'contacts' => $supplier->contacts ?? [],
+                'active' => $supplier->active,
             ], $values);
             $individual = (bool) config('supplier_legal_forms.' . ($data['legalForm'] ?? '') . '.individual', false);
             $rules = [
@@ -93,7 +116,7 @@ final class SupplierService
                 }
             }
             unset($contact);
-            $model = $supplier ?? new Supplier(['tenant_id' => $user->tenantId(), 'created_by_organization_id' => $user->organization_id]);
+            $model = $supplier ?? new Supplier(['tenant_id' => $dto->tenantId, 'created_by_organization_id' => $dto->organizationId]);
             $before = $model->exists ? $model->attributesToArray() : null;
             $model->fill([
                 'name' => trim($data['name']), 'tax_id' => $data['taxId'],
@@ -102,7 +125,8 @@ final class SupplierService
                 'contact' => trim($data['contacts'][0]['lastName'] . ' ' . $data['contacts'][0]['firstName']),
                 'active' => $data['active'] ?? true,
             ])->save();
-            app(CatalogAuditService::class)->record($user->tenantId(), $user, CatalogKind::Suppliers, $model, $before === null ? 'create' : 'update', $before, $model->attributesToArray());
+            app(CatalogAuditService::class)->record($dto, CatalogKind::Suppliers, $model, $before === null ? 'create' : 'update', $before, $model->attributesToArray());
+
             return $model;
         });
     }

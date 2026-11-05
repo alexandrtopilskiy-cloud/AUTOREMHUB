@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Exceptions\ApiException;
 use App\Models\CatalogChangeEvent;
 use App\Models\CatalogPart;
@@ -14,7 +15,6 @@ use App\Models\Tenant;
 use App\Models\TimeNorm;
 use App\Models\TimeNormApplicability;
 use App\Models\User;
-use App\Models\VehicleMake;
 use App\Models\WorkType;
 use App\Services\CatalogService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -461,8 +461,9 @@ final class CatalogServiceTest extends TestCase
     public function test_present_work_type_permissions_for_manager(): void
     {
         $workType = $this->makeWorkType('Работа');
+        $dto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->present('workTypes', $workType, $this->manager);
+        $result = $this->service()->present('workTypes', $workType, $dto);
 
         $this->assertSame($workType->uuid, $result['id']);
         $this->assertSame('workTypes', $result['kind']);
@@ -473,8 +474,9 @@ final class CatalogServiceTest extends TestCase
     public function test_present_part_permissions_allow_editing(): void
     {
         $part = $this->makeCatalogPart('Фильтр', 'F-1');
+        $dto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->present('parts', $part, $this->manager);
+        $result = $this->service()->present('parts', $part, $dto);
 
         $this->assertTrue($result['permissions']['canEdit']);
         $this->assertFalse($result['permissions']['canCreateOnly']);
@@ -483,8 +485,9 @@ final class CatalogServiceTest extends TestCase
     public function test_present_for_customer_has_no_edit_permissions(): void
     {
         $workType = $this->makeWorkType('Работа');
+        $dto = UserDto::fromUserModel($this->customer);
 
-        $result = $this->service()->present('workTypes', $workType, $this->customer);
+        $result = $this->service()->present('workTypes', $workType, $dto);
 
         $this->assertFalse($result['permissions']['canEdit']);
         $this->assertFalse($result['permissions']['canCreateOnly']);

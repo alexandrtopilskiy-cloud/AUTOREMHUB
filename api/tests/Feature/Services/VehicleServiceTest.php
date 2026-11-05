@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\Station;
@@ -90,7 +91,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_present_manager_sees_labor_hour_rate(): void
     {
-        $result = $this->service()->present($this->vehicle, $this->manager);
+        $dto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->present($this->vehicle, $dto);
 
         $this->assertSame(1000.0, $result['laborHourRate']);
         $this->assertTrue($result['permissions']['canEditRate']);
@@ -98,7 +100,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_present_customer_does_not_see_labor_hour_rate(): void
     {
-        $result = $this->service()->present($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+        $result = $this->service()->present($this->vehicle, $dto);
 
         $this->assertNull($result['laborHourRate']);
         $this->assertFalse($result['permissions']['canEditRate']);
@@ -106,7 +109,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_present_station_does_not_see_labor_hour_rate(): void
     {
-        $result = $this->service()->present($this->vehicle, $this->station);
+        $dto = UserDto::fromUserModel($this->station);
+        $result = $this->service()->present($this->vehicle, $dto);
 
         $this->assertNull($result['laborHourRate']);
     }
@@ -126,7 +130,8 @@ final class VehicleServiceTest extends TestCase
         ]);
         $this->vehicle->update(['vehicle_model_id' => $model->id]);
 
-        $result = $this->service()->present($this->vehicle->refresh(), $this->manager);
+        $dto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->present($this->vehicle->refresh(), $dto);
 
         $this->assertSame('Lada', $result['make']);
         $this->assertSame('Vesta', $result['model']);
@@ -138,7 +143,8 @@ final class VehicleServiceTest extends TestCase
         $this->makeContact($this->vehicle, 'contact', 'Иванов', 'Иван', '+79991111111');
         $this->makeContact($this->vehicle, 'driver', 'Петров', 'Пётр', '+79992222222');
 
-        $result = $this->service()->present($this->vehicle->refresh(), $this->manager);
+        $dto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->present($this->vehicle->refresh(), $dto);
 
         $this->assertCount(1, $result['contacts']);
         $this->assertCount(1, $result['drivers']);
@@ -148,7 +154,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_present_permissions_for_customer(): void
     {
-        $result = $this->service()->present($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+        $result = $this->service()->present($this->vehicle, $dto);
 
         $this->assertTrue($result['permissions']['canEdit']);
         $this->assertTrue($result['permissions']['requiresApproval']);
@@ -199,8 +206,9 @@ final class VehicleServiceTest extends TestCase
     public function test_previous_mileage_from_latest_request(): void
     {
         $this->makeRequestWithMileage($this->vehicle, '15000');
+        $dto = UserDto::fromUserModel($this->customer);
 
-        $result = $this->service()->previousMileageDetails($this->vehicle, $this->customer);
+        $result = $this->service()->previousMileageDetails($this->vehicle, $dto);
 
         $this->assertSame(15000, $result['mileage']);
         $this->assertNotNull($result['recordedAt']);
@@ -209,10 +217,11 @@ final class VehicleServiceTest extends TestCase
     public function test_previous_mileage_from_request_excludes_given_id(): void
     {
         $request = $this->makeRequestWithMileage($this->vehicle, '15000');
+        $dto = UserDto::fromUserModel($this->customer);
 
         $result = $this->service()->previousMileageDetails(
             $this->vehicle,
-            $this->customer,
+            $dto,
             $request->id,
         );
 
@@ -236,7 +245,9 @@ final class VehicleServiceTest extends TestCase
         $request->data = array_replace($request->data, ['mileage' => '']);
         $request->save();
 
-        $result = $this->service()->previousMileageDetails($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+
+        $result = $this->service()->previousMileageDetails($this->vehicle, $dto);
 
         $this->assertSame(20000, $result['mileage']);
     }
@@ -248,10 +259,9 @@ final class VehicleServiceTest extends TestCase
             'baseline_service_at'      => now()->subMonth(),
         ]);
 
-        $result = $this->service()->previousMileageDetails(
-            $this->vehicle->refresh(),
-            $this->customer,
-        );
+        $dto = UserDto::fromUserModel($this->customer);
+
+        $result = $this->service()->previousMileageDetails($this->vehicle->refresh(), $dto);
 
         $this->assertSame(5000, $result['mileage']);
         $this->assertNotNull($result['recordedAt']);
@@ -259,7 +269,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_previous_mileage_returns_null_when_nothing_set(): void
     {
-        $result = $this->service()->previousMileageDetails($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+        $result = $this->service()->previousMileageDetails($this->vehicle, $dto);
 
         $this->assertNull($result['mileage']);
         $this->assertNull($result['recordedAt']);
@@ -269,7 +280,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_statistics_returns_empty_for_new_vehicle(): void
     {
-        $result = $this->service()->statistics($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+        $result = $this->service()->statistics($this->vehicle, $dto);
 
         $this->assertSame(0, $result['statistics']['completedWorks']);
         $this->assertSame(0, $result['statistics']['maintenanceVisits']);
@@ -293,7 +305,9 @@ final class VehicleServiceTest extends TestCase
             'is_maintenance'       => true,
         ]);
 
-        $result = $this->service()->statistics($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+
+        $result = $this->service()->statistics($this->vehicle, $dto);
 
         $this->assertSame(1, $result['statistics']['completedWorks']);
         $this->assertSame(1, $result['statistics']['maintenanceVisits']);
@@ -333,7 +347,8 @@ final class VehicleServiceTest extends TestCase
             ]);
         }
 
-        $result = $this->service()->statistics($this->vehicle, $this->customer);
+        $dto = UserDto::fromUserModel($this->customer);
+        $result = $this->service()->statistics($this->vehicle, $dto);
 
         // 3 записи истории, но только 2 уникальных визита ТО.
         $this->assertSame(3, $result['statistics']['completedWorks']);

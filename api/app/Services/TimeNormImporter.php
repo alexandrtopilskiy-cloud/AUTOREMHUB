@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
@@ -74,10 +75,7 @@ final class TimeNormImporter
         bool $dryRun = false,
     ): array
     {
-        if (
-            $actor !== null
-            && ($actor->role !== UserRole::Manager || $actor->tenantId() !== $tenantId)
-        ) {
+        if ($actor !== null && ($actor->role !== UserRole::Manager || $actor->tenantId() !== $tenantId)) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -86,12 +84,14 @@ final class TimeNormImporter
             );
         }
 
+        $dto = UserDto::fromUserModel($actor);
+
         $rows = $this->normalizeRows($this->reader->read(
             $path,
             [self::WORK_HEADERS, self::HOURS_HEADERS],
         ));
 
-        return DB::transaction(function () use ($tenantId, $rows, $actor, $dryRun): array {
+        return DB::transaction(function () use ($tenantId, $rows, $dto, $dryRun): array {
             Tenant::query()->whereKey($tenantId)->lockForUpdate()->firstOrFail();
 
             $general = $dryRun
@@ -136,8 +136,7 @@ final class TimeNormImporter
                     ]);
 
                     $this->audit->record(
-                        $tenantId,
-                        $actor,
+                        $dto,
                         CatalogKind::WorkTypes,
                         $workType,
                         'import_create',
@@ -192,8 +191,7 @@ final class TimeNormImporter
                 $norm->save();
 
                 $this->audit->record(
-                    $tenantId,
-                    $actor,
+                    $dto,
                     CatalogKind::TimeNorms,
                     $norm,
                     $before === null ? 'import_create' : 'import_update',

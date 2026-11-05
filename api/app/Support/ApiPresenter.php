@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Models\Attachment;
@@ -19,6 +20,7 @@ use App\Models\WorkType;
 use App\Services\RepairRequestCalculator;
 use App\Services\Workflow;
 use App\Services\WorkChangeService;
+use App\Services\ClosingDocumentService;
 
 final class ApiPresenter
 {
@@ -31,25 +33,47 @@ final class ApiPresenter
     /* ─────────────────── Публичный API ─────────────────── */
 
     /** Загружает ссылки рекомендаций одним запросом для реестра заявок. */
-    public function preloadRecommendations(iterable $requests, User $user): void
+    public function preloadRecommendations(iterable $requests, UserDto $dto): void
     {
         $vehicleIds = collect($requests)->pluck('vehicle_id')->filter()->unique()->all();
         $this->recommendationSummaries = array_fill_keys($vehicleIds, []);
+
         if ($vehicleIds === []) {
             return;
         }
-        foreach (Recommendation::forUser($user)->whereIn('vehicle_id', $vehicleIds)->orderByDesc('id')->get(['vehicle_id', 'uuid', 'number']) as $doc) {
+
+        $docs = Recommendation::forUser($dto)
+            ->whereIn('vehicle_id', $vehicleIds)
+            ->orderByDesc('id')
+            ->get(['vehicle_id', 'uuid', 'number']);
+        foreach ($docs as $doc) {
             $this->recommendationSummaries[$doc->vehicle_id][] = ['id' => $doc->uuid, 'number' => $doc->number];
         }
     }
 
-    private function recommendationSummary(RepairRequest $request, User $user): array
+    private function recommendationSummary(RepairRequest $request, UserDto $dto): array
     {
         if ($request->vehicle_id === null) {
             return [];
         }
-        return $this->recommendationSummaries[$request->vehicle_id]
-            ?? Recommendation::forUser($user)->where('vehicle_id', $request->vehicle_id)->orderByDesc('id')->get(['uuid', 'number'])->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])->all();
+
+        // 1. Проверяем кэш (in-memory)
+        if (isset($this->recommendationSummaries[$request->vehicle_id])) {
+            return $this->recommendationSummaries[$request->vehicle_id];
+        }
+
+        // 2. Если в кэше нет — идем в базу
+        $recommendations = Recommendation::forUser($dto)
+            ->where('vehicle_id', $request->vehicle_id)
+            ->orderByDesc('id')
+            ->get(['uuid', 'number'])
+            ->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])
+            ->all();
+
+        // 3. Сохраняем в кэш (если вы это делаете где-то еще, иначе смысла нет)
+         $this->recommendationSummaries[$request->vehicle_id] = $recommendations;
+
+        return $recommendations;
     }
 
     /**
@@ -57,6 +81,7 @@ final class ApiPresenter
      */
     public function document(RepairRequest $request, User $user): array
     {
+        $dto = UserDto::fromUserModel($user);
         $request->load([
             'vehicleRecord.organization',
             'vehicleRecord.modelReference',
@@ -100,7 +125,7 @@ final class ApiPresenter
             'declinedStationIds' => $request->data['declinedStationIds'] ?? [],
             'statusLabel' => Workflow::statusLabel($request),
             'ownerLabel' => Workflow::ownerLabel($request),
-            'workChange' => app(WorkChangeService::class)->present($request, $user),
+            'workChange' => app(WorkChangeService::class)->present($request, $dto),
             'reviewBaselineVersion'  => $request->review_baseline_version,
             'vehicleId'              => $vehicle?->uuid ?? '',
             'vehicle'                => $vehicle?->name ?? '',
@@ -110,18 +135,18 @@ final class ApiPresenter
             'vin'                    => $vehicle?->vin ?? '',
             'plate'                  => $vehicle?->plate ?? '',
             'year'                   => $vehicle?->year,
-            'company'                => $user->role === UserRole::Station
+            'company'                => $dto->role === UserRole::Station
                 ? ''
                 : ($vehicle?->organization?->name ?? ''),
             'previousServiceMileage' => $request->previous_service_mileage,
             'previousServiceAt'      => $request->previous_service_at?->toISOString(),
             'laborRateType' => ($data['laborRateType'] ?? '') ?: 'general',
-            'laborRates' => $user->role === UserRole::Manager ? [
+            'laborRates' => $dto->role === UserRole::Manager ? [
                 'general' => $vehicle?->laborRate('general'),
                 'official' => $vehicle?->laborRate('official'),
                 'other' => $vehicle?->laborRate('other'),
             ] : [],
-            'laborHourRate'          => $user->role !== UserRole::Customer
+            'laborHourRate'          => $dto->role !== UserRole::Customer
                 ? ($vehicle?->laborRate($data['laborRateType'] ?? 'general') !== null
                     ? (float) $vehicle->laborRate($data['laborRateType'] ?? 'general') : null)
                 : null,
@@ -141,12 +166,12 @@ final class ApiPresenter
             'repairCompletedAt'      => $request->repair_completed_at?->toISOString(),
             'overdueSeconds'         => $this->calculateOverdueSeconds($request),
             'statusPeriods'          => $this->presentStatusPeriods($request),
-            'recommendations' => $this->recommendationSummary($request, $user),
-            'works'                  => $this->presentWorks($request, $user),
+            'recommendations'        => $this->recommendationSummary($request, $dto),
+            'works'                  => $this->presentWorks($request, $dto),
             'partMovements'          => $this->presentPartMovements($request),
-            'parts'                  => $this->presentParts($request, $user),
+            'parts'                  => $this->presentParts($request, $dto),
             'total'                  => (float) $this->repairRequestCalculator->total($request),
-            ...(AgentDiscount::visibleTo($user)
+            ...(AgentDiscount::visibleTo($dto->role)
                 ? ['agentDiscount' => AgentDiscount::summary($request)]
                 : []),
             'history'                => $this->presentHistory($request, $timezone),
@@ -157,9 +182,9 @@ final class ApiPresenter
             'workOrder'              => $this->workOrder($request),
             'invoice'                => $this->presentInvoice($request),
             'acceptanceAct'          => $this->presentAcceptanceAct($request),
-            'closing'                => app(\App\Services\ClosingDocumentService::class)->present($request, $user),
-            'permissions' => array_merge(Workflow::permissions($request, $user), [
-                'canViewRepairEstimate' => $user->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
+            'closing'                => app(ClosingDocumentService::class)->present($request, $dto),
+            'permissions' => array_merge(Workflow::permissions($request, $dto), [
+                'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
                     || $request->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
             ]),
         ]), $user);
@@ -275,13 +300,20 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentWorks(RepairRequest $request, User $user): array
+    private function presentWorks(RepairRequest $request, UserDto $dto): array
     {
         $workTypeIds = $request->workLines->pluck('work_type_id')->filter()->unique()->all();
         $timeNormIds = $request->workLines->pluck('time_norm_id')->filter()->unique()->all();
 
-        $workTypes = WorkType::query()->whereIn('id', $workTypeIds)->get()->keyBy('id');
-        $timeNorms = TimeNorm::query()->with(TimeNormDescription::RELATIONS)->whereIn('id', $timeNormIds)->get()->keyBy('id');
+        $workTypes = WorkType::query()
+            ->whereIn('id', $workTypeIds)
+            ->get()
+            ->keyBy('id');
+        $timeNorms = TimeNorm::query()
+            ->with(TimeNormDescription::RELATIONS)
+            ->whereIn('id', $timeNormIds)
+            ->get()
+            ->keyBy('id');
 
         return $request->workLines
             ->map(fn ($work) => array_merge([
@@ -311,20 +343,20 @@ final class ApiPresenter
                 'actualHours' => $work->actual_hours !== null ? (float) $work->actual_hours : null,
                 'comment'     => (string) ($work->comment ?? ''),
                 'changeNote'  => (string) ($work->change_note ?? ''),
-            ], AgentDiscount::visibleTo($user) ? AgentDiscount::workFields($work) : []))
+            ], AgentDiscount::visibleTo($dto->role) ? AgentDiscount::workFields($work) : []))
             ->all();
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentParts(RepairRequest $request, User $user): array
+    private function presentParts(RepairRequest $request, UserDto $dto): array
     {
         $supplierIds = $request->parts->pluck('supplier_id')->filter()->unique()->all();
         $suppliers = Supplier::query()->whereIn('id', $supplierIds)->get()->keyBy('id');
 
         return $request->parts
-            ->map(function ($part) use ($suppliers, $user): array {
+            ->map(function ($part) use ($suppliers, $dto): array {
                 $supplier = $suppliers->get($part->supplier_id);
 
                 return array_merge([
@@ -347,7 +379,7 @@ final class ApiPresenter
                     'approvedVersion' => $part->approved_version,
                     'comment'         => (string) ($part->comment ?? ''),
                     'changeNote'      => (string) ($part->change_note ?? ''),
-                ], AgentDiscount::visibleTo($user) ? AgentDiscount::partFields($part) : []);
+                ], AgentDiscount::visibleTo($dto->role) ? AgentDiscount::partFields($part) : []);
             })
             ->all();
     }

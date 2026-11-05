@@ -22,6 +22,7 @@ use App\Support\DomainInput as Input;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\DTO\UserDto;
 
 /**
  * Документы закрытия ЗР.
@@ -237,18 +238,14 @@ final class ClosingDocumentService
     /**
      * @return array<string, mixed>
      */
-    public function present(RepairRequest $request, ?User $user): array
+    public function present(RepairRequest $request, UserDto $dto): array
     {
-        if ($user === null) {
-            return ['documents' => [], 'transferAct' => null];
-        }
-
         $documents = $request->relationLoaded('documents')
             ? $request->documents
             : $request->documents()->with(['attachment', 'signedAttachment'])->get();
 
         $visible = $documents
-            ->filter(fn (RequestDocument $doc): bool => $doc->type->visibleTo($user->role))
+            ->filter(fn (RequestDocument $doc): bool => $doc->type->visibleTo($dto->role))
             ->sortBy(fn (RequestDocument $doc): int => array_search($doc->type, RequestDocumentType::cases(), true))
             ->values();
 

@@ -10,6 +10,7 @@ use App\Models\RepairRequest;
 use App\Models\User;
 use App\Services\Workflow;
 use PHPUnit\Framework\TestCase;
+use App\DTO\UserDto;
 
 final class WorkflowPermissionsTest extends TestCase
 {
@@ -140,10 +141,14 @@ final class WorkflowPermissionsTest extends TestCase
         $request->stage = RepairStage::from($stage);
         $request->created_by = 999;
 
-        $user = new User();
-        $user->role = $role;
-        $user->id = 1;
+        $dto = new UserDto(
+            userId: 1,
+            tenantId: 1,
+            organizationId: 1,
+            role: $role,
+            organizationName: 'Test Organization',
+        );
 
-        return Workflow::permissions($request, $user);
+        return Workflow::permissions($request, $dto);
     }
 }

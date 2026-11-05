@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\PersonKind;
+use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Models\RepairRequest;
 use App\Models\User;
@@ -18,12 +20,10 @@ use Illuminate\Support\Collection;
 
 final class VehicleService
 {
-    public function previousMileage(
-        Vehicle $vehicle,
-        User $user,
-        ?int $excludeRequestId = null,
-    ): ?int {
-        return $this->previousMileageDetails($vehicle, $user, $excludeRequestId)['mileage'];
+    public function previousMileage(Vehicle $vehicle, User $user, ?int $excludeRequestId = null, ): ?int
+    {
+        $dto = UserDto::fromUserModel($user);
+        return $this->previousMileageDetails($vehicle, $dto, $excludeRequestId)['mileage'];
     }
 
     /**
@@ -32,14 +32,11 @@ final class VehicleService
      *
      * @return array{mileage: int|null, recordedAt: string|null}
      */
-    public function previousMileageDetails(
-        Vehicle $vehicle,
-        User $user,
-        ?int $excludeRequestId = null,
-    ): array {
-        $requestQuery = RepairRequest::forUser($user)
+    public function previousMileageDetails(Vehicle $vehicle, UserDto $dto, ?int $excludeRequestId = null, ): array
+    {
+        $requestQuery = RepairRequest::forUser($dto)
             ->where('vehicle_id', $vehicle->id)
-            ->where('stage', \App\Enums\RepairStage::Closed->value)
+            ->where('stage', RepairStage::Closed->value)
             ->whereRaw("(data->>'mileage') ~ '^[0-9]{1,9}$'");
 
         if ($excludeRequestId !== null) {
@@ -51,19 +48,21 @@ final class VehicleService
             ->latest('id')
             ->first();
 
-        if ($previousRequest !== null
-            && (int) $previousRequest->data['mileage'] >= (int) ($vehicle->baseline_service_mileage ?? -1)) {
+        if ($previousRequest !== null && (int) $previousRequest->data['mileage'] >= (int) ($vehicle->baseline_service_mileage ?? -1)) {
             return [
                 'mileage'    => (int) $previousRequest->data['mileage'],
                 'recordedAt' => $previousRequest->updated_at->toISOString(),
             ];
         }
 
+        $repairRequestQuery = RepairRequest::forUser($dto)
+            ->where('stage', RepairStage::Closed->value)
+            ->select('id');
+
         $record = VehicleServiceRecord::query()
             ->where('vehicle_id', $vehicle->id)
             ->where('is_maintenance', true)
-            ->whereIn('repair_request_id', RepairRequest::forUser($user)
-                ->where('stage', \App\Enums\RepairStage::Closed->value)->select('id'))
+            ->whereIn('repair_request_id', $repairRequestQuery)
             ->orderByDesc('performed_at')
             ->first();
 
@@ -83,13 +82,10 @@ final class VehicleService
     /**
      * @return array<string, mixed>
      */
-    public function present(
-        Vehicle $vehicle,
-        User $user,
-        ?int $excludeRequestId = null,
-    ): array {
+    public function present(Vehicle $vehicle, UserDto $dto, ?int $excludeRequestId = null, ): array
+    {
         $vehicle->loadMissing('organization', 'contacts', 'modelReference.make');
-        $previous = $this->previousMileageDetails($vehicle, $user, $excludeRequestId);
+        $previous = $this->previousMileageDetails($vehicle, $dto, $excludeRequestId);
         $people = $vehicle->contacts
             ->where('active', true)
             ->sortBy(fn (VehicleContact $person): string => $person->fullName())
@@ -117,9 +113,9 @@ final class VehicleService
             'engineType' => $vehicle->modelReference?->engine_type,
             'technicalReference' => $vehicle->modelReference === null ? null
                 : app(VehicleReferenceService::class)->presentModel($vehicle->modelReference),
-            'laborHourRateOfficial' => $user->role === UserRole::Manager
+            'laborHourRateOfficial' => $dto->role === UserRole::Manager
                 && $vehicle->labor_hour_rate_official !== null ? (float) $vehicle->labor_hour_rate_official : null,
-            'laborHourRateOther' => $user->role === UserRole::Manager
+            'laborHourRateOther' => $dto->role === UserRole::Manager
                 && $vehicle->labor_hour_rate_other !== null ? (float) $vehicle->labor_hour_rate_other : null,
             'vin'                   => $vehicle->vin,
             'plate'                 => $vehicle->plate,
@@ -129,7 +125,7 @@ final class VehicleService
             'baselineServiceMileage' => $vehicle->baseline_service_mileage,
             'baselineServiceAt'      => $vehicle->baseline_service_at?->toISOString(),
             'laborRateCoefficient'    => (float) $vehicle->labor_rate_coefficient,
-            'laborHourRate'           => $user->role === UserRole::Manager
+            'laborHourRate'           => $dto->role === UserRole::Manager
                 ? ($vehicle->labor_hour_rate !== null ? (float) $vehicle->labor_hour_rate : null)
                 : null,
             'previousServiceMileage' => $previous['mileage'],
@@ -151,18 +147,10 @@ final class VehicleService
                 ->pluck('fullName')
                 ->implode(', '),
             'permissions'           => [
-                'canEdit' => in_array(
-                    $user->role,
-                    [UserRole::Customer, UserRole::Manager],
-                    true,
-                ),
-                'requiresApproval' => $user->role === UserRole::Customer,
-                'canEditRate'      => $user->role === UserRole::Manager,
-                'canDelete'        => in_array(
-                    $user->role,
-                    [UserRole::Customer, UserRole::Manager],
-                    true,
-                ),
+                'canEdit' => in_array($dto->role, [UserRole::Customer, UserRole::Manager], true),
+                'requiresApproval' => $dto->role === UserRole::Customer,
+                'canEditRate'      => $dto->role === UserRole::Manager,
+                'canDelete'        => in_array($dto->role, [UserRole::Customer, UserRole::Manager], true),
             ],
         ];
     }
@@ -225,12 +213,15 @@ final class VehicleService
     /**
      * @return array<string, mixed>
      */
-    public function statistics(Vehicle $vehicle, User $user): array
+    public function statistics(Vehicle $vehicle, UserDto $dto): array
     {
+        $repairRequestQuery = RepairRequest::forUser($dto)
+            ->where('stage', RepairStage::Closed->value)
+            ->select('id');
+
         $records = VehicleServiceRecord::query()
             ->where('vehicle_id', $vehicle->id)
-            ->whereIn('repair_request_id', RepairRequest::forUser($user)
-                ->where('stage', \App\Enums\RepairStage::Closed->value)->select('id'))
+            ->whereIn('repair_request_id', $repairRequestQuery)
             ->orderByDesc('performed_at')
             ->get();
 
@@ -244,7 +235,7 @@ final class VehicleService
             ->all();
 
         return [
-            'vehicle'    => $this->present($vehicle, $user),
+            'vehicle'    => $this->present($vehicle, $dto),
             'statistics' => [
                 'completedWorks'     => count($history),
                 'maintenanceVisits'  => $this->countMaintenanceVisits($records),

@@ -8,12 +8,15 @@ use App\Models\RequestPart;
 use App\Support\AgentDiscount;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\DTO\UserDto;
 
 /** @mixin RequestPart */
 final class PartResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $dto = UserDto::fromUserModel($request->user());
+
         return array_merge([
             'id'              => $this->uuid,
             'systemId'        => $this->id,
@@ -32,6 +35,6 @@ final class PartResource extends JsonResource
             'approvedVersion' => $this->approved_version,
             'comment'         => (string) ($this->comment ?? ''),
             'changeNote'      => (string) ($this->change_note ?? ''),
-        ], AgentDiscount::visibleTo($request->user()) ? AgentDiscount::partFields($this->resource) : []);
+        ], AgentDiscount::visibleTo($dto->role) ? AgentDiscount::partFields($this->resource) : []);
     }
 }

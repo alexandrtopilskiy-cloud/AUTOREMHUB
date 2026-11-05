@@ -9,12 +9,15 @@ use App\Support\AgentDiscount;
 use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\DTO\UserDto;
 
 /** @mixin RequestWork */
 final class WorkResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $dto = UserDto::fromUserModel($request->user());
+
         return array_merge([
             'id'          => $this->uuid,
             'name'        => $this->name,
@@ -38,7 +41,7 @@ final class WorkResource extends JsonResource
             'actualHours' => $this->actual_hours !== null ? (float) $this->actual_hours : null,
             'comment'     => (string) ($this->comment ?? ''),
             'changeNote'  => (string) ($this->change_note ?? ''),
-        ], AgentDiscount::visibleTo($request->user()) ? AgentDiscount::workFields($this->resource) : []);
+        ], AgentDiscount::visibleTo($dto->role) ? AgentDiscount::workFields($this->resource) : []);
     }
 
     private function getNormLabel(): string

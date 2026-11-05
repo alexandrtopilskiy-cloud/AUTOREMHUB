@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\DTO\UserDto;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -52,14 +53,19 @@ final class Recommendation extends Entity
     }
 
     /** @return Builder<self> */
-    public static function forUser(User $user): Builder
+    public static function forUser(UserDto $dto): Builder
     {
-        $query = self::query()->where('tenant_id', $user->tenantId());
-        if ($user->role === UserRole::Customer) {
-            $query->where('customer_organization_id', $user->organization_id);
-        } elseif ($user->role === UserRole::Station) {
-            $query->whereIn('vehicle_id', RepairRequest::forUser($user)->select('vehicle_id')->whereNotNull('vehicle_id'));
+        $query = self::query()->where('tenant_id', $dto->tenantId);
+        if ($dto->role === UserRole::Customer) {
+            $query->where('customer_organization_id', $dto->organizationId);
+        } elseif ($dto->role === UserRole::Station) {
+            $vehicleSubquery = RepairRequest::forUser($dto)
+                ->select('vehicle_id')
+                ->whereNotNull('vehicle_id');
+
+            $query->whereIn('vehicle_id', $vehicleSubquery);
         }
+
         return $query;
     }
 }

@@ -176,7 +176,6 @@ final class UserDirectoryImporter
                 }
 
                 $this->audit->record(
-                    $tenant->id,
                     null,
                     CatalogKind::Users,
                     $user,
@@ -210,7 +209,6 @@ final class UserDirectoryImporter
                     $legacyUser->tokens()->delete();
                     $this->documentLocks->releaseAll($legacyUser);
                     $this->audit->record(
-                        $tenant->id,
                         null,
                         CatalogKind::Users,
                         $legacyUser,
@@ -510,7 +508,6 @@ final class UserDirectoryImporter
         $user->tokens()->delete();
         $this->documentLocks->releaseAll($user);
         $this->audit->record(
-            $tenant->id,
             null,
             CatalogKind::Users,
             $user,

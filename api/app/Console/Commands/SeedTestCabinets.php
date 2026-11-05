@@ -85,7 +85,6 @@ final class SeedTestCabinets extends Command
                 }
 
                 $audit->record(
-                    $tenant->id,
                     null,
                     $cabinet['kind'] === OrganizationKind::Station
                         ? CatalogKind::Stations

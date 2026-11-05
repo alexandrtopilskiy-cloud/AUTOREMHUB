@@ -20,6 +20,7 @@ use App\Models\RequestWork;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Support\DomainInput as Input;
+use App\DTO\UserDto;
 
 /**
  * Изменение работ и запчастей на стадии «В работе».
@@ -118,7 +119,7 @@ final class WorkChangeService
      *
      * @return array<int, array<string, mixed>>
      */
-    public function diff(RepairRequest $request, ?User $viewer = null): array
+    public function diff(RepairRequest $request, ?UserRole $role = null): array
     {
         $state = $request->work_change;
 
@@ -127,7 +128,7 @@ final class WorkChangeService
         }
 
         $removedNotes = is_array($state['removedNotes'] ?? null) ? $state['removedNotes'] : [];
-        $hideSupplier = $viewer?->role === UserRole::Customer;
+        $hideSupplier = $role === UserRole::Customer;
         $works = $request->relationLoaded('workLines')
             ? $request->workLines
             : $request->workLines()->orderBy('id')->get();
@@ -139,7 +140,11 @@ final class WorkChangeService
             ...array_column($state['baseline']['parts'] ?? [], 'supplier_id'),
             ...$parts->pluck('supplier_id')->all(),
         ]);
-        $suppliers = $hideSupplier ? collect() : Supplier::query()->whereIn('id', $supplierIds)->pluck('name', 'id');
+        $suppliers = $hideSupplier
+            ? collect()
+            : Supplier::query()
+                ->whereIn('id', $supplierIds)
+                ->pluck('name', 'id');
 
         $fields = self::PART_FIELDS;
         if ($hideSupplier) {
@@ -171,7 +176,7 @@ final class WorkChangeService
      *
      * @return array<string, mixed>|null
      */
-    public function present(RepairRequest $request, User $viewer): ?array
+    public function present(RepairRequest $request, UserDto $dto): ?array
     {
         $status = WorkChangeStatus::forRequest($request);
 
@@ -180,7 +185,7 @@ final class WorkChangeService
         }
 
         $state = $request->work_change;
-        $items = $this->diff($request, $viewer);
+        $items = $this->diff($request, $dto->role);
 
         // Правились только комментарии — показывать нечего.
         if ($items === [] && $status === WorkChangeStatus::Editing) {
@@ -188,7 +193,7 @@ final class WorkChangeService
         }
 
         // Заказчик видит изменения только после согласования УК.
-        if ($viewer->role === UserRole::Customer && $status !== WorkChangeStatus::CustomerReview) {
+        if ($dto->role === UserRole::Customer && $status !== WorkChangeStatus::CustomerReview) {
             $items = [];
         }
 

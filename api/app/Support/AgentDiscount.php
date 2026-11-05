@@ -23,9 +23,9 @@ final class AgentDiscount
 {
     private const MONEY_SCALE = 2;
 
-    public static function visibleTo(?User $user): bool
+    public static function visibleTo(UserRole $role): bool
     {
-        return $user !== null && $user->role !== UserRole::Customer;
+        return $role !== UserRole::Customer;
     }
 
     /**

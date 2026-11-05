@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\OrganizationKind;
 use App\Enums\UserRole;
@@ -98,19 +99,19 @@ final class UserDirectoryService
      */
     public function create(User $actor, array $payload): array
     {
+        $dto = UserDto::fromUserModel($actor);
         $this->assertManager($actor);
         $payload = $this->validate($actor, $payload, true);
 
-        return DB::transaction(function () use ($actor, $payload): array {
-            $organization = $this->organization($actor, $payload['organizationId']);
+        return DB::transaction(function () use ($dto, $payload): array {
+            $organization = $this->organization($dto->tenantId, $payload['organizationId']);
             $user = new User();
 
             $this->fill($user, $organization, $payload, true);
             $user->save();
 
             $this->audit->record(
-                $actor->tenantId(),
-                $actor,
+                $dto,
                 CatalogKind::Users,
                 $user,
                 'create',
@@ -129,6 +130,7 @@ final class UserDirectoryService
      */
     public function update(User $actor, User $user, array $payload): array
     {
+        $dto = UserDto::fromUserModel($actor);
         $this->assertManager($actor);
 
         if ($user->organization->tenant_id !== $actor->tenantId()) {
@@ -136,13 +138,13 @@ final class UserDirectoryService
         }
 
         $this->documentLocks->assertAvailable(
-            $actor,
+            $dto,
             'catalog_record',
             CatalogKind::Users->value . ':' . $user->uuid,
         );
         $payload = $this->validate($actor, $payload, false, $user);
 
-        return DB::transaction(function () use ($actor, $user, $payload): array {
+        return DB::transaction(function () use ($dto, $user, $payload): array {
             $user = User::query()
                 ->with('organization')
                 ->whereKey($user->id)
@@ -150,7 +152,7 @@ final class UserDirectoryService
                 ->firstOrFail();
             $before = $this->auditSnapshot($user);
             $organization = array_key_exists('organizationId', $payload)
-                ? $this->organization($actor, $payload['organizationId'])
+                ? $this->organization($dto->tenantId, $payload['organizationId'])
                 : $user->organization;
             $passwordChanged = isset($payload['password']);
 
@@ -172,8 +174,7 @@ final class UserDirectoryService
             $before['password_changed'] = false;
 
             $this->audit->record(
-                $actor->tenantId(),
-                $actor,
+                $dto,
                 CatalogKind::Users,
                 $user,
                 'update',
@@ -264,7 +265,7 @@ final class UserDirectoryService
         );
 
         if (isset($validated['organizationId'])) {
-            $this->organization($actor, $validated['organizationId']);
+            $this->organization($actor->tenantId(), $validated['organizationId']);
         }
 
         return $validated;
@@ -320,10 +321,10 @@ final class UserDirectoryService
         ]))) ?: $user->login;
     }
 
-    private function organization(User $actor, string $uuid): Organization
+    private function organization(int $tenantId, string $uuid): Organization
     {
         return Organization::query()
-            ->where('tenant_id', $actor->tenantId())
+            ->where('tenant_id', $tenantId)
             ->where('uuid', $uuid)
             ->firstOrFail();
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\AttachmentMime;
 use App\Enums\AttachmentPurpose;
 use App\Enums\UserRole;
@@ -29,14 +30,14 @@ final class AttachmentController
         private readonly RepairRequestService $service,
         private readonly MediaService $media,
         private readonly ApiPresenter $apiPresenter,
-    ) {
-    }
+    ) {}
 
     public function store(StoreAttachmentRequest $request, string $id): JsonResponse
     {
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
+        $repairRequest = RepairRequest::resolveFor($dto, $id);
 
-        $repairRequest = RepairRequest::resolveFor($user, $id);
         $this->service->flag($repairRequest, $user, 'canUpload');
 
         $file = $request->file('file');
@@ -74,12 +75,12 @@ final class AttachmentController
 
     public function url(Request $request, string $attachmentId): JsonResponse
     {
+        $dto = UserDto::fromUserModel($request->user());
+        $repairRequestQuery = RepairRequest::forUser($dto)->select('id');
+
         $attachment = Attachment::query()
             ->where('uuid', $attachmentId)
-            ->whereIn(
-                'repair_request_id',
-                RepairRequest::forUser($request->user())->select('id'),
-            )
+            ->whereIn('repair_request_id', $repairRequestQuery)
             ->firstOrFail();
 
         return response()->json([
@@ -164,20 +165,14 @@ final class AttachmentController
         return $attachmentMime->extension();
     }
 
-    private function assertPurposeMatchesStage(
-        RepairRequest $repairRequest,
-        AttachmentPurpose $purpose,
-    ): void
+    private function assertPurposeMatchesStage(RepairRequest $repairRequest, AttachmentPurpose $purpose, ): void
     {
         if (!$purpose->allowsStage($repairRequest->stage)) {
             Input::fail('Назначение файла не соответствует текущему этапу');
         }
     }
 
-    private function assertPurposeAllowedForRole(
-        UserRole $role,
-        AttachmentPurpose $purpose,
-    ): void
+    private function assertPurposeAllowedForRole(UserRole $role, AttachmentPurpose $purpose, ): void
     {
         if ($role === UserRole::Manager) {
             throw new ApiException(
@@ -194,12 +189,12 @@ final class AttachmentController
 
     public function download(Request $request, string $attachmentId): StreamedResponse
     {
+        $dto = UserDto::fromUserModel($request->user());
+        $repqirRequestQuery = RepairRequest::forUser($dto)->select('id');
+
         $attachment = Attachment::query()
             ->where('uuid', $attachmentId)
-            ->whereIn(
-                'repair_request_id',
-                RepairRequest::forUser($request->user())->select('id'),
-            )
+            ->whereIn('repair_request_id', $repqirRequestQuery)
             ->firstOrFail();
 
         return $this->media->download($attachment);

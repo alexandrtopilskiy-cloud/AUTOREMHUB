@@ -113,7 +113,6 @@ final class SeedTestUsers extends Command
                     'access_rights'     => UserDirectoryService::defaultRights($organization->kind),
                 ]);
                 $audit->record(
-                    $tenant->id,
                     null,
                     CatalogKind::Users,
                     $user,

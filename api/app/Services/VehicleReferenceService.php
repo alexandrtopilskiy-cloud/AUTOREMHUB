@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
@@ -257,7 +258,9 @@ final class VehicleReferenceService
      */
     public function create(User $user, array $payload, bool $rejectDuplicate = false): array
     {
-        if (!in_array($user->role, [UserRole::Customer, UserRole::Manager], true)) {
+        $dto = UserDto::fromUserModel($user);
+
+        if (!in_array($dto->role, [UserRole::Customer, UserRole::Manager], true)) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -333,7 +336,7 @@ final class VehicleReferenceService
             );
         }
 
-        return DB::transaction(function () use ($user, $payload, $rejectDuplicate): array {
+        return DB::transaction(function () use ($dto, $payload, $rejectDuplicate): array {
             $makeName = self::cleanName((string) $payload['make']);
             $modelName = self::cleanName((string) $payload['model']);
 
@@ -381,8 +384,7 @@ final class VehicleReferenceService
                 ));
 
                 $this->audit->record(
-                    $user->tenantId(),
-                    $user,
+                    $dto,
                     CatalogKind::VehicleModels,
                     $model,
                     'create',
