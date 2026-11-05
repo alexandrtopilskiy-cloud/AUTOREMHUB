@@ -214,6 +214,19 @@ test("Options API component rendering and interactive methods", async (context) 
                 assert.doesNotMatch(addButton, /disabled/);
                 assert.doesNotMatch(html, /Добавить позицию/);
                 assert.match(html, /05[\s\S]*Фото, видео и документы/);
+                // Вкладки ЗР: шесть разделов, при открытии активна первая.
+                const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>([^<]*)<\/button>/g)];
+                assert.deepEqual(tabs.map((m) => m[1]), [
+                    "Автомобиль и причина обращения",
+                    "Работы и материалы",
+                    "Акты приёма-передачи",
+                    "Документы по заявке",
+                    "Фото, видео и документы",
+                    "Взаиморасчёты",
+                ]);
+                assert.match(tabs[0][0], /aria-selected="true"/);
+                assert.ok(tabs.slice(1).every((m) => /aria-selected="false"/.test(m[0])));
+                assert.match(html, /id="zr-tab-works"[^>]*style="display:none;?"|style="display:none;?"[^>]*id="zr-tab-works"/);
                 assert.doesNotMatch(
                     html,
                     /Комментарий к решению необязателен; вложения не требуются/,

@@ -2109,10 +2109,10 @@ export default {
                         </template>
 
                         <template v-else-if="current">
-                            <div class="document-toolbar">
-                                <button class="ghost-btn" @click="openList()">
-                                    ← К списку
-                                </button>
+                            <div
+                                v-if="current.permissions?.canDeleteDraft"
+                                class="document-toolbar"
+                            >
                                 <button
                                     v-if="current.permissions?.canDeleteDraft"
                                     class="danger-btn"
