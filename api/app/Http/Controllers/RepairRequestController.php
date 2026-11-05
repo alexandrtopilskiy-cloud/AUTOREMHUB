@@ -9,6 +9,7 @@ use App\DTO\CustomerSlotDecisionDto;
 use App\DTO\StationDecisionDto;
 use App\DTO\TransitionDto;
 use App\DTO\UpdateRepairRequestDto;
+use App\DTO\UserDto;
 use App\Enums\TransitionAction;
 use App\Http\Requests\AcceptVehicleRequest;
 use App\Http\Requests\CustomerSlotDecisionRequest;
@@ -41,7 +42,9 @@ final class RepairRequestController
         $this->authorize('viewAny', RepairRequest::class);
 
         $user = $request->user();
-        $requests = RepairRequest::forUser($user)->latest('id')->get();
+        $dto = UserDto::fromUserModel($user);
+        $requests = RepairRequest::forUser($dto)->latest('id')->get();
+
         $this->apiPresenter->preloadRecommendations($requests, $user);
 
         return new RepairRequestCollection($requests);
@@ -49,7 +52,8 @@ final class RepairRequestController
 
     public function show(Request $request, string $id): RepairRequestResource
     {
-        $document = RepairRequest::resolveFor($request->user(), $id);
+        $dto = UserDto::fromUserModel($request->user());
+        $document = RepairRequest::resolveFor($dto, $id);
         $this->authorize('view', $document);
 
         return new RepairRequestResource($document);
@@ -67,7 +71,8 @@ final class RepairRequestController
 
     public function update(UpdateRepairRequestRequest $request, string $id): RepairRequestResource
     {
-        $document = RepairRequest::resolveFor(user: $request->user(), key: $id);
+        $userDto = UserDto::fromUserModel($request->user());
+        $document = RepairRequest::resolveFor(dto: $userDto, key: $id);
         $this->authorize('update', $document);
 
         $dto = UpdateRepairRequestDto::fromRequest($request, $id);
@@ -78,7 +83,8 @@ final class RepairRequestController
 
     public function destroy(Request $request, string $id): JsonResponse
     {
-        $document = RepairRequest::resolveFor($request->user(), $id);
+        $dto = UserDto::fromUserModel($request->user());
+        $document = RepairRequest::resolveFor($dto, $id);
         $this->authorize('delete', $document);
 
         $deleted = $this->service->deleteDrafts(user: $request->user(), ids:[$document->uuid]);
@@ -140,7 +146,8 @@ final class RepairRequestController
 
     public function history(Request $request, string $id): RepairRequestHistoryResource
     {
-        $document = RepairRequest::resolveFor($request->user(), $id);
+        $dto = UserDto::fromUserModel($request->user());
+        $document = RepairRequest::resolveFor($dto, $id);
         $this->authorize('view', $document);
 
         return new RepairRequestHistoryResource($document);
@@ -148,7 +155,8 @@ final class RepairRequestController
 
     public function workOrder(Request $request, string $id): WorkOrderResource
     {
-        $document = RepairRequest::resolveFor($request->user(), $id);
+        $dto = UserDto::fromUserModel($request->user());
+        $document = RepairRequest::resolveFor($dto, $id);
         $this->authorize('view', $document);
 
         return new WorkOrderResource($document);

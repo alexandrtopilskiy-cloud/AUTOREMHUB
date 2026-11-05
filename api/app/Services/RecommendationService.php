@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\Recommendation;
@@ -28,7 +29,9 @@ final class RecommendationService
 
     public function forVehicle(User $user, string $vehicleId): array
     {
-        return Recommendation::forUser($user)
+        $dto = UserDto::fromUserModel($user);
+
+        return Recommendation::forUser($dto)
             ->whereIn('vehicle_id', Vehicle::query()->select('id')->where('uuid', $vehicleId))
             ->with(['items', 'vehicle'])
             ->orderByDesc('id')
@@ -43,7 +46,9 @@ final class RecommendationService
      */
     public function all(User $user): array
     {
-        return Recommendation::forUser($user)
+        $dto = UserDto::fromUserModel($user);
+
+        return Recommendation::forUser(dto: $dto)
             ->with(['items', 'vehicle'])
             ->orderByDesc('id')
             ->get()
@@ -171,8 +176,9 @@ final class RecommendationService
         ]);
 
         return DB::transaction(function () use ($user, $documents, $requestId, $requestRevision): array {
-            $existing = $requestId ? RepairRequest::resolveFor($user, $requestId, true) : null;
-            $docs = Recommendation::forUser($user)
+            $dto = UserDto::fromUserModel($user);
+            $existing = $requestId ? RepairRequest::resolveFor($dto, $requestId, true) : null;
+            $docs = Recommendation::forUser($dto)
                 ->whereIn('uuid', array_column($documents, 'id'))
                 ->orderBy('id')
                 ->lockForUpdate()
@@ -188,7 +194,7 @@ final class RecommendationService
             $first = $docs->first();
 
             foreach ($docs as $doc) {
-                $this->locks->assertAvailable($user, 'recommendation', $doc->uuid);
+                $this->locks->assertAvailable($dto, 'recommendation', $doc->uuid);
                 $selection = $selections->get($doc->uuid);
 
                 if ($doc->revision !== (int) $selection['revision']) {

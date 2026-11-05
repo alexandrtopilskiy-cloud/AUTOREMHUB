@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\DTO\UserDto;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -122,23 +123,22 @@ final class Vehicle extends Entity
         return $this->hasMany(VehicleContact::class);
     }
 
-    public static function forUser(User $user): Builder
+    public static function forUser(UserDto $dto): Builder
     {
         $query = self::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $dto->tenantId)
             ->where('active', true);
 
-        if ($user->role === UserRole::Customer) {
-            $query->where('organization_id', $user->organization_id);
+        if ($dto->role === UserRole::Customer) {
+            $query->where('organization_id', $dto->organizationId);
         }
 
-        if ($user->role === UserRole::Station) {
-            $query->whereIn(
-                'id',
-                RepairRequest::forUser($user)
-                    ->select('vehicle_id')
-                    ->whereNotNull('vehicle_id')
-            );
+        if ($dto->role === UserRole::Station) {
+            $vehicleSubquery = RepairRequest::forUser($dto)
+                ->select('vehicle_id')
+                ->whereNotNull('vehicle_id');
+
+            $query->whereIn('id', $vehicleSubquery);
         }
 
         return $query;

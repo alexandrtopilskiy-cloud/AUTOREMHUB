@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\DTO\UserDto;
 use App\Enums\Edo\EdoDocumentType;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
@@ -202,44 +203,45 @@ final class RepairRequest extends Entity
             ->where('kind', OrganizationKind::Manager);
     }
 
-    public static function forUser(User $user): Builder
+    public static function forUser(UserDto $dto): Builder
     {
-        $query = self::query()->where('tenant_id', $user->tenantId());
+        $query = self::query()->where('tenant_id', $dto->tenantId);
 
-        if ($user->role === UserRole::Customer) {
+        if ($dto->role === UserRole::Customer) {
             $query
-                ->where('customer_organization_id', $user->organization_id)
-                ->where(function (Builder $q) use ($user): void {
+                ->where('customer_organization_id', $dto->organizationId)
+                ->where(function (Builder $q) use ($dto): void {
                     $q
                         ->where('stage', '>', RepairStage::Draft->value)
-                        ->orWhere('created_by', $user->id);
+                        ->orWhere('created_by', $dto->userId);
                 });
         }
 
-        if ($user->role === UserRole::Station) {
-            $query->where(function (Builder $stationScope) use ($user): void {
-                $stationScope->where('created_by', $user->id)->orWhereIn(
-                    'assigned_station_id',
-                    Station::query()
+        if ($dto->role === UserRole::Station) {
+            $query->where(function (Builder $stationScope) use ($dto): void {
+                $stationSubquery = Station::query()
                     ->select('id')
-                    ->where('organization_id', $user->organization_id),
-                );
+                    ->where('organization_id', $dto->organizationId);
+
+                $stationScope
+                    ->where('created_by', $dto->userId)
+                    ->orWhereIn('assigned_station_id', $stationSubquery);
             });
         }
 
-        if ($user->role === UserRole::Manager) {
-            $query->where(function (Builder $drafts) use ($user): void {
+        if ($dto->role === UserRole::Manager) {
+            $query->where(function (Builder $drafts) use ($dto): void {
                 $drafts->where('stage', '>', RepairStage::Draft->value)
-                    ->orWhere('created_by', $user->id);
+                    ->orWhere('created_by', $dto->userId);
             });
         }
 
         return $query;
     }
 
-    public static function resolveFor(User $user, string $key, bool $lock = false): self
+    public static function resolveFor(UserDto $dto, string $key, bool $lock = false): self
     {
-        $query = self::forUser($user);
+        $query = self::forUser($dto);
 
         if (Str::isUuid($key)) {
             $query->where('uuid', $key);

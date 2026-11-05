@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Exceptions\ApiException;
 use App\Models\DocumentLock;
 use App\Models\Organization;
@@ -286,7 +287,7 @@ final class DocumentLockServiceTest extends TestCase
     public function test_assert_available_passes_when_no_lock(): void
     {
         $this->service()->assertAvailable(
-            $this->manager,
+            UserDto::fromUserModel($this->manager),
             'catalog_record',
             'workTypes:abc-uuid',
         );
@@ -302,7 +303,7 @@ final class DocumentLockServiceTest extends TestCase
         ]);
 
         $this->service()->assertAvailable(
-            $this->manager,
+            UserDto::fromUserModel($this->manager),
             'catalog_record',
             'workTypes:abc-uuid',
         );
@@ -321,7 +322,7 @@ final class DocumentLockServiceTest extends TestCase
 
         try {
             $this->service()->assertAvailable(
-                $other,
+                UserDto::fromUserModel($other),
                 'catalog_record',
                 'workTypes:abc-uuid',
             );
@@ -346,7 +347,7 @@ final class DocumentLockServiceTest extends TestCase
 
         $other = $this->makeUser($this->managerOrg, 'manager');
         $this->service()->assertAvailable(
-            $other,
+            UserDto::fromUserModel($other),
             'catalog_record',
             'workTypes:abc-uuid',
         );

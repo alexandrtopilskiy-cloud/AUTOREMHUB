@@ -44,10 +44,8 @@ enum RepairStage: int
     {
         return match ($this) {
             self::Draft, self::CustomerApproval => UserRole::Customer,
-            self::ManagerRouting, self::Issued, self::CustomerPayment,
-            self::StationPayment => UserRole::Manager,
-            self::StationApproval, self::WaitingVehicle,
-            self::RepairInProgress, self::Ready => UserRole::Station,
+            self::ManagerRouting, self::Issued, self::CustomerPayment, self::StationPayment => UserRole::Manager,
+            self::StationApproval, self::WaitingVehicle, self::RepairInProgress, self::Ready => UserRole::Station,
             self::Closed => null,
         };
     }
@@ -93,5 +91,29 @@ enum RepairStage: int
     public static function values(): array
     {
         return array_column(self::cases(), 'value');
+    }
+
+    /**
+     * Стадии, которые включаются в закрывающий отчет.
+     *
+     * @return array<int, self>
+     */
+    public static function reportStages(): array
+    {
+        return [
+            self::CustomerPayment,
+            self::StationPayment,
+            self::Closed,
+        ];
+    }
+
+    /**
+     * Значения для SQL-запроса (int[]).
+     *
+     * @return array<int, int>
+     */
+    public static function reportStageValues(): array
+    {
+        return array_column(self::reportStages(), 'value');
     }
 }

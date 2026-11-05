@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Enums\RequestDocumentType;
 use App\Enums\UserRole;
@@ -22,20 +23,25 @@ use Illuminate\Http\Request;
  */
 final class ReportController
 {
-    public const STAGES = [
-        RepairStage::CustomerPayment,
-        RepairStage::StationPayment,
-        RepairStage::Closed,
-    ];
-
     public function requests(Request $request, RepairRequestCalculator $calculator): JsonResponse
     {
         $user = $request->user();
         $role = $user->role;
+        $dto = UserDto::fromUserModel($user);
+        $relations = [
+            'vehicleRecord',
+            'stationRecord',
+            'customerOrganization',
+            'periods',
+            'documents',
+            'workLines',
+            'parts',
+            'reasonRecord',
+        ];
 
-        $rows = RepairRequest::forUser($user)
-            ->whereIn('stage', array_map(static fn (RepairStage $stage): int => $stage->value, self::STAGES))
-            ->with(['vehicleRecord', 'stationRecord', 'customerOrganization', 'periods', 'documents', 'workLines', 'parts', 'reasonRecord'])
+        $rows = RepairRequest::forUser($dto)
+            ->whereIn('stage', RepairStage::reportStageValues())
+            ->with($relations)
             ->latest('id')
             ->get()
             ->map(function (RepairRequest $item) use ($role, $calculator): array {
@@ -83,7 +89,13 @@ final class ReportController
 
         return response()->json([
             'rows'   => $rows,
-            'stages' => array_map(static fn (RepairStage $stage): array => ['value' => $stage->value, 'label' => $stage->label()], self::STAGES),
+            'stages' => array_map(
+                static fn (RepairStage $stage): array => [
+                    'value' => $stage->value,
+                    'label' => $stage->label()
+                ],
+                RepairStage::reportStages()
+            ),
         ]);
     }
 }

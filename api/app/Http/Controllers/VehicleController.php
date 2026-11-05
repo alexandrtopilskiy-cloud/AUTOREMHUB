@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Http\Requests\IndexVehicleRequest;
 use App\Http\Requests\LookupVehicleRequest;
 use App\Models\RepairRequest;
@@ -20,23 +21,22 @@ final class VehicleController
 {
     public function __construct(
         private readonly VehicleService $service,
-    ) {
-    }
+    ) {}
 
     public function index(IndexVehicleRequest $request): JsonResponse
     {
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
         $term = trim((string) $request->validated('q', ''));
         $excludeRequestId = null;
 
         if ($request->filled('excludeRequest')) {
-            $excludeRequestId = RepairRequest::resolveFor(
-                $user,
-                (string) $request->validated('excludeRequest'),
-            )->id;
+            $key = (string) $request->validated('excludeRequest');
+
+            $excludeRequestId = RepairRequest::resolveFor($dto, $key)->id;
         }
 
-        $query = Vehicle::forUser($user)->with('organization');
+        $query = Vehicle::forUser($dto)->with('organization');
 
         if ($term !== '') {
             $this->applySearch($query, $term);
@@ -49,7 +49,7 @@ final class VehicleController
             ->map(
                 fn (Vehicle $vehicle) => $this->service->present(
                     $vehicle,
-                    $user,
+                    $dto,
                     $excludeRequestId,
                 ),
             );
@@ -62,8 +62,9 @@ final class VehicleController
         $user = $request->user();
         $vin = $request->validated('vin');
         $plate = $request->validated('plate');
+        $dto = UserDto::fromUserModel($user);
 
-        $query = Vehicle::forUser($user);
+        $query = Vehicle::forUser(dto: $dto);
 
         if (is_string($vin) && $vin !== '') {
             $query->where('vin', strtoupper(trim($vin)));
@@ -84,7 +85,7 @@ final class VehicleController
         }
 
         return response()->json([
-            'vehicle' => $this->service->present($vehicle, $user),
+            'vehicle' => $this->service->present($vehicle, $dto),
         ]);
     }
 
@@ -95,13 +96,14 @@ final class VehicleController
         }
 
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
 
-        $vehicle = Vehicle::forUser($user)
+        $vehicle = Vehicle::forUser($dto)
             ->where('uuid', $id)
             ->firstOrFail();
 
         return response()->json([
-            'vehicle' => $this->service->present($vehicle, $user),
+            'vehicle' => $this->service->present($vehicle, $dto),
         ]);
     }
 
@@ -112,13 +114,14 @@ final class VehicleController
         }
 
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
 
-        $vehicle = Vehicle::forUser($user)
+        $vehicle = Vehicle::forUser($dto)
             ->where('uuid', $id)
             ->firstOrFail();
 
         return response()->json(
-            $this->service->statistics($vehicle, $user)
+            $this->service->statistics($vehicle, $dto)
         );
     }
 
@@ -128,7 +131,9 @@ final class VehicleController
             abort(404);
         }
 
-        $vehicle = Vehicle::forUser($request->user())
+        $dto = UserDto::fromUserModel($request->user());
+
+        $vehicle = Vehicle::forUser($dto)
             ->where('uuid', $id)
             ->firstOrFail();
 
@@ -143,7 +148,9 @@ final class VehicleController
             abort(404);
         }
 
-        $vehicle = Vehicle::forUser($request->user())
+        $dto = UserDto::fromUserModel($request->user());
+
+        $vehicle = Vehicle::forUser($dto)
             ->where('uuid', $id)
             ->firstOrFail();
 

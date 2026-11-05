@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\Edo\EdoDocumentType;
 use App\Exceptions\ApiException;
 use App\Http\Requests\Edo\PrepareEdoDocumentRequest;
 use App\Http\Requests\Edo\SignAndSendEdoDocumentRequest;
-use App\Http\Resources\EdoDocumentCollection;
 use App\Http\Resources\EdoDocumentResource;
 use App\Http\Resources\EdoPreparedDocumentResource;
 use App\Http\Requests\Edo\AcceptTitleEdoDocumentRequest;
@@ -83,12 +83,12 @@ final class EdoDocumentController
     public function prepare(PrepareEdoDocumentRequest $request, string $id): JsonResponse
     {
         $user = $request->user();
-
-        $repairRequest = RepairRequest::resolveFor($user, $id);
+        $dto = UserDto::fromUserModel($user);
+        $repairRequest = RepairRequest::resolveFor($dto, $id);
 
         $counterparty = Organization::query()
             ->where('id', $request->integer('counterparty_organization_id'))
-            ->where('tenant_id', $repairRequest->tenant_id)
+            ->where('tenant_id', $dto->tenantId)
             ->firstOrFail();
 
         if ($counterparty->edo_edi_code === null || $counterparty->edo_edi_code === '') {
@@ -204,7 +204,8 @@ final class EdoDocumentController
         string $id,
     ): JsonResponse {
         $user = $request->user();
-        $repairRequest = RepairRequest::resolveFor($user, $id);
+        $dto = UserDto::fromUserModel($user);
+        $repairRequest = RepairRequest::resolveFor($dto, $id);
 
         $prepared = $this->service->prepareInvoiceForManagerToCustomer(
             request:      $repairRequest,
@@ -222,7 +223,8 @@ final class EdoDocumentController
         string $id,
     ): JsonResponse {
         $user = $request->user();
-        $repairRequest = RepairRequest::resolveFor($user, $id);
+        $dto = UserDto::fromUserModel($user);
+        $repairRequest = RepairRequest::resolveFor($dto, $id);
 
         $baseUuid = (string) $request->string('base_document_uuid');
 

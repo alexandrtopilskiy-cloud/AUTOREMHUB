@@ -120,7 +120,6 @@ final class CreateUser extends Command
             'access_rights'     => $rights,
         ]);
         $audit->record(
-            $organization->tenant_id,
             null,
             CatalogKind::Users,
             $user,

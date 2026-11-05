@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\OrganizationKind;
 use App\Enums\UserRole;
@@ -13,6 +14,7 @@ use App\Models\CatalogPart;
 use App\Models\MaintenanceRegulation;
 use App\Models\MaintenanceRegulationItem;
 use App\Models\Organization;
+use App\Models\PartManufacturer;
 use App\Models\ServiceReason;
 use App\Models\Station;
 use App\Models\Supplier;
@@ -121,14 +123,15 @@ final class CatalogService
      */
     public function reference(User $user): array
     {
-        $tenantId = $user->tenantId();
+        $dto = UserDto::fromUserModel($user);
+
         $reasonQuery = ServiceReason::query()
-            ->where('tenant_id', $tenantId)
+            ->where('tenant_id', $dto->tenantId)
             ->where('active', true);
 
-        if ($user->role === UserRole::Customer) {
+        if ($dto->role === UserRole::Customer) {
             $rootIds = ServiceReason::query()
-                ->where('tenant_id', $tenantId)
+                ->where('tenant_id', $dto->tenantId)
                 ->whereIn('code', ['maintenance', 'diagnostics'])
                 ->pluck('id');
 
@@ -142,7 +145,7 @@ final class CatalogService
         $reasons = $reasonQuery->orderBy('id')->get();
 
         $workTypes = WorkType::query()
-            ->where('tenant_id', $tenantId)
+            ->where('tenant_id', $dto->tenantId)
             ->where('active', true)
             ->get();
 
@@ -159,11 +162,11 @@ final class CatalogService
         $normsByWorkType = $timeNorms->groupBy('work_type_id');
 
         // Дефолтная applicability — один раз
-        $defaultApplicability = $this->defaultApplicability($tenantId);
+        $defaultApplicability = $this->defaultApplicability($dto->tenantId);
 
         // 2. laborHourRate — один раз
-        $laborRate = $user->role === UserRole::Manager
-            ? $this->laborHourRateSummary($tenantId)
+        $laborRate = $dto->role === UserRole::Manager
+            ? $this->laborHourRateSummary($dto->tenantId)
             : null;
 
         // 3. Мапа parent_id → parent (чтобы presentReason не делал запрос)
@@ -174,7 +177,7 @@ final class CatalogService
         foreach ($workTypes as $workType) {
             $presentedWorkTypes[] = $this->presentWorkType(
                 $workType,
-                $user,
+                $dto->role,
                 $normsByWorkType->get($workType->id, collect()),
                 $defaultApplicability,
                 $laborRate,
@@ -194,7 +197,7 @@ final class CatalogService
                 $this->presentTimeNorm($norm, $defaultApplicability),
                 [
                     'permissions' => [
-                        'canEdit'       => $user->role === UserRole::Manager,
+                        'canEdit'       => $dto->role === UserRole::Manager,
                         'canCreateOnly' => false,
                     ],
                 ],
@@ -203,12 +206,20 @@ final class CatalogService
 
         return [
             'supplierLegalForms' => collect(config('supplier_legal_forms'))->map(fn ($form, $code) => ['id' => $code, ...$form])->values()->all(),
-            'partManufacturers' => $user->role === UserRole::Customer ? [] : \App\Models\PartManufacturer::query()->where('tenant_id', $tenantId)->where('status', 'approved')->where('active', true)->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $user))->all(),
+            'partManufacturers' => $dto->role === UserRole::Customer
+                ? []
+                : PartManufacturer::query()
+                    ->where('tenant_id', $dto->tenantId)
+                    ->where('status', 'approved')
+                    ->where('active', true)
+                    ->get()
+                    ->map(fn ($row) => app(PartManufacturerService::class)->present($row, $dto))
+                    ->all(),
             'partUnits'     => config('sto.part_units'),
             'workGroups'    => config('sto.work_groups'),
-            'organizations' => $user->role === UserRole::Manager
+            'organizations' => $dto->role === UserRole::Manager
                 ? Organization::query()
-                    ->where('tenant_id', $tenantId)
+                    ->where('tenant_id', $dto->tenantId)
                     ->orderBy('kind')
                     ->orderBy('name')
                     ->get()
@@ -219,7 +230,7 @@ final class CatalogService
                     ])
                     ->all()
                 : [],
-            'accessRights'  => $user->role === UserRole::Manager
+            'accessRights'  => $dto->role === UserRole::Manager
                 ? UserDirectoryService::rightOptions()
                 : [],
             'reasons'       => $this->presentReasons($reasons, $reasonsById, $user),
@@ -228,59 +239,60 @@ final class CatalogService
             'normApplicabilities' => $this->presentMany(
                 CatalogKind::NormApplicabilities,
                 TimeNormApplicability::query()
-                    ->where('tenant_id', $tenantId)
+                    ->where('tenant_id', $dto->tenantId)
                     ->where('active', true)
                     ->orderByDesc('is_system')
                     ->orderBy('name')
                     ->get(),
-                $user,
+                $dto,
             ),
             'regulations'   => $this->presentRegulations(
                 MaintenanceRegulation::query()
-                    ->where('tenant_id', $tenantId)
+                    ->where('tenant_id', $dto->tenantId)
                     ->where('active', true)
                     ->get(),
             ),
-            'suppliers'     => $user->role === UserRole::Customer
+            'suppliers'     => $dto->role === UserRole::Customer
                 ? []
                 : $this->presentMany(
                     CatalogKind::Suppliers,
                     Supplier::query()
-                        ->where('tenant_id', $tenantId)
+                        ->where('tenant_id', $dto->tenantId)
                         ->where('active', true)
                         ->get(),
-                    $user,
+                $dto,
                 ),
-            'parts'         => $user->role === UserRole::Customer
+            'parts'         => $dto->role === UserRole::Customer
                 ? []
                 : $this->presentMany(
                     CatalogKind::Parts,
                     CatalogPart::query()
-                        ->where('tenant_id', $tenantId)
+                        ->where('tenant_id', $dto->tenantId)
                         ->where('active', true)
                         ->get(),
-                    $user,
+                $dto,
                 ),
         ];
     }
 
     public function records(User $user): array
     {
-        if ($user->role === UserRole::Station) {
+        $dto = UserDto::fromUserModel($user);
+
+        if ($dto->role === UserRole::Station) {
             return [
-                ...\App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $user))->all(),
-                ...CatalogPart::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => $this->present(CatalogKind::Parts, $row, $user))->all(),
-                ...Supplier::query()->where('tenant_id', $user->tenantId())->get()->map(fn ($row) => $this->present(CatalogKind::Suppliers, $row, $user))->all(),
+                ...PartManufacturer::query()->where('tenant_id', $dto->tenantId)->get()->map(fn ($row) => app(PartManufacturerService::class)->present($row, $dto))->all(),
+                ...CatalogPart::query()->where('tenant_id', $dto->tenantId)->get()->map(fn ($row) => $this->present(CatalogKind::Parts, $row, $dto))->all(),
+                ...Supplier::query()->where('tenant_id', $dto->tenantId)->get()->map(fn ($row) => $this->present(CatalogKind::Suppliers, $row, $dto))->all(),
             ];
         }
 
-        $tenantId = $user->tenantId();
         $rows = [];
 
         // 1. Vehicles
-        $vehicles = Vehicle::forUser($user)->with('organization')->get();
+        $vehicles = Vehicle::forUser($dto)->with('organization')->get();
         foreach ($vehicles as $vehicle) {
-            $rows[] = $this->vehicleService->present($vehicle, $user);
+            $rows[] = $this->vehicleService->present($vehicle, $dto);
         }
 
         // 2. People
@@ -289,33 +301,32 @@ final class CatalogService
         }
 
         // 3. Customer-specific pending
-        if ($user->role === UserRole::Customer) {
-            // ... оставляем как было
+        if ($dto->role === UserRole::Customer) {
             return $rows;
         }
 
         // 4. Stations
-        $stations = Station::query()->where('tenant_id', $tenantId)->get();
+        $stations = Station::query()->where('tenant_id', $dto->tenantId)->get();
         foreach ($stations as $station) {
-            $rows[] = $this->present(CatalogKind::Stations, $station, $user);
+            $rows[] = $this->present(CatalogKind::Stations, $station, $dto);
         }
 
         // 5. Customers (organizations)
         $customers = Organization::query()
-            ->where('tenant_id', $tenantId)
+            ->where('tenant_id', $dto->tenantId)
             ->where('kind', OrganizationKind::Customer->value)
             ->get();
         foreach ($customers as $customer) {
-            $rows[] = $this->present(CatalogKind::Customers, $customer, $user);
+            $rows[] = $this->present(CatalogKind::Customers, $customer, $dto);
         }
 
         // 6. Managers
         $managers = Organization::query()
-            ->where('tenant_id', $tenantId)
+            ->where('tenant_id', $dto->tenantId)
             ->where('kind', OrganizationKind::Manager->value)
             ->get();
         foreach ($managers as $manager) {
-            $rows[] = $this->present(CatalogKind::Managers, $manager, $user);
+            $rows[] = $this->present(CatalogKind::Managers, $manager, $dto);
         }
 
         // 7. Users
@@ -325,10 +336,10 @@ final class CatalogService
 
         // 8. Справочники — ОДНИМ блоком с eager load
         //    Сначала грузим всё, что нужно для presentWorkType/presentTimeNorm
-        $defaultApplicability = $this->defaultApplicability($tenantId);
+        $defaultApplicability = $this->defaultApplicability($dto->tenantId);
 
         $workTypes = WorkType::query()
-            ->where('tenant_id', $tenantId)
+            ->where('tenant_id', $dto->tenantId)
             ->where('active', true)
             ->get();
 
@@ -341,7 +352,7 @@ final class CatalogService
             ->groupBy('work_type_id');
 
         $reasons = ServiceReason::query()
-            ->where('tenant_id', $tenantId)
+            ->where('tenant_id', $dto->tenantId)
             ->get();
         $reasonsById = $reasons->keyBy('id');
 
@@ -361,16 +372,16 @@ final class CatalogService
                         ],
                         $this->presentWorkType(
                             $workType,
-                            $user,
+                            $dto->role,
                             $timeNorms->get($workType->id, collect()),
                             $defaultApplicability,
-                            $user->role === UserRole::Manager
-                                ? $this->laborHourRateSummary($tenantId)
+                            $dto->role === UserRole::Manager
+                                ? $this->laborHourRateSummary($dto->tenantId)
                                 : null,
                         ),
                         [
                             'permissions' => [
-                                'canEdit'       => $user->role === UserRole::Manager,
+                                'canEdit'       => $dto->role === UserRole::Manager,
                                 'canCreateOnly' => false,
                             ],
                         ],
@@ -391,7 +402,7 @@ final class CatalogService
                         $this->presentTimeNorm($norm, $defaultApplicability),
                         [
                             'permissions' => [
-                                'canEdit'       => $user->role === UserRole::Manager,
+                                'canEdit'       => $dto->role === UserRole::Manager,
                                 'canCreateOnly' => false,
                             ],
                         ],
@@ -407,7 +418,7 @@ final class CatalogService
                 continue;
             }
 
-            $query = $class::query()->where('tenant_id', $tenantId);
+            $query = $class::query()->where('tenant_id', $dto->tenantId);
 
             if ($catalogKind === CatalogKind::NormApplicabilities) {
                 $query->where('active', true)->orderByDesc('is_system')->orderBy('name');
@@ -418,7 +429,7 @@ final class CatalogService
             }
 
             foreach ($query->get() as $model) {
-                $rows[] = $this->present($catalogKind, $model, $user);
+                $rows[] = $this->present($catalogKind, $model, $dto);
             }
         }
 
@@ -433,22 +444,22 @@ final class CatalogService
     /**
      * @return array<string, mixed>
      */
-    public function present(CatalogKind|string $kind, Model $model, User $user): array
+    public function present(CatalogKind|string $kind, Model $model, UserDto $dto): array
     {
         $kind = $kind instanceof CatalogKind ? $kind : CatalogKind::from($kind);
         if ($kind === CatalogKind::PartManufacturers) {
-            return app(PartManufacturerService::class)->present($model, $user);
+            return app(PartManufacturerService::class)->present($model, $dto);
         }
 
         $fields = match ($kind) {
             CatalogKind::Stations => $this->presentStation($model),
             CatalogKind::Customers => $this->presentCustomer($model),
             CatalogKind::Managers => $this->presentManager($model),
-            CatalogKind::WorkTypes => $this->presentWorkType($model, $user),
+            CatalogKind::WorkTypes => $this->presentWorkType($model, $dto->role),
             CatalogKind::TimeNorms => $this->presentTimeNorm($model),
             CatalogKind::NormApplicabilities => $this->presentNormApplicability($model),
             CatalogKind::Parts => $this->presentPart($model),
-            CatalogKind::PartManufacturers => app(PartManufacturerService::class)->present($model, $user),
+            CatalogKind::PartManufacturers => app(PartManufacturerService::class)->present($model, $dto),
             CatalogKind::Reasons => $this->presentReason($model),
             CatalogKind::Regulations => $this->presentRegulation($model),
             CatalogKind::Suppliers => $this->presentSupplier($model),
@@ -465,7 +476,7 @@ final class CatalogService
             $fields,
             [
                 'permissions' => [
-                    'canEdit' => ($user->role === UserRole::Manager || ($user->role === UserRole::Station && ($kind === CatalogKind::Parts || ($kind === CatalogKind::Suppliers && $model->created_by_organization_id === $user->organization_id))))
+                    'canEdit' => ($dto->role === UserRole::Manager || ($dto->role === UserRole::Station && ($kind === CatalogKind::Parts || ($kind === CatalogKind::Suppliers && $model->created_by_organization_id === $dto->organizationId))))
                         && !(
                             $kind === CatalogKind::NormApplicabilities
                             && (bool) $model->is_system
@@ -483,12 +494,16 @@ final class CatalogService
      */
     public function update(User $user, string $id, array $patch): array
     {
-        $manufacturer = \App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->where('uuid', $id)->first();
+        $dto = UserDto::fromUserModel($user);
+        $manufacturer = PartManufacturer::query()
+            ->where('tenant_id', $dto->tenantId)
+            ->where('uuid', $id)
+            ->first();
         if ($manufacturer) {
-            $this->documentLocks->assertAvailable($user, 'catalog_record', 'partManufacturers:' . $id);
+            $this->documentLocks->assertAvailable($dto, 'catalog_record', 'partManufacturers:' . $id);
             return app(PartManufacturerService::class)->write($user, $manufacturer, $patch);
         }
-        if (!in_array($user->role, [UserRole::Manager, UserRole::Station], true)) {
+        if (!in_array($dto->role, [UserRole::Manager, UserRole::Station], true)) {
             throw new ApiException(403, 'FORBIDDEN', 'Справочники редактируют УК и уполномоченные СТО');
         }
 
@@ -514,16 +529,16 @@ final class CatalogService
                     'organization',
                     fn ($organization) => $organization->where(
                         'tenant_id',
-                        $user->tenantId(),
+                        $dto->tenantId,
                     ),
                 );
             } else {
                 $query = $kind === CatalogKind::TimeNorms
                     ? $class::query()->whereIn(
                         'work_type_id',
-                        $this->workTypeIdsSubquery($user->tenantId()),
+                        $this->workTypeIdsSubquery($dto->tenantId),
                     )
-                    : $class::query()->where('tenant_id', $user->tenantId());
+                    : $class::query()->where('tenant_id', $dto->tenantId);
             }
 
             if ($kind === CatalogKind::Customers) {
@@ -546,16 +561,16 @@ final class CatalogService
                 }
 
                 $this->documentLocks->assertAvailable(
-                    $user,
+                    $dto,
                     'catalog_record',
                     $kind->value . ':' . $model->uuid,
                 );
 
-                if ($user->role === UserRole::Station && !in_array($kind, [CatalogKind::Parts, CatalogKind::Suppliers], true)) {
+                if ($dto->role === UserRole::Station && !in_array($kind, [CatalogKind::Parts, CatalogKind::Suppliers], true)) {
                     throw new ApiException(403, 'FORBIDDEN', 'Этот справочник редактирует только УК');
                 }
                 if ($kind === CatalogKind::Suppliers) {
-                    return $this->present($kind, app(SupplierService::class)->write($user, $model, $patch), $user);
+                    return $this->present($kind, app(SupplierService::class)->write($user, $model, $patch), $dto);
                 }
                 if ($kind === CatalogKind::Parts) {
                     $patch = array_replace(array_intersect_key($this->presentPart($model), $this->rulesFor($kind, false)), $patch);
@@ -594,11 +609,13 @@ final class CatalogService
      */
     public function create(User $user, CatalogKind|string $kind, array $values): array
     {
+        $dto = UserDto::fromUserModel($user);
+
         $kind = $kind instanceof CatalogKind ? $kind : CatalogKind::tryFrom($kind);
         if ($kind === CatalogKind::PartManufacturers) {
             return app(PartManufacturerService::class)->write($user, null, $values);
         }
-        if ($user->role !== UserRole::Manager && !($user->role === UserRole::Station && in_array($kind, [CatalogKind::Parts, CatalogKind::Suppliers], true))) {
+        if ($dto->role !== UserRole::Manager && !($dto->role === UserRole::Station && in_array($kind, [CatalogKind::Parts, CatalogKind::Suppliers], true))) {
             throw new ApiException(403, 'FORBIDDEN', 'Справочники создаёт УК');
         }
 
@@ -609,7 +626,7 @@ final class CatalogService
         }
 
         if ($kind === CatalogKind::Suppliers) {
-            return $this->present($kind, app(SupplierService::class)->write($user, null, $values), $user);
+            return $this->present($kind, app(SupplierService::class)->write($user, null, $values), $dto);
         }
 
         if ($kind === CatalogKind::Users) {
@@ -701,12 +718,10 @@ final class CatalogService
         bool $create,
     ): array {
         return DB::transaction(function () use ($user, $kind, $model, $payload, $create): array {
-            if (in_array($kind, [
-                CatalogKind::WorkTypes,
-                CatalogKind::TimeNorms,
-            ], true)) {
+            $dto = UserDto::fromUserModel($user);
+            if (in_array($kind, [CatalogKind::WorkTypes, CatalogKind::TimeNorms], true)) {
                 DB::table('tenants')
-                    ->where('id', $user->tenantId())
+                    ->where('id', $dto->tenantId)
                     ->lockForUpdate()
                     ->first();
             }
@@ -749,8 +764,7 @@ final class CatalogService
             $model->refresh();
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 $kind,
                 $model,
                 $create ? 'create' : 'update',
@@ -759,8 +773,8 @@ final class CatalogService
             );
 
             return $kind === CatalogKind::Vehicles
-                ? $this->vehicleService->present($model, $user)
-                : $this->present($kind, $model, $user);
+                ? $this->vehicleService->present($model, $dto)
+                : $this->present($kind, $model, $dto);
         });
     }
 
@@ -771,12 +785,12 @@ final class CatalogService
      *
      * @return array<int, array<string, mixed>>
      */
-    private function presentMany(CatalogKind $kind, iterable $models, User $user): array
+    private function presentMany(CatalogKind $kind, iterable $models, UserDto $dto): array
     {
         $result = [];
 
         foreach ($models as $model) {
-            $result[] = $this->present($kind, $model, $user);
+            $result[] = $this->present($kind, $model, $dto);
         }
 
         return $result;
@@ -843,7 +857,7 @@ final class CatalogService
      */
     private function presentWorkType(
         Model $workType,
-        User $user,
+        UserRole $role,
         $timeNorms = null,
         ?TimeNormApplicability $defaultApplicability = null,
         float|string|null $laborRate = null,
@@ -863,7 +877,7 @@ final class CatalogService
             );
         }
 
-        if ($laborRate === null && $user->role === UserRole::Manager) {
+        if ($laborRate === null && $role === UserRole::Manager) {
             $laborRate = $this->laborHourRateSummary((int) $workType->tenant_id);
         }
 
@@ -1133,11 +1147,12 @@ final class CatalogService
      */
     private function createParticipant(User $user, CatalogKind $kind, array $payload): array
     {
+        $dto = UserDto::fromUserModel($user);
         $payload = $this->validateParticipant($kind, $payload, true);
 
-        return DB::transaction(function () use ($user, $kind, $payload): array {
+        return DB::transaction(function () use ($user, $dto, $kind, $payload): array {
             $organization = Organization::query()->create(array_merge([
-                'tenant_id' => $user->tenantId(),
+                'tenant_id' => $dto->tenantId,
                 'kind'      => match ($kind) {
                     CatalogKind::Customers => OrganizationKind::Customer,
                     CatalogKind::Stations => OrganizationKind::Station,
@@ -1149,8 +1164,7 @@ final class CatalogService
 
             if ($kind !== CatalogKind::Stations) {
                 $this->audit->record(
-                    $user->tenantId(),
-                    $user,
+                    $dto,
                     $kind,
                     $organization,
                     'create',
@@ -1158,11 +1172,11 @@ final class CatalogService
                     $organization->attributesToArray(),
                 );
 
-                return $this->present($kind, $organization->refresh(), $user);
+                return $this->present($kind, $organization->refresh(), $dto);
             }
 
             $station = Station::query()->create([
-                'tenant_id'       => $user->tenantId(),
+                'tenant_id'       => $dto->tenantId,
                 'organization_id' => $organization->id,
                 'name'            => $organization->name,
                 'address'         => (string) ($payload['address'] ?? ''),
@@ -1177,8 +1191,7 @@ final class CatalogService
             ]);
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 $kind,
                 $station,
                 'create',
@@ -1189,7 +1202,7 @@ final class CatalogService
                 ),
             );
 
-            return $this->present(CatalogKind::Stations, $station->refresh(), $user);
+            return $this->present(CatalogKind::Stations, $station->refresh(), $dto);
         });
     }
 
@@ -1204,9 +1217,10 @@ final class CatalogService
         Model $model,
         array $payload,
     ): array {
+        $dto = UserDto::fromUserModel($user);
         $payload = $this->validateParticipant($kind, $payload, false);
 
-        return DB::transaction(function () use ($user, $kind, $model, $payload): array {
+        return DB::transaction(function () use ($user, $dto, $kind, $model, $payload): array {
             $model = $model->newQuery()->whereKey($model->id)->lockForUpdate()->firstOrFail();
             $organization = $kind === CatalogKind::Stations
                 ? Organization::query()
@@ -1278,8 +1292,7 @@ final class CatalogService
             );
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 $kind,
                 $model,
                 'update',
@@ -1287,7 +1300,7 @@ final class CatalogService
                 $after,
             );
 
-            return $this->present($kind, $model->refresh(), $user);
+            return $this->present($kind, $model->refresh(), $dto);
         });
     }
 
@@ -2303,8 +2316,6 @@ final class CatalogService
         }
     }
 
-    /* Сопутствующие данные. */
-
     /**
      * Нормы сохраняются в одной транзакции с работой. Ручное значение из заявки
      * сюда не попадает и остаётся снимком в request_works.
@@ -2318,6 +2329,7 @@ final class CatalogService
         array $items,
         array $deletedIds,
     ): void {
+        $dto = UserDto::fromUserModel($user);
         foreach ($deletedIds as $deletedId) {
             $norm = TimeNorm::query()
                 ->where('work_type_id', $workType->id)
@@ -2333,8 +2345,7 @@ final class CatalogService
             ])->save();
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 CatalogKind::TimeNorms,
                 $norm,
                 'delete',
@@ -2364,8 +2375,7 @@ final class CatalogService
             $norm->save();
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 CatalogKind::TimeNorms,
                 $norm,
                 $before === null ? 'create' : 'update',

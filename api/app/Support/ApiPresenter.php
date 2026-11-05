@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Models\Attachment;
@@ -35,10 +36,17 @@ final class ApiPresenter
     {
         $vehicleIds = collect($requests)->pluck('vehicle_id')->filter()->unique()->all();
         $this->recommendationSummaries = array_fill_keys($vehicleIds, []);
+
         if ($vehicleIds === []) {
             return;
         }
-        foreach (Recommendation::forUser($user)->whereIn('vehicle_id', $vehicleIds)->orderByDesc('id')->get(['vehicle_id', 'uuid', 'number']) as $doc) {
+
+        $dto = UserDto::fromUserModel($user);
+        $docs = Recommendation::forUser($dto)
+            ->whereIn('vehicle_id', $vehicleIds)
+            ->orderByDesc('id')
+            ->get(['vehicle_id', 'uuid', 'number']);
+        foreach ($docs as $doc) {
             $this->recommendationSummaries[$doc->vehicle_id][] = ['id' => $doc->uuid, 'number' => $doc->number];
         }
     }
@@ -48,8 +56,26 @@ final class ApiPresenter
         if ($request->vehicle_id === null) {
             return [];
         }
-        return $this->recommendationSummaries[$request->vehicle_id]
-            ?? Recommendation::forUser($user)->where('vehicle_id', $request->vehicle_id)->orderByDesc('id')->get(['uuid', 'number'])->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])->all();
+
+        // 1. Проверяем кэш (in-memory)
+        if (isset($this->recommendationSummaries[$request->vehicle_id])) {
+            return $this->recommendationSummaries[$request->vehicle_id];
+        }
+
+        // 2. Если в кэше нет — идем в базу
+        $dto = UserDto::fromUser($user);
+
+        $recommendations = Recommendation::forUser($dto)
+        ->where('vehicle_id', $request->vehicle_id)
+            ->orderByDesc('id')
+            ->get(['uuid', 'number'])
+            ->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])
+            ->all();
+
+        // 3. Сохраняем в кэш (если вы это делаете где-то еще, иначе смысла нет)
+         $this->recommendationSummaries[$request->vehicle_id] = $recommendations;
+
+        return $recommendations;
     }
 
     /**

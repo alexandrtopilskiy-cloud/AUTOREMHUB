@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Models\CatalogChangeEvent;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 final class CatalogAuditService
@@ -24,18 +24,21 @@ final class CatalogAuditService
      * @param array<string, mixed>      $after
      */
     public function record(
-        int $tenantId,
-        ?User $actor,
+        ?UserDto $dto,
         CatalogKind|string $kind,
         Model $record,
         string $action,
         ?array $before,
         array $after,
-    ): CatalogChangeEvent
-    {
+    ): CatalogChangeEvent {
+        $tenantId = $dto->tenantId;
+        if ($dto === null) {
+            $tenantId = 1;
+        }
+
         return CatalogChangeEvent::query()->create([
             'tenant_id'      => $tenantId,
-            'actor_id'       => $actor?->id,
+            'actor_id'       => $dto->userId,
             'catalog_kind'   => $kind instanceof CatalogKind ? $kind->value : $kind,
             'record_uuid'    => $record->getAttribute('uuid'),
             'record_label'   => $this->label($after),

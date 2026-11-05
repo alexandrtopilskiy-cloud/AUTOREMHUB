@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\OrganizationKind;
 use App\Enums\PersonKind;
@@ -46,11 +47,12 @@ final class OrganizationPersonService
      */
     public function create(User $user, array $payload): array
     {
+        $dto = UserDto::fromUserModel($user);
         $this->assertEditor($user);
 
         $payload = $this->validatePayload($user, $payload, true);
 
-        return DB::transaction(function () use ($user, $payload): array {
+        return DB::transaction(function () use ($user, $dto, $payload): array {
             $organization = $this->organizationForPayload($user, $payload);
 
             $existing = OrganizationPerson::query()
@@ -77,8 +79,7 @@ final class OrganizationPersonService
                 ])->save();
 
                 $this->audit->record(
-                    $user->tenantId(),
-                    $user,
+                    $dto,
                     $this->catalogKind($existing->kind),
                     $existing,
                     'restore',
@@ -90,7 +91,7 @@ final class OrganizationPersonService
             }
 
             $person = OrganizationPerson::query()->create([
-                'tenant_id'       => $user->tenantId(),
+                'tenant_id'       => $dto->tenantId,
                 'organization_id' => $organization->id,
                 'kind'            => $payload['kind'],
                 'last_name'       => trim($payload['lastName']),
@@ -101,8 +102,7 @@ final class OrganizationPersonService
             ]);
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 $this->catalogKind($person->kind),
                 $person,
                 'create',
@@ -121,16 +121,17 @@ final class OrganizationPersonService
      */
     public function update(User $user, string $id, array $payload): array
     {
+        $dto = UserDto::fromUserModel($user);
         $this->assertEditor($user);
         $person = $this->resolve($user, $id);
         $this->documentLocks->assertAvailable(
-            $user,
+            $dto,
             'catalog_record',
             $this->catalogKind($person->kind)->value . ':' . $person->uuid,
         );
         $payload = $this->validatePayload($user, $payload, false);
 
-        return DB::transaction(function () use ($user, $person, $payload): array {
+        return DB::transaction(function () use ($user, $dto, $person, $payload): array {
             $person = OrganizationPerson::query()
                 ->whereKey($person->id)
                 ->lockForUpdate()
@@ -177,8 +178,7 @@ final class OrganizationPersonService
                 ]);
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 $this->catalogKind($person->kind),
                 $person,
                 'update',
@@ -195,15 +195,16 @@ final class OrganizationPersonService
      */
     public function delete(User $user, string $id): array
     {
+        $dto = UserDto::fromUserModel($user);
         $this->assertEditor($user);
         $person = $this->resolve($user, $id);
         $this->documentLocks->assertAvailable(
-            $user,
+            $dto,
             'catalog_record',
             $this->catalogKind($person->kind)->value . ':' . $person->uuid,
         );
 
-        return DB::transaction(function () use ($user, $person): array {
+        return DB::transaction(function () use ($dto, $person): array {
             $person = OrganizationPerson::query()
                 ->whereKey($person->id)
                 ->lockForUpdate()
@@ -217,8 +218,7 @@ final class OrganizationPersonService
                 ->update(['active' => false, 'updated_at' => now()]);
 
             $this->audit->record(
-                $user->tenantId(),
-                $user,
+                $dto,
                 $this->catalogKind($person->kind),
                 $person,
                 'delete',

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\DocumentLock;
+use App\Models\Recommendation;
 use App\Models\RepairRequest;
 use App\Models\User;
 use App\Support\DomainInput as Input;
@@ -120,17 +122,17 @@ final class DocumentLockService
             ->delete();
     }
 
-    public function assertAvailable(User $user, string $type, string $key): void
+    public function assertAvailable(UserDto $dto, string $type, string $key): void
     {
         $lock = DocumentLock::query()
             ->with('user')
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $dto->tenantId)
             ->where('resource_type', $type)
             ->where('resource_key', $key)
             ->where('expires_at', '>', now())
             ->first();
 
-        if ($lock !== null && $lock->user_id !== $user->id) {
+        if ($lock !== null && $lock->user_id !== $dto->userId) {
             $this->throwLocked($lock);
         }
     }
@@ -138,14 +140,12 @@ final class DocumentLockService
     /**
      * @return array{0: string, 1: string}
      */
-    private function resolveResource(
-        User $user,
-        string $type,
-        string $key,
-        string $label,
-    ): array {
+    private function resolveResource(User $user, string $type, string $key, string $label, ): array
+    {
+        $dto = UserDto::fromUserModel($user);
+
         if ($type === 'request') {
-            $request = RepairRequest::resolveFor($user, $key);
+            $request = RepairRequest::resolveFor($dto, $key);
 
             if (!$this->canMutateRequest($request, $user)) {
                 throw new ApiException(
@@ -155,12 +155,21 @@ final class DocumentLockService
                 );
             }
 
-            return [$request->uuid, $request->number];
+            return [
+                $request->uuid,
+                $request->number,
+            ];
         }
 
         if ($type === 'recommendation') {
-            $doc = \App\Models\Recommendation::forUser($user)->where('uuid', $key)->firstOrFail();
-            return [$doc->uuid, $doc->number];
+            $doc = Recommendation::forUser($dto)
+                ->where('uuid', $key)
+                ->firstOrFail();
+
+            return [
+                $doc->uuid,
+                $doc->number,
+            ];
         }
 
         if ($user->role === UserRole::Station && !str_starts_with($key, 'partManufacturers:') && !str_starts_with($key, 'parts:') && !str_starts_with($key, 'suppliers:')) {
@@ -175,7 +184,10 @@ final class DocumentLockService
             Input::fail('Укажите вид и UUID записи справочника', 'resourceKey');
         }
 
-        return [$key, $label !== '' ? $label : $key];
+        return [
+            $key,
+            $label !== '' ? $label : $key,
+        ];
     }
 
     private function canMutateRequest(RepairRequest $request, User $user): bool

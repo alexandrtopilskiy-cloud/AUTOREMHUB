@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Models\TimeNorm;
 use App\Models\Vehicle;
 use App\Models\WorkType;
 use App\Services\TimeNormSelectionService;
 use App\Services\WorkCostService;
+use App\Support\TimeNormDescription;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -29,12 +31,13 @@ final class TimeNormController
             'quantity' => ['sometimes', 'numeric', 'min:0.001', 'max:1000000'],
         ]);
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
         $work = WorkType::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $dto->tenantId)
             ->where('uuid', $validated['workTypeId'])
             ->where('active', true)
             ->firstOrFail();
-        $vehicle = Vehicle::forUser($user)
+        $vehicle = Vehicle::forUser($dto)
             ->where('uuid', $validated['vehicleId'])
             ->firstOrFail();
         $rateType = $validated['laborRateType'] ?? 'general';
@@ -55,7 +58,7 @@ final class TimeNormController
                 'normId' => $norm->norm_id,
                 'hours' => $norm->hours === null ? null : (float) $norm->hours,
                 'source' => $norm->source,
-                'applicabilityLabel' => \App\Support\TimeNormDescription::label($norm),
+                'applicabilityLabel' => TimeNormDescription::label($norm),
             ],
             'conflicts' => array_map(
                 static fn (TimeNorm $item): array => [

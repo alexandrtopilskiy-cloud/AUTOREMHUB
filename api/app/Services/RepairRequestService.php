@@ -13,9 +13,9 @@ use App\DTO\StationDecisionDto;
 use App\DTO\TransitionContext;
 use App\DTO\TransitionDto;
 use App\DTO\UpdateRepairRequestDto;
+use App\DTO\UserDto;
 use App\Enums\ApprovalDecision;
 use App\Enums\AttachmentPurpose;
-use App\Enums\InvoiceStatus;
 use App\Enums\PersonKind;
 use App\Enums\RepairStage;
 use App\Enums\RequestDocumentType;
@@ -50,8 +50,6 @@ use App\Models\VehicleServiceRecord;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Models\WorkType;
-use App\Services\DocumentGeneratorService;
-use App\Services\InvoiceService;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
@@ -138,6 +136,8 @@ final class RepairRequestService
      */
     public function deleteDrafts(User $user, array $ids): array
     {
+        $dto = UserDto::fromUserModel($user);
+
         $validated = Input::validate(['ids' => $ids], [
             'ids'   => ['required', 'array', 'list', 'min:1', 'max:100'],
             'ids.*' => ['required', 'uuid', 'distinct'],
@@ -146,14 +146,12 @@ final class RepairRequestService
         /** @var array<int, array{disk: string, key: string}> $files */
         $files = [];
 
-        $deleted = DB::transaction(function () use ($user, $validated, &$files): array {
+        $deleted = DB::transaction(function () use ($user, $dto, $validated, &$files): array {
             $documents = RepairRequest::query()
                 ->with(['attachments', 'chat'])
-                ->where('tenant_id', $user->tenantId())
-                ->where('created_by', $user->id)
+                ->where('tenant_id', $dto->tenantId)
+                ->where('created_by', $dto->userId)
                 ->where('stage', RepairStage::Draft->value)
-                // stage=0 недостаточно: возвращённый из маршрута документ
-                // имеет периоды других этапов и остаётся в истории.
                 ->whereDoesntHave(
                     'periods',
                     fn ($query) => $query->where('stage', '<>', RepairStage::Draft->value),
@@ -180,7 +178,7 @@ final class RepairRequestService
                     );
                 }
 
-                $this->documentLocks->assertAvailable($user, 'request', $document->uuid);
+                $this->documentLocks->assertAvailable($dto, 'request', $document->uuid);
 
                 foreach ($document->attachments as $attachment) {
                     $files[] = [
@@ -232,8 +230,9 @@ final class RepairRequestService
         callable $change,
     ): RepairRequest {
         return DB::transaction(function () use ($user, $key, $revision, $action, $change): RepairRequest {
-            $request = RepairRequest::resolveFor($user, $key, true);
-            $this->documentLocks->assertAvailable($user, 'request', $request->uuid);
+            $dto = UserDto::fromUserModel($user);
+            $request = RepairRequest::resolveFor($dto, $key, true);
+            $this->documentLocks->assertAvailable($dto, 'request', $request->uuid);
 
             if ($request->revision !== $revision) {
                 throw new ApiException(409, 'REVISION_CONFLICT', 'Заявка уже изменена другим пользователем');
@@ -279,35 +278,34 @@ final class RepairRequestService
 
     public function createFromRecommendation(User $user, Recommendation $doc): RepairRequest
     {
+        $dto = UserDto::fromUserModel($user);
         $vehicle = Vehicle::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $dto->tenantId)
             ->findOrFail($doc->vehicle_id);
         $uuid = (string) Str::uuid();
         $data = array_fill_keys(Workflow::TEXT_FIELDS, '');
         $data['recommendationVehicleLocked'] = true;
         $source = RepairRequest::query()->find($doc->source_request_id);
-        // СТО не меняет пробег. При создании из рекомендаций сохраняем
-        // зафиксированные в исходной заявке сведения, а не придумываем новые.
-        if ($user->role !== UserRole::Customer && $source !== null) {
+        if ($dto->role !== UserRole::Customer && $source !== null) {
             $data['mileage'] = (string) ($source->data['mileage'] ?? '');
             $data['laborRateType'] = (string) ($source->data['laborRateType'] ?? 'general');
         }
-        $previous = $this->vehicleService->previousMileageDetails($vehicle, $user);
+        $previous = $this->vehicleService->previousMileageDetails($vehicle, $dto);
         $data['laborRateType'] = (string) ($source?->data['laborRateType'] ?? 'general');
-        if ($user->role !== UserRole::Customer && $previous['mileage'] !== null) {
+        if ($dto->role !== UserRole::Customer && $previous['mileage'] !== null) {
             $data['mileage'] = (string) max((int) ($data['mileage'] ?: 0), $previous['mileage']);
         }
-        $assignedStationId = $user->role === UserRole::Station
-            ? Station::query()->where('organization_id', $user->organization_id)->value('id')
+        $assignedStationId = $dto->role === UserRole::Station
+            ? Station::query()->where('organization_id', $dto->organizationId)->value('id')
             : null;
 
         $request = RepairRequest::query()->create([
             'uuid'                      => $uuid,
             'public_id'                 => $uuid,
-            'tenant_id'                 => $user->tenantId(),
+            'tenant_id'                 => $dto->tenantId,
             'customer_organization_id'  => $doc->customer_organization_id,
             'vehicle_id'                => $vehicle->id,
-            'created_by'                => $user->id,
+            'created_by'                => $dto->userId,
             'assigned_station_id'       => $assignedStationId,
             'data'                      => $data,
             'works'                     => [],
@@ -324,7 +322,7 @@ final class RepairRequestService
             'repair_request_id' => $request->id,
             'stage'             => 0,
             'entered_at'        => now(),
-            'actor_id'          => $user->id,
+            'actor_id'          => $dto->userId,
         ]);
 
         $dto = RequestEventDto::fromRequest(
@@ -558,7 +556,7 @@ final class RepairRequestService
         }
 
         $vehicle = $vehicleId === '' ? null : Vehicle::query()
-        ->where('tenant_id', $request->tenant_id)
+            ->where('tenant_id', $request->tenant_id)
             ->where('organization_id', $request->customer_organization_id)
             ->where('uuid', $vehicleId)
             ->first();
@@ -569,8 +567,9 @@ final class RepairRequestService
 
         if ($request->vehicle_id !== $vehicle?->id) {
             $request->vehicle_id = $vehicle?->id;
+            $dto = UserDto::fromUserModel($user);
             $previous = $vehicle !== null
-                ? $this->vehicleService->previousMileageDetails($vehicle, $user, $request->id)
+                ? $this->vehicleService->previousMileageDetails($vehicle, $dto, $request->id)
                 : ['mileage' => null, 'recordedAt' => null];
 
             $request->previous_service_mileage = $previous['mileage'];
