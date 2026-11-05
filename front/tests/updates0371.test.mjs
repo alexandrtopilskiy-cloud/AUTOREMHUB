@@ -120,10 +120,12 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
             },
         );
         await t.test(
-            "customer cannot see repair block before first approval",
+            "customer sees works block in draft but no diagnostics or norms",
             async () => {
                 const html = await renderToString(createSSRApp(Repair, props));
-                assert.doesNotMatch(html, /class="repair-calculation-section/);
+                assert.match(html, /class="repair-calculation-section/);
+                assert.doesNotMatch(html, /Норма времени/);
+                assert.doesNotMatch(html, /Стоимость нормо\/часа/);
                 assert.doesNotMatch(html, /<h3>Заключение диагностики СТО/);
             },
         );

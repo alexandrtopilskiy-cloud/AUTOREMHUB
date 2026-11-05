@@ -205,6 +205,41 @@ final class RepairRequestControllerTest extends TestCase
         $this->assertSame('12345', $request->refresh()->data['mileage']);
     }
 
+    public function test_customer_adds_works_in_draft_without_time_norms(): void
+    {
+        $request = $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);
+
+        $this->actingAs($this->customer);
+        $response = $this->patchJson('/api/requests/' . $request->uuid, [
+            'revision' => $request->revision,
+            'works'    => [
+                // Норма от Заказчика не принимается: её заполняет УК.
+                ['workTypeId' => $this->work->uuid, 'name' => 'Диагностика', 'qty' => 1, 'normHours' => 3],
+                ['name' => 'Стук в подвеске', 'qty' => 1],
+            ],
+        ])->assertOk();
+
+        $this->assertContains('works', $response->json('request.permissions.editableFields'));
+
+        $works = RequestWork::query()->where('repair_request_id', $request->id)->orderBy('id')->get();
+        $this->assertCount(2, $works);
+        $this->assertSame('Диагностика', $works[0]->name);
+        $this->assertNull($works[0]->norm_hours);
+        $this->assertFalse($works[0]->norm_is_manual);
+        $this->assertSame('Стук в подвеске', $works[1]->name);
+    }
+
+    public function test_customer_cannot_change_works_after_draft(): void
+    {
+        $request = $this->makeRequest($this->customer, Workflow::STAGE_MANAGER_ROUTING);
+
+        $this->actingAs($this->customer);
+        $this->patchJson('/api/requests/' . $request->uuid, [
+            'revision' => $request->revision,
+            'works'    => [['name' => 'Стук в подвеске', 'qty' => 1]],
+        ])->assertForbidden();
+    }
+
     public function test_update_returns_409_for_revision_conflict(): void
     {
         $request = $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);

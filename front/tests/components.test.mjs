@@ -150,7 +150,9 @@ test("Options API component rendering and interactive methods", async (context) 
                 assert.doesNotMatch(html, /Добавить позицию/);
                 assert.doesNotMatch(html, /Добавить запчасть/);
                 assert.doesNotMatch(html, /СТО-партнёр/);
-                assert.doesNotMatch(html, /class="repair-calculation-section/);
+                // Черновик: Заказчик видит блок 04 и вносит работы без норм.
+                assert.match(html, /class="repair-calculation-section/);
+                assert.doesNotMatch(html, /Норма времени/);
                 assert.doesNotMatch(
                     html,
                     /Фото, видео и комментарий необязательны/,

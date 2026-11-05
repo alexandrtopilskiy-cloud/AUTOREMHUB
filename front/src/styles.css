@@ -3987,6 +3987,11 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 /* Комментарии и примечания к изменениям в разделе 04 */
 .works-grid .work-comment-column { width: 160px; }
 .excel-grid.works-grid { min-width: 1200px; }
+/* Черновик Заказчика: только наименование, количество и комментарий. */
+.excel-grid.works-grid.customer-draft-grid { min-width: 640px; }
+.works-grid.customer-draft-grid .work-name-column { width: auto; }
+.works-grid.customer-draft-grid .work-qty-column { width: 120px; }
+.works-grid.customer-draft-grid .work-comment-column { width: 32%; }
 .parts-panel .parts-grid { min-width: 1150px !important; }
 .parts-panel .parts-grid.with-change-notes { min-width: 1280px !important; }
 
