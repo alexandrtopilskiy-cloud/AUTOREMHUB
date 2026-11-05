@@ -57,11 +57,17 @@ final class RequestLifecycleTest extends TestCase
             'contactId' => $this->contact->uuid,
             'reasonId'  => $this->reason->uuid,
             'mileage'   => '15000',
+            'description' => 'Стук в подвеске',
         ]);
+        $this->assertSame('15000', $request['mileage']);
 
         $request = $this->next($request);
 
         $this->assertSame(RepairStage::ManagerRouting->value, $request['stage']);
+        // Пробег и описание из черновика видны после перехода в Маршрутизацию.
+        $this->assertSame('15000', $request['mileage']);
+        $this->assertSame('Стук в подвеске', $request['description']);
+        $this->assertSame('15000', $this->api('GET', "/requests/{$request['id']}")->json('request.mileage'));
         $this->assertSame(1, RequestApproval::count());
         $this->assertSame(2, RequestStatusPeriod::count());
     }

@@ -16,16 +16,16 @@ final class UpdatedVehicleCatalogTest extends TestCase
     {
         $reader = new XlsxTableReader();
         $importer = new VehicleReferenceImporter($reader);
-        $path = dirname(__DIR__, 3) . '/database/data/vehicle_reference_20261005.xlsx';
+        $path = dirname(__DIR__, 3) . '/database/data/vehicle_reference_20261014.xlsx';
         $rows = (new ReflectionMethod($importer, 'normalizeRows'))->invoke(
             $importer,
             $reader->rows($path, [['марка'], ['модель']]),
             true,
         );
 
-        $this->assertCount(11045, $rows);
+        $this->assertCount(18430, $rows);
         $this->assertSame(73, (new ReflectionProperty($importer, 'skippedDuplicates'))->getValue($importer));
-        $this->assertCount(10, array_unique(array_column($rows, 'makeKey')));
+        $this->assertCount(13, array_unique(array_column($rows, 'makeKey')));
         $periods = [];
         foreach ($rows as $row) {
             $key = json_encode([$row['make'], $row['model'], $row['bodyCode']], JSON_THROW_ON_ERROR);

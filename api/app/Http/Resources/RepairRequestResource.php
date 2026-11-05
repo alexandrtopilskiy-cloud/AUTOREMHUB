@@ -72,7 +72,9 @@ final class RepairRequestResource extends JsonResource
         // Считаем total (один раз)
         $total = (float) app(RepairRequestCalculator::class)->total($this->resource);
 
-        return [
+        // Текстовые поля ЗР (пробег, описание, комментарий маршрутизации и т.д.)
+        // хранятся в data; без них после отправки ЗР поля в форме пустеют.
+        return array_merge($data, [
             'id'                     => $this->uuid,
             'uuid'                   => $this->uuid,
             'systemId'               => $this->id,
@@ -165,7 +167,7 @@ final class RepairRequestResource extends JsonResource
                 'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $this->stage->value >= RepairStage::CustomerApproval->value
                     || $this->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
             ]),
-        ];
+        ]);
     }
 
     private function formatStation(?object $station): string

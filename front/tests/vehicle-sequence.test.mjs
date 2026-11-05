@@ -153,6 +153,21 @@ test("small dependent reference lists open on focus; large lists require typing"
         const vehicle = (await server.ssrLoadModule("/src/features/catalogs/SequentialVehiclePicker.vue")).default;
         for (const key of ["engineType", "driveType", "transmission"]) assert.equal(vehicle.methods.isClosedList(key), true);
         assert.equal(vehicle.methods.isClosedList("generation"), false);
+        // Новое ТС: марка, модель, поколение и т.д. показывают весь (уже суженный
+        // верхними уровнями) список по фокусу, до начала ввода.
+        const allOnFocus = vehicle.data().ALL_ON_FOCUS;
+        const generations = await (async () => {
+            const state = {
+                disabled: false, openOnInputOnly: false, showAllOnFocusLimit: allOnFocus, maxResults: allOnFocus,
+                rows: Array.from({ length: 120 }, (_, id) => ({ id, name: `Кузов ${id}` })),
+                open: false, query: "", searchMode: "fragments", loadOptions: null,
+                $nextTick: async () => {}, positionOptions() {}, load: async () => {},
+            };
+            await picker.methods.show.call(state);
+            return state;
+        })();
+        assert.equal(generations.open, true);
+        assert.equal(picker.computed.filtered.call(generations).length, 120);
         const work = (await server.ssrLoadModule("/src/features/requests/WorkTypePicker.vue")).default;
         const state = {
             options: [{ id: "one", name: "Масляный фильтр", active: true }],
