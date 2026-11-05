@@ -192,10 +192,11 @@ final class Workflow
                 && !$isVehicleAcceptance
                 && $stage !== RepairStage::Closed,
             // ТС уже выдано (7) и оплата СТО (9) — возврат не предусмотрен.
+            // «Ожидание ТС на СТО» (4): СТО может вернуть ЗР Заказчику на
+            // этап 3 «Согласование Заказчика» с обязательным комментарием.
             'canReturn'        => $isOwner
                 && !$isStationDecision
                 && !$isCustomerSlotDecision
-                && !$isVehicleAcceptance
                 && !$isStationCompletion
                 && !in_array($stage, [RepairStage::Draft, RepairStage::Issued, RepairStage::StationPayment], true),
             'canStationDecide' => $isStationDecision,

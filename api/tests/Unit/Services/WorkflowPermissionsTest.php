@@ -86,6 +86,27 @@ final class WorkflowPermissionsTest extends TestCase
         );
     }
 
+    public function test_station_can_return_request_while_waiting_vehicle(): void
+    {
+        $this->assertTrue(
+            $this->permissions(
+                RepairStage::WaitingVehicle->value,
+                UserRole::Station,
+            )['canReturn'],
+        );
+        $this->assertFalse(
+            $this->permissions(
+                RepairStage::WaitingVehicle->value,
+                UserRole::Station,
+            )['canAdvance'],
+        );
+        foreach ([UserRole::Manager, UserRole::Customer] as $role) {
+            $this->assertFalse(
+                $this->permissions(RepairStage::WaitingVehicle->value, $role)['canReturn'],
+            );
+        }
+    }
+
     public function test_manager_and_station_can_edit_estimate_in_their_approval_stages(): void
     {
         $this->assertTrue(
