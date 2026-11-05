@@ -11,6 +11,9 @@ export default {
         requests: { type: Array, default: () => [] },
         pending: { type: Object, default: () => ({}) },
         selectedId: { type: String, default: "" },
+        // ЗР, из которой открыта форма: перенос выполняется только в неё.
+        requestId: { type: String, default: "" },
+        userRole: { type: String, default: "" },
         showCompany: { type: Boolean, default: true },
     },
     // select — одинарный клик по ТС в перечне (панель «Состояние документа»),
@@ -21,7 +24,6 @@ export default {
         return {
             documents: [],
             selectedIds: [],
-            targetId: "",
             busy: false,
             error: "",
             detailItem: null,
@@ -82,13 +84,33 @@ export default {
                         ),
                 );
         },
-        targets() {
-            return this.requests.filter(
-                (row) =>
-                    row.vehicleId === this.vehicleId &&
-                    row.permissions?.canRestoreRecommendations &&
-                    (!this.document || row.vin === this.document.vin),
+        sourceRequest() {
+            return (
+                (this.requestId &&
+                    this.requests.find((row) => row.id === this.requestId)) ||
+                null
             );
+        },
+        // Причина, по которой перенос в исходную ЗР сейчас недоступен.
+        transferBlock() {
+            const target = this.sourceRequest;
+            if (!target) return "";
+            if (
+                target.vehicleId !== this.vehicleId ||
+                (this.document && target.vin !== this.document.vin)
+            )
+                return `ТС в заявке ${target.number} не совпадает с ТС рекомендаций`;
+            if (!target.permissions?.canRestoreRecommendations)
+                return "Перенос в заявку возможен на этапах с «Черновик» по «В работе»";
+            if (this.pending[target.id])
+                return "Сначала сохраните изменения заявки";
+            return "";
+        },
+        canCreateRequest() {
+            return this.userRole === "customer";
+        },
+        selectable() {
+            return Boolean(this.sourceRequest) || this.canCreateRequest;
         },
     },
     mounted() {
@@ -181,10 +203,9 @@ export default {
             }
         },
         async restore(createNew = false) {
-            const target = this.targets.find((row) => row.id === this.targetId);
-            if (!createNew && (!target || this.pending[target.id])) {
-                this.error =
-                    "Выберите доступную заявку и сначала сохраните её изменения";
+            const target = this.sourceRequest;
+            if (createNew ? !this.canCreateRequest : !target || this.transferBlock) {
+                this.error = this.transferBlock || "Перенос недоступен";
                 return;
             }
             const selection = this.documents
@@ -365,8 +386,8 @@ export default {
                 <table class="excel-grid recommendation-grid">
                     <thead>
                         <tr>
-                            <th v-if="!allVehicles" class="selection-col" />
-                            <th>Наименование</th>
+                            <th v-if="selectable" class="selection-col" />
+                            <th class="name-col">Наименование</th>
                             <th>
                                 {{ group.kind === "work" ? "Код" : "Артикул" }}
                             </th>
@@ -383,7 +404,7 @@ export default {
                     </thead>
                     <tbody>
                         <tr v-for="item in group.items" :key="item.id">
-                            <td v-if="!allVehicles" class="selection-col">
+                            <td v-if="selectable" class="selection-col">
                                 <input
                                     v-if="!item.movedAt"
                                     v-model="selectedIds"
@@ -508,33 +529,28 @@ export default {
             v-if="!allVehicles && document"
             class="record-editor-footer action-buttons"
         >
-            <label
-                ><span>Заявка для этого VIN</span
-                ><select v-model="targetId">
-                    <option value="">Выберите заявку</option>
-                    <option
-                        v-for="row in targets"
-                        :key="row.id"
-                        :value="row.id"
-                    >
-                        {{ row.number }}
-                    </option>
-                </select></label
-            >
+            <template v-if="sourceRequest">
+                <button
+                    class="primary-btn"
+                    :disabled="busy || !selectedIds.length || Boolean(transferBlock)"
+                    @click="restore(false)"
+                >
+                    Перенести в {{ sourceRequest.number }}
+                </button>
+                <span v-if="transferBlock" class="muted">{{ transferBlock }}</span>
+            </template>
             <button
-                class="ghost-btn"
-                :disabled="busy || !selectedIds.length || !targetId"
-                @click="restore(false)"
-            >
-                Переместить в заявку на ремонт
-            </button>
-            <button
-                class="primary-btn"
+                v-if="canCreateRequest"
+                :class="sourceRequest ? 'ghost-btn' : 'primary-btn'"
                 :disabled="busy || !selectedIds.length"
                 @click="restore(true)"
             >
                 Создать заявку из выбранного
             </button>
+            <span v-if="!selectable" class="muted">
+                Чтобы перенести позиции, откройте Рекомендации из заявки на
+                ремонт по этому ТС.
+            </span>
         </div>
         <dialog
             v-if="detailItem"

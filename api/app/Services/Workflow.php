@@ -203,7 +203,11 @@ final class Workflow
             'canAcceptVehicle' => $isVehicleAcceptance,
             'canEditParts'     => $canChangeInWork || ($isOwner && (self::isPartsEditableStage($stage) || ($stage === RepairStage::Draft && $role !== UserRole::Customer))),
             'canDeferRecommendations' => $canChangeInWork || ($isOwner && in_array($stage, [RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true)),
-            'canRestoreRecommendations' => $isOwner && in_array($stage, [RepairStage::Draft, RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true),
+            // Перенос из Рекомендаций ТС в открытую ЗР: в любом ЛК на этапах
+            // 0 «Черновик» … 5 «В работе», кроме времени согласования изменений.
+            'canRestoreRecommendations' => $request->vehicle_id !== null
+                && $stage->value <= RepairStage::RepairInProgress->value
+                && !$workChangeReview,
             'requiresAction' => ($isOwner && $stage !== RepairStage::Closed) || $isWorkChangeReviewer,
             'canDiagnose'      => $isStationInWork,
             'canUpload'        => $isStationInWork || ($isOwner && $role !== UserRole::Manager),

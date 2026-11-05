@@ -1284,12 +1284,16 @@ export default {
         },
         async openRecommendations(request) {
             const id = "recommendations:" + request.vehicleId;
-            if (!this.tabs.some((tab) => tab.id === id))
+            // Перенос выполняется в ЗР, из которой открыты рекомендации;
+            // из меню или карточки ТС форма открывается без привязки к ЗР.
+            const opened = this.tabs.find((tab) => tab.id === id);
+            if (opened) opened.requestId = request.id || "";
+            if (!opened)
                 this.tabs.push({
                     id,
                     kind: "recommendations",
                     vehicleId: request.vehicleId,
-                    requestId: request.id,
+                    requestId: request.id || "",
                     vehicleInfo: {
                         make: request.make || "",
                         model: request.model || "",
@@ -2232,6 +2236,8 @@ export default {
                             :requests="store.requests"
                             :pending="store.pending"
                             :selected-id="active.selection || ''"
+                            :request-id="active.requestId || ''"
+                            :user-role="user.role"
                             :show-company="user.role !== 'station'"
                             @restored="recommendationsRestored"
                             @open-vehicle="openVehicleRecommendations"

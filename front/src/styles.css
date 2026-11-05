@@ -3917,7 +3917,7 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .vehicle-model-dialog .reference-picker-options { z-index: 10050; }
 .recommendation-grid th { white-space: normal; }
 .recommendation-grid .selection-col { width: 28px; }
-.recommendation-grid th:nth-child(2) { width: 24%; }
+.recommendation-grid th.name-col { width: 24%; }
 .recommendation-grid .link-btn { display: block; font-size: 10px; padding: 0; }
 .recommendation-group { margin-bottom: 18px; }
 .recommendation-vehicle + .recommendation-vehicle { border-top: 1px solid var(--line); padding-top: 14px; }
