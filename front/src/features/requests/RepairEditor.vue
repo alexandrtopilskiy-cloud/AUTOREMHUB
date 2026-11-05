@@ -238,6 +238,23 @@ const advanceBlockedByWorkChange = computed(
   () => props.request.permissions?.advanceBlockedByWorkChange === true,
 );
 
+const NO_WORKS_HINT = 'В ЗР нет работ: добавьте хотя бы одну работу, '
+  + 'чтобы перевести ЗР далее по маршруту';
+
+/**
+ * УК (маршрутизация / согласование работ и з/ч) и Заказчик (финальное
+ * согласование) могли удалить все работы или перенести их в Рекомендации:
+ * ЗР без работ далее по маршруту не переводится.
+ */
+const advanceBlockedByNoWorks = computed(() => {
+  const ownsApproval = (isManager.value && props.request.stage === 1)
+    || (isCustomer.value && props.request.stage === 3);
+
+  return ownsApproval && !props.request.works.some(
+    (work) => work.workTypeId || String(work.name || '').trim(),
+  );
+});
+
 /** СТО может менять работы и ЗЧ в ходе ремонта (не во время согласования). */
 const canChangeInWork = computed(
   () => isStation.value && props.request.stage === STAGE_IN_WORK && canWork.value,
@@ -1722,6 +1739,9 @@ onMounted(() => {
         <small v-else-if="advanceBlockedByWorkChange" class="error-message">
           {{ ADVANCE_BLOCKED_HINT }}
         </small>
+        <small v-else-if="advanceBlockedByNoWorks" class="error-message">
+          {{ NO_WORKS_HINT }}
+        </small>
         <small v-else-if="canStationDecide">
           Комментарий к решению необязателен
         </small>
@@ -1763,8 +1783,9 @@ onMounted(() => {
 
           <button
             class="office-action primary-btn"
-            title="Подтвердить финальную заявку" aria-label="Подтвердить финальную заявку"
-            :disabled="busy || dirty"
+            :title="advanceBlockedByNoWorks ? NO_WORKS_HINT : 'Подтвердить финальную заявку'"
+            aria-label="Подтвердить финальную заявку"
+            :disabled="busy || dirty || advanceBlockedByNoWorks"
             @click="acceptStationSlot"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6" /></svg>
@@ -1804,7 +1825,9 @@ onMounted(() => {
           :title="
             advanceBlockedByWorkChange
               ? ADVANCE_BLOCKED_HINT
-              : managerReviewingStationChanges
+              : advanceBlockedByNoWorks
+                ? NO_WORKS_HINT
+                : managerReviewingStationChanges
                 ? routeActionTitle
                 : 'Далее по маршруту'
           "
@@ -1813,7 +1836,7 @@ onMounted(() => {
               ? routeActionTitle
               : 'Далее по маршруту'
           "
-          :disabled="busy || dirty || advanceBlockedByWorkChange"
+          :disabled="busy || dirty || advanceBlockedByWorkChange || advanceBlockedByNoWorks"
           @click="openNext"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6" /></svg>

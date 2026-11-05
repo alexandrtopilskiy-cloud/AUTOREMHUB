@@ -335,6 +335,8 @@ final class WorkChangeService
                 ];
             }
 
+            $this->requests->assertHasWorks($request);
+
             if ($status === WorkChangeStatus::ManagerReview) {
                 $state['status'] = WorkChangeStatus::CustomerReview->value;
                 $state['managerApproval'] = [
@@ -524,9 +526,7 @@ final class WorkChangeService
 
     private function validateEstimate(RepairRequest $request): void
     {
-        if (!$request->workLines()->exists()) {
-            Input::fail('Добавьте хотя бы одну работу');
-        }
+        $this->requests->assertHasWorks($request);
 
         foreach ($request->workLines()->get() as $work) {
             if (trim((string) $work->name) === '' || $work->quantity <= 0) {

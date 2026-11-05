@@ -17,6 +17,7 @@ use App\Models\VehicleAcceptanceAct;
 use App\Models\VehicleContact;
 use App\Models\WorkType;
 use App\Services\ReferenceSeeder;
+use App\Services\RepairRequestService;
 use App\Services\Workflow;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Storage;
@@ -310,7 +311,7 @@ final class RepairRequestControllerTest extends TestCase
 
         $response
             ->assertUnprocessable()
-            ->assertJsonPath('error.message', 'Добавьте хотя бы одну работу');
+            ->assertJsonPath('error.message', RepairRequestService::NO_WORKS_MESSAGE);
     }
 
     public function test_return_on_station_approval_requires_station_decision(): void
@@ -405,6 +406,7 @@ final class RepairRequestControllerTest extends TestCase
                 'stationSlot' => '2026-10-21T14:00',
             ]),
         ]);
+        $this->makeWork($request);
 
         $this->actingAs($this->customer);
         $response = $this->postJson('/api/requests/' . $request->uuid . '/customer-slot-decision', [
