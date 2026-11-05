@@ -1594,35 +1594,29 @@ test("Options API component rendering and interactive methods", async (context) 
             },
         );
         await context.test(
-            "recommendation targets exclude other VIN and read-only requests",
+            "recommendations transfer only into the request they were opened from",
             async () => {
                 const { default: Panel } = await server.ssrLoadModule(
                     "/src/features/requests/RecommendationPanel.vue",
                 );
-                const targets = Panel.computed.targets.call({
-                    vehicleId: "v1",
-                    requests: [
-                        {
-                            id: "allowed",
-                            vehicleId: "v1",
-                            permissions: { canRestoreRecommendations: true },
-                        },
-                        {
-                            id: "wrong-vin",
-                            vehicleId: "v2",
-                            permissions: { canRestoreRecommendations: true },
-                        },
-                        {
-                            id: "readonly",
-                            vehicleId: "v1",
-                            permissions: { canRestoreRecommendations: false },
-                        },
-                    ],
-                });
-                assert.deepEqual(
-                    targets.map((row) => row.id),
-                    ["allowed"],
-                );
+                const requests = [
+                    { id: "allowed", number: "ZR-1", vehicleId: "v1", vin: "VIN1", permissions: { canRestoreRecommendations: true } },
+                    { id: "wrong-vin", number: "ZR-2", vehicleId: "v2", vin: "VIN2", permissions: { canRestoreRecommendations: true } },
+                    { id: "closed", number: "ZR-3", vehicleId: "v1", vin: "VIN1", permissions: { canRestoreRecommendations: false } },
+                ];
+                const block = (requestId, pending = {}) => {
+                    const ctx = { vehicleId: "v1", requests, requestId, pending, document: { vin: "VIN1" } };
+                    ctx.sourceRequest = Panel.computed.sourceRequest.call(ctx);
+                    return Panel.computed.transferBlock.call(ctx);
+                };
+                assert.equal(block("allowed"), "");
+                assert.match(block("wrong-vin"), /не совпадает/);
+                assert.match(block("closed"), /«Черновик» по «В работе»/);
+                assert.match(block("allowed", { allowed: true }), /сохраните/);
+                assert.equal(block(""), "");
+                assert.equal(Panel.computed.canCreateRequest.call({ userRole: "customer" }), true);
+                assert.equal(Panel.computed.canCreateRequest.call({ userRole: "manager" }), false);
+                assert.equal(Panel.computed.canCreateRequest.call({ userRole: "station" }), false);
             },
         );
 

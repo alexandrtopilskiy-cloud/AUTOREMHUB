@@ -255,6 +255,12 @@ final class RecommendationService
                 Input::fail('За один раз можно перенести не более 200 позиций');
             }
 
+            // Новую заявку из рекомендаций создаёт только Заказчик; УК и СТО
+            // переносят позиции в ЗР, из которой открыли рекомендации.
+            if ($existing === null && $user->role !== UserRole::Customer) {
+                throw new ApiException(403, 'FORBIDDEN', 'Создать заявку из рекомендаций может только Заказчик');
+            }
+
             $target = $existing ?? $this->requests->createFromRecommendation($user, $first);
 
             if ($target->vehicle_id !== $first->vehicle_id || $target->vehicleRecord?->vin !== $first->vin) {
@@ -263,6 +269,9 @@ final class RecommendationService
 
             $request = $this->requests->mutate($user, $target->uuid, $existing ? ($requestRevision ?? -1) : $target->revision, 'recommendations_restored', function (RepairRequest $request) use ($user, $items, $docs): array {
                 $this->requests->flag($request, $user, 'canRestoreRecommendations');
+                // На стадии «В работе» добавленные позиции — изменение сметы,
+                // которое СТО отправляет на согласование УК и Заказчику.
+                WorkChangeService::begin($request);
                 foreach ($items as $item) {
                     $this->restoreItem($request, $item);
                     $item->target_request_id = $request->id;
@@ -270,10 +279,11 @@ final class RecommendationService
                     $item->save();
                 }
 
+                WorkChangeService::recordRestored($request, $items->pluck('uuid')->all());
                 $this->requests->recommendationEstimateChanged($request, $user, true);
 
                 return [
-                    'comment' => 'Позиции добавлены из рекомендаций',
+                    'comment' => 'Позиции добавлены из рекомендаций ' . $docs->pluck('number')->implode(', '),
                     'details' => [
                         'recommendationIds' => $docs->pluck('uuid')->all(),
                         'items' => $items->pluck('uuid')->all(),

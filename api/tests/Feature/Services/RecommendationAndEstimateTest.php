@@ -341,7 +341,8 @@ final class RecommendationAndEstimateTest extends TestCase
             requestRevision: 1,
         );
         $this->assertSame(1, $result['request']['stage']);
-        $this->assertFalse($result['request']['permissions']['canRestoreRecommendations']);
+        // Перенос из рекомендаций доступен в любом ЛК на этапах 0–5.
+        $this->assertTrue($result['request']['permissions']['canRestoreRecommendations']);
         $this->assertTrue(
             condition: RequestNotification::query()
                 ->where('repair_request_id', $this->request->id)
@@ -351,13 +352,68 @@ final class RecommendationAndEstimateTest extends TestCase
         );
     }
 
-    public function test_read_only_user_cannot_restore_into_a_request(): void
+    public function test_any_cabinet_restores_into_open_request_up_to_in_work(): void
     {
-        $work = $this->work();
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+
+        // Заявка у УК (этап 1), переносит Заказчик — не владелец этапа.
+        $result = $service->restore($this->customer, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
+        $this->assertCount(1, $result['request']['works']);
+        $this->assertSame($this->request->fresh()->number, $result['recommendation']['items'][0]['targetRequestNumber']);
+    }
+
+    public function test_recommendation_document_can_be_locked_before_transfer(): void
+    {
+        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $lock = app(\App\Services\DocumentLockService::class)->acquire($this->manager, [
+            'resourceType' => 'recommendation',
+            'resourceKey' => $doc['id'],
+            'label' => 'Рекомендации ТС',
+        ]);
+        $this->assertSame('recommendation', $lock['resourceType']);
+    }
+
+    public function test_restore_is_closed_after_in_work_stage(): void
+    {
+        $service = app(RecommendationService::class);
+        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $this->request->update(['stage' => RepairStage::Ready]);
         $this->expectException(ApiException::class);
-        $service->restore($this->customer, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
+        $service->restore($this->manager, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
+    }
+
+    public function test_only_customer_creates_request_from_recommendations(): void
+    {
+        $service = app(RecommendationService::class);
+        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        foreach ([$this->manager, $this->station] as $user) {
+            try {
+                $service->restore($user, $doc['id'], 0, [$doc['items'][0]['id']], null, null);
+                $this->fail('Only the customer may create a request from recommendations');
+            } catch (ApiException $error) {
+                $this->assertSame(403, $error->status);
+            }
+        }
+        $created = $service->restore($this->customer, $doc['id'], 0, [$doc['items'][0]['id']], null, null);
+        $this->assertNotSame($this->request->uuid, $created['request']['id']);
+    }
+
+    public function test_in_work_restore_is_a_work_change_and_discard_returns_rows(): void
+    {
+        $service = app(RecommendationService::class);
+        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $this->request->update(['stage' => RepairStage::RepairInProgress]);
+
+        $result = $service->restore($this->manager, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
+        $this->assertNotNull($this->request->fresh()->work_change);
+        $this->assertNotNull($result['recommendation']['items'][0]['movedAt']);
+
+        app(\App\Services\WorkChangeService::class)->discard($this->station, $this->request->uuid, 2);
+        $this->assertSame(0, $this->request->workLines()->count());
+        $item = \App\Models\RecommendationItem::query()->where('uuid', $doc['items'][0]['id'])->firstOrFail();
+        $this->assertNull($item->moved_at);
+        $this->assertNull($item->target_request_id);
     }
 
     public function test_catalog_manual_creation_is_manager_only_and_rejects_exact_duplicates(): void

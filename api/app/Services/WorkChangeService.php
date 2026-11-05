@@ -114,6 +114,19 @@ final class WorkChangeService
         $request->work_change = $state;
     }
 
+    /** Строки рекомендаций, перенесённые в ЗР в ходе изменения на стадии «В работе». */
+    public static function recordRestored(RepairRequest $request, array $itemIds): void
+    {
+        $state = $request->work_change;
+
+        if (!is_array($state)) {
+            return;
+        }
+
+        $state['restoredItemIds'] = array_values(array_unique([...($state['restoredItemIds'] ?? []), ...$itemIds]));
+        $request->work_change = $state;
+    }
+
     /**
      * Перечень изменений относительно согласованной сметы.
      *
@@ -468,6 +481,8 @@ final class WorkChangeService
             }
         }
 
+        $this->returnRestoredItems($request);
+
         // Позиции, перенесённые в рекомендации в ходе отменённого изменения,
         // вернулись в заявку — убираем их из рекомендаций.
         $itemIds = $request->work_change['deferredItemIds'] ?? [];
@@ -483,6 +498,27 @@ final class WorkChangeService
                     $document->save();
                 }
             }
+        }
+    }
+
+    /** Отмена изменения возвращает перенесённые строки обратно в рекомендации. */
+    private function returnRestoredItems(RepairRequest $request): void
+    {
+        $itemIds = $request->work_change['restoredItemIds'] ?? [];
+        if ($itemIds === []) {
+            return;
+        }
+
+        $items = RecommendationItem::query()
+            ->whereIn('uuid', $itemIds)
+            ->where('target_request_id', $request->id)
+            ->get();
+        RecommendationItem::query()
+            ->whereIn('id', $items->pluck('id'))
+            ->update(['moved_at' => null, 'target_request_id' => null]);
+        foreach (Recommendation::query()->whereIn('id', $items->pluck('recommendation_id')->unique())->get() as $document) {
+            $document->revision++;
+            $document->save();
         }
     }
 
