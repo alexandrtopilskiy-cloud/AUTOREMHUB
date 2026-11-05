@@ -18,10 +18,6 @@
 
     <div class="role-badge">{{ userRoleLabel }}</div>
 
-    <!-- Кнопка ЭДО (если её пока нет, мы добавим её позже) -->
-    <button class="topbar-edo-btn" @click="$emit('open-edo')">
-      Документы ЭДО
-    </button>
 
     <div class="user-chip">
       <span class="avatar">{{ userAvatarInitials }}</span>
@@ -49,7 +45,7 @@ export default {
     logoutBusy: { type: Boolean, default: false },
     appVersion: { type: String, default: "" },
   },
-  emits: ["logout", "open-edo"],
+  emits: ["logout"],
   computed: {
     userAvatarInitials() {
       if (!this.user?.login) return "";
@@ -75,19 +71,4 @@ export default {
    .user-chip, .avatar, .logout-btn и т.д. из App.vue.
    Пока можно оставить пустым, если стили глобальные.
 */
-.topbar-edo-btn {
-  padding: 6px 16px;
-  background: #e8f5e9;
-  color: #2e7d32;
-  border: 1px solid #c8e6c9;
-  border-radius: 4px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  margin-left: 12px;
-  transition: background 0.2s;
-}
-.topbar-edo-btn:hover {
-  background: #c8e6c9;
-}
 </style>

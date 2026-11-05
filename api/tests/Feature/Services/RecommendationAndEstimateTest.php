@@ -254,6 +254,27 @@ final class RecommendationAndEstimateTest extends TestCase
         $this->assertStringEndsWith('(З)', $result['recommendation']['items'][0]['actor']);
     }
 
+    public function test_customer_defers_works_and_parts_from_draft(): void
+    {
+        $this->request->update(['stage' => RepairStage::Draft]);
+        $work = $this->work();
+        $part = $this->part();
+        $service = app(RecommendationService::class);
+
+        $result = $service->defer($this->customer, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => [$part->uuid]]);
+
+        $this->assertSame(RepairStage::Draft->value, $result['request']['stage']);
+        $this->assertCount(2, $result['recommendation']['items']);
+        $this->assertStringEndsWith('(З)', $result['recommendation']['items'][0]['actor']);
+        $this->assertSame(0, $this->request->workLines()->count());
+        $this->assertSame(0, $this->request->parts()->count());
+
+        // Черновик Заказчика УК не видит и переносить из него не может.
+        $other = $this->work();
+        $this->expectException(ModelNotFoundException::class);
+        $service->defer($this->manager, $this->request->uuid, $result['request']['revision'], ['workIds' => [$other->uuid], 'partIds' => []]);
+    }
+
     public function test_different_vin_and_foreign_tenant_are_rejected_without_moving_items(): void
     {
         $work = $this->work();

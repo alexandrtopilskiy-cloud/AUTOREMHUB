@@ -7,7 +7,8 @@ import { formatDateTime, money } from '../../data/permissions.js';
  * Отчёт: ЗР на этапах «Подтверждение оплаты Заказчика», «Оплата в СТО»,
  * «Заявка на ремонт закрыта». Набор ЗР и колонок определяет сервер по ЛК:
  * УК — все Заказчики, СТО — только своё СТО, Заказчик — только свои ЗР.
- * Фильтры — по всем полям, доступным в этом ЛК.
+ * Состав и порядок столбцов задан для каждого ЛК (REPORT_COLUMNS), фильтры —
+ * по полям, которые видны в этом ЛК.
  */
 
 const props = defineProps({
@@ -21,12 +22,42 @@ const stages = ref([]);
 const loading = ref(false);
 const error = ref('');
 
+/* Столбцы отчёта по ЛК, слева направо. */
+const COLUMN_SETS = {
+  customer: ['number', 'vehicle', 'transferredAt', 'issuedAt', 'amount'],
+  manager: [
+    'number', 'customer', 'station', 'vehicle', 'transferredAt', 'issuedAt',
+    'amount', 'customerPaid', 'stationAmount', 'stationPaid', 'agentDiscount', 'stage',
+  ],
+  station: [
+    'number', 'vehicle', 'transferredAt', 'issuedAt',
+    'amount', 'customerPaid', 'stationAmount', 'stationPaid', 'agentDiscount', 'stage',
+  ],
+};
+
+const COLUMN_LABELS = {
+  number: '№ ЗР',
+  customer: 'Заказчик',
+  station: 'СТО',
+  vehicle: 'ТС',
+  transferredAt: 'Передано на СТО',
+  issuedAt: 'Выдано с СТО',
+  amount: 'Сумма ЗР (Заказчик), ₽',
+  customerPaid: 'Оплата Заказчика',
+  stationAmount: 'Сумма ЗР (СТО), ₽',
+  stationPaid: 'Оплата СТО',
+  agentDiscount: 'Сумма Агентского, ₽',
+  stage: 'Этап',
+};
+
+const MONEY_COLUMNS = ['amount', 'stationAmount', 'agentDiscount'];
+
 const emptyFilters = () => ({
   number: '',
+  transferredFrom: '',
+  transferredTo: '',
   issuedFrom: '',
   issuedTo: '',
-  closedFrom: '',
-  closedTo: '',
   stage: '',
   customer: '',
   station: '',
@@ -43,11 +74,26 @@ const role = computed(() => props.user.role);
 const isManager = computed(() => role.value === 'manager');
 const isStation = computed(() => role.value === 'station');
 const isCustomer = computed(() => role.value === 'customer');
-const showCustomer = computed(() => !isStation.value);
-const showStation = computed(() => true);
-const showDiscount = computed(() => !isCustomer.value);
-const showCustomerPayment = computed(() => !isStation.value);
-const showStationPayment = computed(() => !isCustomer.value);
+const columns = computed(() => COLUMN_SETS[role.value] || COLUMN_SETS.customer);
+const has = (key) => columns.value.includes(key);
+const showCustomer = computed(() => has('customer'));
+const showStation = computed(() => has('station'));
+const showStage = computed(() => has('stage'));
+const showCustomerPayment = computed(() => has('customerPaid'));
+const showStationPayment = computed(() => has('stationPaid'));
+
+function columnLabel(key) {
+  if (key === 'amount' && isCustomer.value) return 'Сумма, ₽';
+
+  return COLUMN_LABELS[key];
+}
+
+function isMoney(key) {
+  return MONEY_COLUMNS.includes(key);
+}
+
+/* Колонки до первой денежной — под подпись «Итого». */
+const totalsLead = computed(() => columns.value.findIndex(isMoney));
 
 const options = computed(() => {
   const unique = (key) => [...new Set(rows.value.map((row) => row[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
@@ -60,7 +106,14 @@ const options = computed(() => {
 });
 
 function dateOnly(value) {
-  return value ? String(value).slice(0, 10) : '';
+  if (!value) return '';
+  const text = String(value);
+  if (text.length <= 10) return text;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text.slice(0, 10);
+  const pad = (number) => String(number).padStart(2, '0');
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function inRange(value, from, to) {
@@ -83,11 +136,11 @@ const filtered = computed(() => rows.value.filter((row) => {
   const vehicleText = `${row.vehicle} ${row.plate} ${row.vin}`.toLowerCase();
 
   return (!filters.number || text(row.number).includes(filters.number.toLowerCase().trim()))
+    && inRange(row.transferredAt, filters.transferredFrom, filters.transferredTo)
     && inRange(row.issuedAt, filters.issuedFrom, filters.issuedTo)
-    && inRange(row.closedAt, filters.closedFrom, filters.closedTo)
-    && (filters.stage === '' || row.stage === Number(filters.stage))
-    && (!filters.customer || row.customer === filters.customer)
-    && (!filters.station || row.station === filters.station)
+    && (!showStage.value || filters.stage === '' || row.stage === Number(filters.stage))
+    && (!showCustomer.value || !filters.customer || row.customer === filters.customer)
+    && (!showStation.value || !filters.station || row.station === filters.station)
     && (!filters.reason || row.reason === filters.reason)
     && (!filters.vehicle || vehicleText.includes(filters.vehicle.toLowerCase().trim()))
     && paidMatches(row.customerPaidAt, showCustomerPayment.value ? filters.customerPaid : '')
@@ -106,6 +159,14 @@ const filtersApplied = computed(() => Object.entries(filters).some(([, value]) =
 
 function reset() {
   Object.assign(filters, emptyFilters());
+}
+
+/* Дата и время по местному времени; для «голой» даты — только дата. */
+function formatMoment(value) {
+  if (!value) return '—';
+  if (String(value).length <= 10) return formatDate(value);
+
+  return formatDateTime(value);
 }
 
 function formatDate(value) {
@@ -148,19 +209,13 @@ onMounted(load);
 
     <form class="report-filters" @submit.prevent>
       <label>№ ЗР<input v-model="filters.number" placeholder="ZR-000001" /></label>
-      <label>Этап
-        <select v-model="filters.stage">
-          <option value="">Все</option>
-          <option v-for="stage in stages" :key="stage.value" :value="stage.value">{{ stage.label }}</option>
-        </select>
-      </label>
-      <label v-if="showCustomer && !isCustomer">Заказчик
+      <label v-if="showCustomer">Заказчик
         <select v-model="filters.customer">
           <option value="">Все</option>
           <option v-for="item in options.customers" :key="item" :value="item">{{ item }}</option>
         </select>
       </label>
-      <label v-if="showStation && !isStation">СТО
+      <label v-if="showStation">СТО
         <select v-model="filters.station">
           <option value="">Все</option>
           <option v-for="item in options.stations" :key="item" :value="item">{{ item }}</option>
@@ -173,10 +228,10 @@ onMounted(load);
           <option v-for="item in options.reasons" :key="item" :value="item">{{ item }}</option>
         </select>
       </label>
-      <label>Выдача ТС с<input v-model="filters.issuedFrom" type="date" /></label>
+      <label>Передано на СТО с<input v-model="filters.transferredFrom" type="date" /></label>
+      <label>по<input v-model="filters.transferredTo" type="date" /></label>
+      <label>Выдано с СТО с<input v-model="filters.issuedFrom" type="date" /></label>
       <label>по<input v-model="filters.issuedTo" type="date" /></label>
-      <label>Закрыта с<input v-model="filters.closedFrom" type="date" /></label>
-      <label>по<input v-model="filters.closedTo" type="date" /></label>
       <label>Сумма от, ₽<input v-model="filters.amountFrom" type="number" min="0" /></label>
       <label>до, ₽<input v-model="filters.amountTo" type="number" min="0" /></label>
       <label v-if="showCustomerPayment">Оплата Заказчика
@@ -184,9 +239,15 @@ onMounted(load);
           <option value="">Все</option><option value="paid">Оплачено</option><option value="unpaid">Не оплачено</option>
         </select>
       </label>
-      <label v-if="showStationPayment">Оплата в СТО
+      <label v-if="showStationPayment">Оплата СТО
         <select v-model="filters.stationPaid">
           <option value="">Все</option><option value="paid">Оплачено</option><option value="unpaid">Не оплачено</option>
+        </select>
+      </label>
+      <label v-if="showStage">Этап
+        <select v-model="filters.stage">
+          <option value="">Все</option>
+          <option v-for="stage in stages" :key="stage.value" :value="stage.value">{{ stage.label }}</option>
         </select>
       </label>
       <div class="report-filter-actions">
@@ -200,50 +261,38 @@ onMounted(load);
       <table class="registry report-table">
         <thead>
           <tr>
-            <th>№ ЗР</th>
-            <th>Этап</th>
-            <th v-if="showCustomer">Заказчик</th>
-            <th>СТО</th>
-            <th>ТС</th>
-            <th>Выдача ТС</th>
-            <th class="align-right">Сумма, ₽</th>
-            <th v-if="showDiscount" class="align-right">Агентская скидка, ₽</th>
-            <th v-if="showDiscount" class="align-right">К оплате СТО, ₽</th>
-            <th v-if="showCustomerPayment">Оплата Заказчика</th>
-            <th v-if="showStationPayment">Оплата в СТО</th>
-            <th>Закрыта</th>
+            <th v-for="key in columns" :key="key" :class="{ 'align-right': isMoney(key) }">{{ columnLabel(key) }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in filtered" :key="row.id" @dblclick="emit('open', row)">
-            <td><strong>{{ row.number }}</strong><small>{{ row.reason }}</small></td>
-            <td>{{ row.status }}</td>
-            <td v-if="showCustomer">{{ row.customer }}</td>
-            <td>{{ row.station }}</td>
-            <td>{{ row.vehicle }}<small>{{ row.plate }}</small></td>
-            <td>{{ formatDate(row.issuedAt) }}</td>
-            <td class="align-right">{{ money(row.amount) }}</td>
-            <td v-if="showDiscount" class="align-right">
-              {{ money(row.agentDiscount) }}<small v-if="row.agentDiscountPercent != null">{{ row.agentDiscountPercent }}%</small>
+            <td v-for="key in columns" :key="key" :class="{ 'align-right': isMoney(key) }">
+              <template v-if="key === 'number'"><strong>{{ row.number }}</strong><small>{{ row.reason }}</small></template>
+              <template v-else-if="key === 'customer'">{{ row.customer }}</template>
+              <template v-else-if="key === 'station'">{{ row.station }}</template>
+              <template v-else-if="key === 'vehicle'">{{ row.vehicle }}<small>{{ row.plate }}</small></template>
+              <template v-else-if="key === 'transferredAt'">{{ formatMoment(row.transferredAt) }}</template>
+              <template v-else-if="key === 'issuedAt'">{{ formatMoment(row.issuedAt) }}</template>
+              <template v-else-if="key === 'amount'">{{ money(row.amount) }}</template>
+              <template v-else-if="key === 'customerPaid'">{{ formatDate(row.customerPaidAt) }}<small v-if="row.customerInvoice">{{ row.customerInvoice }}</small></template>
+              <template v-else-if="key === 'stationAmount'">{{ money(row.stationAmount) }}</template>
+              <template v-else-if="key === 'stationPaid'">{{ formatDate(row.stationPaidAt) }}<small v-if="row.stationInvoice">{{ row.stationInvoice }}</small></template>
+              <template v-else-if="key === 'agentDiscount'">{{ money(row.agentDiscount) }}<small v-if="row.agentDiscountPercent != null">{{ row.agentDiscountPercent }}%</small></template>
+              <template v-else-if="key === 'stage'">{{ row.status }}</template>
             </td>
-            <td v-if="showDiscount" class="align-right">{{ money(row.stationAmount) }}</td>
-            <td v-if="showCustomerPayment">{{ formatDate(row.customerPaidAt) }}<small>{{ row.customerInvoice }}</small></td>
-            <td v-if="showStationPayment">{{ formatDate(row.stationPaidAt) }}<small>{{ row.stationInvoice }}</small></td>
-            <td>{{ formatDate(row.closedAt) }}</td>
           </tr>
           <tr v-if="!filtered.length">
-            <td :colspan="12" class="muted">{{ loading ? 'Загружаем…' : 'Нет заявок по выбранным условиям' }}</td>
+            <td :colspan="columns.length" class="muted">{{ loading ? 'Загружаем…' : 'Нет заявок по выбранным условиям' }}</td>
           </tr>
         </tbody>
         <tfoot v-if="filtered.length">
           <tr>
-            <th :colspan="showCustomer ? 6 : 5">Итого: {{ filtered.length }} ЗР</th>
-            <th class="align-right">{{ money(totals.amount) }}</th>
-            <th v-if="showDiscount" class="align-right">{{ money(totals.discount) }}</th>
-            <th v-if="showDiscount" class="align-right">{{ money(totals.station) }}</th>
-            <th v-if="showCustomerPayment"></th>
-            <th v-if="showStationPayment"></th>
-            <th></th>
+            <th :colspan="totalsLead">Итого: {{ filtered.length }} ЗР</th>
+            <th v-for="key in columns.slice(totalsLead)" :key="key" :class="{ 'align-right': isMoney(key) }">
+              <template v-if="key === 'amount'">{{ money(totals.amount) }}</template>
+              <template v-else-if="key === 'stationAmount'">{{ money(totals.station) }}</template>
+              <template v-else-if="key === 'agentDiscount'">{{ money(totals.discount) }}</template>
+            </th>
           </tr>
         </tfoot>
       </table>
@@ -266,11 +315,11 @@ onMounted(load);
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfefc;
+  background: #fbfcfe;
 }
 .report-filters label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .report-filters input, .report-filters select { min-height: 34px; padding: 6px 8px; font-size: 13px; }
 .report-filter-actions { display: flex; align-items: flex-end; }
-.report-table tfoot th { background: #f4fbf7; color: var(--brand-navy); font-size: 13px; }
+.report-table tfoot th { background: #f4f7fb; color: var(--brand-navy); font-size: 13px; }
 .report-hint { margin: 0; font-size: 12px; }
 </style>

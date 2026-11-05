@@ -1906,7 +1906,6 @@ export default {
             :logout-busy="logoutBusy"
             :app-version="appVersion"
             @logout="logout"
-            @open-edo="openEdoTab"
         />
 
         <nav class="mobile-panels">
@@ -1930,6 +1929,7 @@ export default {
                 :catalog-keys="catalogKeys"
                 @open-list="openList"
                 @open-recommendations="openAllRecommendations"
+                @open-edo="openEdoTab"
                 @open-report="openReport"
                 @open-notification="openNotification"
                 @open-unread-chat="openUnreadChat"

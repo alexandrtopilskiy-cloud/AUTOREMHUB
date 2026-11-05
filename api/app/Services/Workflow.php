@@ -209,7 +209,10 @@ final class Workflow
             'canCustomerSlotDecide' => $isCustomerSlotDecision,
             'canAcceptVehicle' => $isVehicleAcceptance,
             'canEditParts'     => $canChangeInWork || ($isOwner && (self::isPartsEditableStage($stage) || ($stage === RepairStage::Draft && $role !== UserRole::Customer))),
-            'canDeferRecommendations' => $canChangeInWork || ($isOwner && in_array($stage, [RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true)),
+            // Заказчик может перенести работы / ЗЧ в Рекомендации уже в Черновике.
+            'canDeferRecommendations' => $canChangeInWork
+                || ($isOwner && in_array($stage, [RepairStage::ManagerRouting, RepairStage::StationApproval, RepairStage::CustomerApproval], true))
+                || ($isOwner && $role === UserRole::Customer && $stage === RepairStage::Draft),
             // Перенос из Рекомендаций ТС в открытую ЗР: в любом ЛК на этапах
             // 0 «Черновик» … 5 «В работе», кроме времени согласования изменений.
             'canRestoreRecommendations' => $request->vehicle_id !== null

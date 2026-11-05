@@ -233,6 +233,9 @@ final class ClosingRouteTest extends TestCase
         $rows = $this->get('/api/reports/requests')->assertOk()->json('rows');
         $this->assertCount(1, $rows);
         $this->assertSame(1350.0, (float) $rows[0]['stationAmount']);
+        $this->assertNotNull($rows[0]['transferredAt']);
+        $this->assertNotNull($rows[0]['issuedAt']);
+        $this->assertNotNull($rows[0]['customerPaidAt']);
         $this->assertSame('ООО "Альфа"', $rows[0]['customer']);
 
         $this->actingAs($this->users['customer']);
@@ -243,6 +246,9 @@ final class ClosingRouteTest extends TestCase
         $this->actingAs($this->users['station']);
         $row = $this->get('/api/reports/requests')->assertOk()->json('rows.0');
         $this->assertNull($row['customer']);
+        $this->assertNull($row['customerInvoice']);
+        $this->assertSame(now()->toDateString(), $row['customerPaidAt']);
+        $this->assertNotNull($row['stationPaidAt']);
         $this->assertSame(150.0, (float) $row['agentDiscount']);
     }
 

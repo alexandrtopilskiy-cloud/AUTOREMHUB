@@ -1777,6 +1777,63 @@ test("Options API component rendering and interactive methods", async (context) 
                 assert.doesNotMatch(manager, /Загрузить скан акта/);
             },
         );
+
+        await context.test(
+            "report: columns per cabinet, left to right",
+            async () => {
+                const { default: RequestReport } = await server.ssrLoadModule(
+                    "/src/features/reports/RequestReport.vue",
+                );
+                const headers = async (role) => {
+                    const html = await renderToString(
+                        createSSRApp(RequestReport, { user: { role } }),
+                    );
+                    const head = html.slice(html.indexOf("<thead"), html.indexOf("</thead>"));
+                    return [...head.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
+                };
+                assert.deepEqual(await headers("customer"), [
+                    "№ ЗР", "ТС", "Передано на СТО", "Выдано с СТО", "Сумма, ₽",
+                ]);
+                assert.deepEqual(await headers("manager"), [
+                    "№ ЗР", "Заказчик", "СТО", "ТС", "Передано на СТО", "Выдано с СТО",
+                    "Сумма ЗР (Заказчик), ₽", "Оплата Заказчика", "Сумма ЗР (СТО), ₽",
+                    "Оплата СТО", "Сумма Агентского, ₽", "Этап",
+                ]);
+                assert.deepEqual(await headers("station"), [
+                    "№ ЗР", "ТС", "Передано на СТО", "Выдано с СТО",
+                    "Сумма ЗР (Заказчик), ₽", "Оплата Заказчика", "Сумма ЗР (СТО), ₽",
+                    "Оплата СТО", "Сумма Агентского, ₽", "Этап",
+                ]);
+            },
+        );
+
+        await context.test(
+            "side menu: EDO documents right after recommendations, not in the top bar",
+            async () => {
+                const { default: SidebarMenu } = await server.ssrLoadModule(
+                    "/src/components/SidebarMenu.vue",
+                );
+                const { default: TopBar } = await server.ssrLoadModule(
+                    "/src/components/TopBar.vue",
+                );
+                const menu = await renderToString(
+                    createSSRApp(SidebarMenu, {
+                        user: { role: "customer", organization: "Org", label: "User" },
+                        panel: { menu: true },
+                        active: { kind: "edo" },
+                    }),
+                );
+                const rec = menu.indexOf("Рекомендации");
+                const edo = menu.indexOf("Документы ЭДО");
+                const awaiting = menu.indexOf("Ожидают действия");
+                assert.ok(rec > -1 && edo > rec && awaiting > edo);
+                assert.match(menu, /class="active nav-item"[^>]*>\s*⇄ Документы ЭДО/);
+                const top = await renderToString(
+                    createSSRApp(TopBar, { user: { login: "uk", label: "УК" } }),
+                );
+                assert.doesNotMatch(top, /Документы ЭДО/);
+            },
+        );
     } finally {
         await server.close();
     }

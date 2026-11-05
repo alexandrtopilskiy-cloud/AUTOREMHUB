@@ -263,13 +263,13 @@ async function download(doc) {
 
 <style scoped>
 .closing-panel { display: grid; gap: 14px; }
-.closing-block { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fbfefc; }
+.closing-block { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; }
 .closing-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .closing-head > div { display: grid; }
 .closing-head > :first-child { margin-right: auto; }
 .closing-head small, td small, dd small { display: block; color: var(--muted); font-size: 12px; }
 .closing-state { padding: 4px 10px; border-radius: 999px; background: #fff5de; color: #815c18; font-size: 12px; font-weight: 650; white-space: nowrap; }
-.closing-state.done { background: #e8f7ef; color: #17633a; }
+.closing-state.done { background: #e8eef7; color: #173863; }
 .closing-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; margin: 0; }
 .closing-facts dt { font-size: 12px; color: var(--muted); }
 .closing-facts dd { margin: 2px 0 0; font-weight: 600; }

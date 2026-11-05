@@ -268,8 +268,8 @@ onMounted(fetchDocuments);
     color: #f57c00;
 }
 .status-signed {
-    background: #e8f5e9;
-    color: #388e3c;
+    background: #e8eef5;
+    color: #385d8e;
 }
 .status-rejected {
     background: #ffebee;

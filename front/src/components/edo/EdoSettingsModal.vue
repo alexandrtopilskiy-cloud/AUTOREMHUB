@@ -192,8 +192,8 @@ const submit = async () => {
     font-size: 14px;
 }
 .success-banner {
-    color: #2e7d32;
-    background: #e8f5e9;
+    color: #2e507d;
+    background: #e8eef5;
     padding: 10px;
     border-radius: 4px;
     margin-bottom: 15px;
