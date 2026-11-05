@@ -210,7 +210,8 @@ final class RepairRequestService
 
     public function flag(RepairRequest $request, User $user, string $flag): void
     {
-        $permissions = Workflow::permissions($request, $user);
+        $dto = UserDto::fromUserModel($user);
+        $permissions = Workflow::permissions($request, $dto);
 
         if (!($permissions[$flag] ?? false)) {
             throw new ApiException(403, 'FORBIDDEN', 'Действие недоступно вашей роли на текущем этапе');
@@ -392,6 +393,7 @@ final class RepairRequestService
      */
     public function update(User $user, UpdateRepairRequestDto $dto): RepairRequest
     {
+        $userDto = UserDto::fromUserModel($user);
         if ($dto->isEmpty()) {
             Input::fail('Передайте хотя бы одно изменяемое поле');
         }
@@ -401,9 +403,9 @@ final class RepairRequestService
             $dto->requestKey,
             $dto->revision,
             'patch',
-            function (RepairRequest $request) use ($user, $dto): array {
+            function (RepairRequest $request) use ($userDto, $user, $dto): array {
                 // 1. Проверка прав на изменение полей
-                $this->assertPatchFieldsAllowed($request, $user, $dto->rawPatch);
+                $this->assertPatchFieldsAllowed($request, $userDto, $dto->rawPatch);
 
                 // 2. Валидация времени и пробега (используем rawPatch, т.к. там могут быть строки)
                 $this->validateLocalTimeFields($dto->rawPatch);
@@ -489,13 +491,13 @@ final class RepairRequestService
         return false;
     }
 
-    private function assertPatchFieldsAllowed(RepairRequest $request, User $user, array $patch): void
+    private function assertPatchFieldsAllowed(RepairRequest $request, UserDto $dto, array $patch): void
     {
         if (array_diff(array_keys($patch), Workflow::FIELDS)) {
             Input::fail('Обнаружены поля, которые нельзя изменять');
         }
 
-        $allowed = Workflow::permissions($request, $user)['editableFields'];
+        $allowed = Workflow::permissions($request, $dto)['editableFields'];
 
         if (!$allowed || array_diff(array_keys($patch), $allowed)) {
             throw new ApiException(403, 'FORBIDDEN', 'Поля на текущем этапе недоступны');

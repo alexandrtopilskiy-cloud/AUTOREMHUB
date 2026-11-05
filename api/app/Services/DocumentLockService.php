@@ -25,27 +25,28 @@ final class DocumentLockService
      */
     public function acquire(User $user, array $payload): array
     {
+        $dto = UserDto::fromUserModel($user);
         $validated = Input::validate($payload, [
             'resourceType' => ['required', 'string', 'in:' . implode(',', self::RESOURCE_TYPES)],
             'resourceKey'  => ['required', 'string', 'max:255'],
             'label'        => ['sometimes', 'string', 'max:255'],
         ]);
         [$key, $label] = $this->resolveResource(
-            $user,
+            $dto,
             $validated['resourceType'],
             $validated['resourceKey'],
             (string) ($validated['label'] ?? ''),
         );
 
-        return DB::transaction(function () use ($user, $validated, $key, $label): array {
+        return DB::transaction(function () use ($dto, $validated, $key, $label): array {
             DB::select(
                 'SELECT pg_advisory_xact_lock(hashtext(?))',
-                [$user->tenantId() . '|' . $validated['resourceType'] . '|' . $key],
+                [$dto->tenantId . '|' . $validated['resourceType'] . '|' . $key],
             );
 
             $lock = DocumentLock::query()
                 ->with('user')
-                ->where('tenant_id', $user->tenantId())
+                ->where('tenant_id', $dto->tenantId)
                 ->where('resource_type', $validated['resourceType'])
                 ->where('resource_key', $key)
                 ->lockForUpdate()
@@ -56,7 +57,7 @@ final class DocumentLockService
                 $lock = null;
             }
 
-            if ($lock !== null && $lock->user_id !== $user->id) {
+            if ($lock !== null && $lock->user_id !== $dto->userId) {
                 $this->throwLocked($lock);
             }
 
@@ -64,8 +65,8 @@ final class DocumentLockService
 
             if ($lock === null) {
                 $lock = DocumentLock::query()->create([
-                    'tenant_id'      => $user->tenantId(),
-                    'user_id'        => $user->id,
+                    'tenant_id'      => $dto->tenantId,
+                    'user_id'        => $dto->userId,
                     'resource_type'  => $validated['resourceType'],
                     'resource_key'   => $key,
                     'resource_label' => $label,
@@ -140,14 +141,12 @@ final class DocumentLockService
     /**
      * @return array{0: string, 1: string}
      */
-    private function resolveResource(User $user, string $type, string $key, string $label, ): array
+    private function resolveResource(UserDto $dto, string $type, string $key, string $label, ): array
     {
-        $dto = UserDto::fromUserModel($user);
-
         if ($type === 'request') {
             $request = RepairRequest::resolveFor($dto, $key);
 
-            if (!$this->canMutateRequest($request, $user)) {
+            if (!$this->canMutateRequest($request, $dto)) {
                 throw new ApiException(
                     403,
                     'READ_ONLY',
@@ -172,7 +171,7 @@ final class DocumentLockService
             ];
         }
 
-        if ($user->role === UserRole::Station && !str_starts_with($key, 'partManufacturers:') && !str_starts_with($key, 'parts:') && !str_starts_with($key, 'suppliers:')) {
+        if ($dto->role === UserRole::Station && !str_starts_with($key, 'partManufacturers:') && !str_starts_with($key, 'parts:') && !str_starts_with($key, 'suppliers:')) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -190,9 +189,9 @@ final class DocumentLockService
         ];
     }
 
-    private function canMutateRequest(RepairRequest $request, User $user): bool
+    private function canMutateRequest(RepairRequest $request, UserDto $dto): bool
     {
-        $permissions = Workflow::permissions($request, $user);
+        $permissions = Workflow::permissions($request, $dto);
 
         if (($permissions['editableFields'] ?? []) !== []) {
             return true;

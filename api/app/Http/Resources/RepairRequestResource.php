@@ -13,6 +13,9 @@ use App\Support\AgentDiscount;
 use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\DTO\UserDto;
+use App\Enums\AttachmentPurpose;
+use App\Services\ClosingDocumentService;
 
 final class RepairRequestResource extends JsonResource
 {
@@ -21,6 +24,7 @@ final class RepairRequestResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $request->user();
+        $dto = UserDto::fromUserModel($user);
 
         // Загружаем все необходимые связи (для избежания N+1)
         $this->resource->loadMissing([
@@ -82,7 +86,7 @@ final class RepairRequestResource extends JsonResource
             'declinedStationIds'     => $this->data['declinedStationIds'] ?? [],
             'statusLabel'            => Workflow::statusLabel($this->resource),
             'ownerLabel'             => Workflow::ownerLabel($this->resource),
-            'workChange'             => app(WorkChangeService::class)->present($this->resource, $user),
+            'workChange'             => app(WorkChangeService::class)->present($this->resource, $dto),
             'reviewBaselineVersion'  => $this->review_baseline_version,
 
             // Vehicle
@@ -94,18 +98,18 @@ final class RepairRequestResource extends JsonResource
             'vin'                    => $vehicle?->vin ?? '',
             'plate'                  => $vehicle?->plate ?? '',
             'year'                   => $vehicle?->year,
-            'company'                => $user->role === UserRole::Station ? '' : ($vehicle?->organization?->name ?? ''),
+            'company'                => $dto->role === UserRole::Station ? '' : ($vehicle?->organization?->name ?? ''),
             'previousServiceMileage' => $this->previous_service_mileage,
             'previousServiceAt'      => $this->previous_service_at?->toISOString(),
 
             // Rates
             'laborRateType' => ($data['laborRateType'] ?? '') ?: 'general',
-            'laborRates' => $user->role === UserRole::Manager ? [
+            'laborRates' => $dto->role === UserRole::Manager ? [
                 'general' => $vehicle?->laborRate('general'),
                 'official' => $vehicle?->laborRate('official'),
                 'other' => $vehicle?->laborRate('other'),
             ] : [],
-            'laborHourRate' => $user->role !== UserRole::Customer
+            'laborHourRate' => $dto->role !== UserRole::Customer
                 ? ($vehicle?->laborRate($data['laborRateType'] ?? 'general') !== null
                 ? (float) $vehicle->laborRate($data['laborRateType'] ?? 'general') : null)
                 : null,
@@ -141,12 +145,12 @@ final class RepairRequestResource extends JsonResource
             'parts'                  => PartResource::collection($this->parts),
             'total'                  => $total,
             // Агентская скидка СТО: только для ЛК УК и ЛК СТО.
-            ...(AgentDiscount::visibleTo($user)
+            ...(AgentDiscount::visibleTo($dto->role)
                 ? ['agentDiscount' => AgentDiscount::summary($this->resource)]
                 : []),
             'history'                => RepairRequestEventResource::collection($this->events),
             'attachments'            => AttachmentResource::collection(
-                $this->attachments->reject(fn ($attachment) => $attachment->purpose === \App\Enums\AttachmentPurpose::GeneratedDocument)->values(),
+                $this->attachments->reject(fn ($attachment) => $attachment->purpose === AttachmentPurpose::GeneratedDocument)->values(),
             ),
             'currentPeriodId'        => $this->periods->first(fn($p) => $p->exited_at === null)?->uuid,
             'diagnosticReports'      => DiagnosticReportResource::collection($this->diagnoses),
@@ -154,11 +158,11 @@ final class RepairRequestResource extends JsonResource
             'workOrder'              => $this->workOrder ? (new WorkOrderResource($this->resource))->toArray($request)['workOrder'] : null,
             'invoice'                => $this->invoice ? (new InvoiceResource($this->invoice))->toArray($request) : null,
             'acceptanceAct'          => $this->acceptanceAct ? (new AcceptanceActResource($this->acceptanceAct))->toArray($request) : null,
-            'closing'                => app(\App\Services\ClosingDocumentService::class)->present($this->resource, $user),
+            'closing'                => app(ClosingDocumentService::class)->present($this->resource, $dto),
 
             // Permissions
-            'permissions' => array_merge(Workflow::permissions($this->resource, $user), [
-                'canViewRepairEstimate' => $user->role !== UserRole::Customer || $this->stage->value >= RepairStage::CustomerApproval->value
+            'permissions' => array_merge(Workflow::permissions($this->resource, $dto), [
+                'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $this->stage->value >= RepairStage::CustomerApproval->value
                     || $this->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
             ]),
         ];

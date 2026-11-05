@@ -45,7 +45,7 @@ final class RepairRequestController
         $dto = UserDto::fromUserModel($user);
         $requests = RepairRequest::forUser($dto)->latest('id')->get();
 
-        $this->apiPresenter->preloadRecommendations($requests, $user);
+        $this->apiPresenter->preloadRecommendations($requests, $dto);
 
         return new RepairRequestCollection($requests);
     }
