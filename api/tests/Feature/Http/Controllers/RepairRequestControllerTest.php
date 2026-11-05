@@ -406,6 +406,7 @@ final class RepairRequestControllerTest extends TestCase
                 'stationSlot' => '2026-10-21T14:00',
             ]),
         ]);
+        $this->makeWork($request);
 
         $this->actingAs($this->customer);
         $response = $this->postJson('/api/requests/' . $request->uuid . '/customer-slot-decision', [
