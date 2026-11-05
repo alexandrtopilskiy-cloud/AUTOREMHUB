@@ -51,28 +51,42 @@
         ▦ Отчёт
       </button>
 
-      <!-- Справочники: один выпадающий пункт, набор зависит от ЛК -->
+      <!-- Справочники: по клику — всплывающий список, набор зависит от ЛК -->
       <template v-if="catalogKeys.length">
         <button
+          ref="catalogButton"
           class="nav-item nav-group"
-          :class="{ active: catalogActive && !catalogsOpen }"
+          :class="{ active: catalogActive, open: catalogsOpen }"
+          aria-haspopup="menu"
           :aria-expanded="catalogsOpen"
           @click="toggleCatalogs"
         >
           ☷ Справочники
-          <span class="nav-chevron" aria-hidden="true">{{ catalogsOpen ? "▾" : "▸" }}</span>
+          <span class="nav-chevron" aria-hidden="true">▸</span>
         </button>
-        <div v-if="catalogsOpen" class="nav-submenu">
-          <button
-            v-for="key in catalogKeys"
-            :key="key"
-            class="nav-item"
-            :class="{ active: active?.key === key }"
-            @click="$emit('open-list', key)"
+        <Teleport to="body">
+          <div
+            v-if="catalogsOpen"
+            ref="catalogPopup"
+            class="catalog-popup"
+            role="menu"
+            aria-label="Справочники"
+            :style="popupStyle"
+            @keydown.esc.stop="closeCatalogs(true)"
           >
-            {{ catalogNames[key] }}
-          </button>
-        </div>
+            <span class="catalog-popup-caption">Справочники</span>
+            <button
+              v-for="key in catalogKeys"
+              :key="key"
+              class="catalog-popup-item"
+              :class="{ active: active?.key === key }"
+              role="menuitem"
+              @click="selectCatalog(key)"
+            >
+              {{ catalogNames[key] }}
+            </button>
+          </div>
+        </Teleport>
       </template>
 
       <!-- Уведомления -->
@@ -127,15 +141,9 @@
 <script>
 import { formatDateTime, catalogNames } from "../data/permissions";
 
-const CATALOGS_OPEN_KEY = "autoremhub.menu.catalogsOpen";
-
-function readCatalogsOpen() {
-  try {
-    return localStorage.getItem(CATALOGS_OPEN_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+const POPUP_GAP = 6;
+const VIEWPORT_PAD = 8;
+const POPUP_WIDTH = 260;
 
 export default {
   name: "SidebarMenu",
@@ -162,7 +170,8 @@ export default {
   data() {
     return {
       catalogNames,
-      catalogsOpen: readCatalogsOpen() || this.catalogKeys.includes(this.active?.key),
+      catalogsOpen: false,
+      popupStyle: {},
     };
   },
   computed: {
@@ -171,19 +180,90 @@ export default {
     },
   },
   watch: {
-    catalogActive(value) {
-      if (value) this.catalogsOpen = true;
+    "panel.menu"(value) {
+      if (!value) this.closeCatalogs();
     },
+  },
+  beforeUnmount() {
+    this.unbindPopupListeners();
   },
   methods: {
     formatDateTime,
     toggleCatalogs() {
-      this.catalogsOpen = !this.catalogsOpen;
-      try {
-        localStorage.setItem(CATALOGS_OPEN_KEY, this.catalogsOpen ? "1" : "0");
-      } catch {
-        /* хранилище недоступно — состояние только в памяти */
+      if (this.catalogsOpen) this.closeCatalogs();
+      else this.openCatalogs();
+    },
+    openCatalogs() {
+      this.catalogsOpen = true;
+      this.placePopup();
+      this.$nextTick(() => {
+        this.placePopup();
+        this.$refs.catalogPopup?.querySelector("button")?.focus({ preventScroll: true });
+      });
+      this.bindPopupListeners();
+    },
+    closeCatalogs(returnFocus = false) {
+      if (!this.catalogsOpen) return;
+      this.catalogsOpen = false;
+      this.unbindPopupListeners();
+      if (returnFocus) this.$refs.catalogButton?.focus();
+    },
+    selectCatalog(key) {
+      this.closeCatalogs();
+      this.$emit("open-list", key);
+    },
+    /* Справа от пункта меню; если места справа нет (мобильный вид) — под пунктом. */
+    placePopup() {
+      const button = this.$refs.catalogButton;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const popupHeight = this.$refs.catalogPopup?.offsetHeight || 0;
+      let left = rect.right + POPUP_GAP;
+      let top = rect.top;
+      let width = POPUP_WIDTH;
+      if (left + width > vw - VIEWPORT_PAD) {
+        left = Math.max(VIEWPORT_PAD, rect.left);
+        width = Math.min(Math.max(rect.width, POPUP_WIDTH), vw - left - VIEWPORT_PAD);
+        top = rect.bottom + POPUP_GAP;
+        if (popupHeight && top + popupHeight > vh - VIEWPORT_PAD) {
+          top = Math.max(VIEWPORT_PAD, rect.top - POPUP_GAP - popupHeight);
+        }
+      } else if (popupHeight && top + popupHeight > vh - VIEWPORT_PAD) {
+        top = Math.max(VIEWPORT_PAD, vh - VIEWPORT_PAD - popupHeight);
       }
+      this.popupStyle = {
+        top: `${Math.round(top)}px`,
+        left: `${Math.round(left)}px`,
+        width: `${Math.round(width)}px`,
+        maxHeight: `${Math.round(vh - VIEWPORT_PAD * 2)}px`,
+      };
+    },
+    onDocumentPointer(event) {
+      const target = event.target;
+      if (this.$refs.catalogPopup?.contains(target)) return;
+      if (this.$refs.catalogButton?.contains(target)) return;
+      this.closeCatalogs();
+    },
+    onDocumentKey(event) {
+      if (event.key === "Escape") this.closeCatalogs(true);
+    },
+    onViewportChange(event) {
+      if (event?.target && this.$refs.catalogPopup?.contains(event.target)) return;
+      this.closeCatalogs();
+    },
+    bindPopupListeners() {
+      document.addEventListener("pointerdown", this.onDocumentPointer, true);
+      document.addEventListener("keydown", this.onDocumentKey);
+      window.addEventListener("resize", this.onViewportChange);
+      window.addEventListener("scroll", this.onViewportChange, true);
+    },
+    unbindPopupListeners() {
+      document.removeEventListener("pointerdown", this.onDocumentPointer, true);
+      document.removeEventListener("keydown", this.onDocumentKey);
+      window.removeEventListener("resize", this.onViewportChange);
+      window.removeEventListener("scroll", this.onViewportChange, true);
     },
   },
 };
@@ -201,10 +281,56 @@ export default {
   color: var(--muted);
 }
 
-.nav-submenu {
+.nav-group.open {
+  background: #dbf7e6;
+}
+
+.catalog-popup {
+  position: fixed;
+  z-index: 1000;
   display: grid;
-  margin: 0 0 4px 14px;
-  padding-left: 8px;
-  border-left: 2px solid var(--line);
+  align-content: start;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(18, 56, 40, 0.18);
+}
+
+.catalog-popup-caption {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #6e8e7d;
+}
+
+.catalog-popup-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px;
+  color: #325d48;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.catalog-popup-item:hover,
+.catalog-popup-item:focus-visible {
+  background: #dbf7e6;
+  outline: none;
+}
+
+.catalog-popup-item.active {
+  background: var(--brand-teal-soft);
+  color: var(--brand-navy);
+  font-weight: 650;
+  box-shadow: inset 3px 0 var(--brand-teal);
 }
 </style>

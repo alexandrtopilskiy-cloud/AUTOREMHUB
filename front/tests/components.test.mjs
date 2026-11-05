@@ -1627,36 +1627,64 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
-            "side menu: report item and one collapsible catalogs item",
+            "side menu: report item and catalogs as a popup list",
             async () => {
                 const { default: SidebarMenu } = await server.ssrLoadModule(
                     "/src/components/SidebarMenu.vue",
                 );
-                const render = (role, catalogKeys, active = null) =>
-                    renderToString(
-                        createSSRApp(SidebarMenu, {
+                const render = async (role, catalogKeys, active = null, open = false) => {
+                    const ctx = {};
+                    const component = open
+                        ? {
+                              ...SidebarMenu,
+                              data() {
+                                  return { ...SidebarMenu.data.call(this), catalogsOpen: true };
+                              },
+                          }
+                        : SidebarMenu;
+                    const html = await renderToString(
+                        createSSRApp(component, {
                             user: { role, organization: "Org", label: "User" },
                             panel: { menu: true },
                             catalogKeys,
                             active,
                         }),
+                        ctx,
                     );
+                    return { html, popup: ctx.teleports?.body || "" };
+                };
 
-                const collapsed = await render("station", ["parts", "suppliers"]);
-                assert.match(collapsed, /Отчёт/);
-                assert.match(collapsed, /Справочники/);
-                assert.doesNotMatch(collapsed, /Справочник запчастей/);
+                const closed = await render("station", ["parts", "suppliers"]);
+                assert.match(closed.html, /Отчёт/);
+                assert.match(closed.html, /Справочники/);
+                assert.match(closed.html, /aria-haspopup="menu"/);
+                assert.doesNotMatch(closed.html + closed.popup, /Справочник запчастей/);
 
-                const opened = await render("station", ["parts", "suppliers"], {
+                // Активный справочник не разворачивает список внутри меню
+                const activeClosed = await render("station", ["parts", "suppliers"], {
                     kind: "list",
                     key: "parts",
                 });
-                assert.match(opened, /Справочник запчастей/);
-                assert.match(opened, /Поставщики/);
+                assert.match(activeClosed.html, /class="active nav-item nav-group"/);
+                assert.doesNotMatch(activeClosed.html + activeClosed.popup, /Справочник запчастей/);
+
+                // Открытый список рендерится всплывающим окном вне меню
+                const opened = await render(
+                    "station",
+                    ["parts", "suppliers"],
+                    { kind: "list", key: "parts" },
+                    true,
+                );
+                assert.doesNotMatch(opened.html, /Справочник запчастей/);
+                assert.match(opened.popup, /class="catalog-popup"/);
+                assert.match(opened.popup, /role="menu"/);
+                assert.match(opened.popup, /Справочник запчастей/);
+                assert.match(opened.popup, /Поставщики/);
+                assert.match(opened.popup, /class="[^"]*active[^"]*catalog-popup-item|class="catalog-popup-item active/);
 
                 const customer = await render("customer", []);
-                assert.match(customer, /Отчёт/);
-                assert.doesNotMatch(customer, /☷ Справочники/);
+                assert.match(customer.html, /Отчёт/);
+                assert.doesNotMatch(customer.html, /☷ Справочники/);
             },
         );
 
