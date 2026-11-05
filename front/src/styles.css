@@ -404,6 +404,25 @@ button:focus-visible,
   scrollbar-color: #b0bed1 transparent;
 }
 
+/* Заставка рабочей области, когда закрыты все вкладки: анимированный логотип на ~80% площади. */
+.workspace-splash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 240px;
+  background: white;
+}
+
+.workspace-splash img {
+  display: block;
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
 .splitter {
   background: var(--line);
   cursor: col-resize;
