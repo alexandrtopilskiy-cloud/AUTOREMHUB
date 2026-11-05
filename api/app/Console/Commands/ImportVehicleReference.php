@@ -23,7 +23,7 @@ final class ImportVehicleReference extends Command
     public function handle(VehicleReferenceImporter $importer): int
     {
         $file = (string) ($this->argument('file')
-            ?: database_path('data/vehicle_reference_20261005.xlsx'));
+            ?: database_path('data/vehicle_reference_20261014.xlsx'));
         $result = $importer->import(
             $file,
             (bool) $this->option('dry-run'),

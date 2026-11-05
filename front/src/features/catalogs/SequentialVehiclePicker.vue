@@ -14,6 +14,10 @@ const STEPS = [
     ["driveType", "Тип привода"],
 ];
 
+// Список вариантов открывается сразу по фокусу (до начала ввода) и уже
+// сужен верхними уровнями выбора: марка → модель → поколение → ...
+const ALL_ON_FOCUS = 100000;
+
 export default {
     name: "SequentialVehiclePicker",
     components: { VehicleModelCreateDialog, ReferencePicker },
@@ -25,6 +29,7 @@ export default {
     data() {
         return {
             steps: STEPS,
+            ALL_ON_FOCUS,
             makeSearch: "",
             makes: [],
             make: null,
@@ -191,9 +196,10 @@ export default {
                 :label="make?.name || ''"
                 :options="makes"
                 :disabled="disabled || busy"
-                :open-on-input-only="true"
+                :show-all-on-focus-limit="ALL_ON_FOCUS"
+                :max-results="ALL_ON_FOCUS"
                 search-mode="fragments"
-                placeholder="Начните вводить марку"
+                placeholder="Выберите или начните вводить марку"
                 @update:model-value="clearMake"
                 @query="makeSearch = $event"
                 @select="selectMake"
@@ -211,14 +217,14 @@ export default {
             </select>
             <ReferencePicker
                 v-else
-                :show-all-on-focus-limit="15"
+                :show-all-on-focus-limit="ALL_ON_FOCUS"
+                :max-results="ALL_ON_FOCUS"
                 :model-value="filters[key] || ''"
                 :label="stepLabel(key)"
                 :options="stepOptions(key)"
                 :disabled="disabled || busy || !options[key]"
-                :open-on-input-only="true"
                 search-mode="fragments"
-                :placeholder="options[key] ? 'Начните вводить значение' : 'Сначала выберите предыдущий признак'"
+                :placeholder="options[key] ? 'Выберите или начните вводить значение' : 'Сначала выберите предыдущий признак'"
                 @update:model-value="clearStep(key, $event)"
                 @select="selectStep(key, $event)"
             />
