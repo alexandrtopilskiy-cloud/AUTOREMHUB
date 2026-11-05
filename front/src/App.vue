@@ -13,6 +13,7 @@ import PersonCatalogEditor from "./features/catalogs/PersonCatalogEditor.vue";
 import UserCatalogEditor from "./features/catalogs/UserCatalogEditor.vue";
 import VehicleReferenceCatalog from "./features/catalogs/VehicleReferenceCatalog.vue";
 import RecommendationPanel from "./features/requests/RecommendationPanel.vue";
+import RecommendationPreview from "./features/requests/RecommendationPreview.vue";
 import VehicleModelCreateDialog from "./features/catalogs/VehicleModelCreateDialog.vue";
 import CatalogImportWizard from "./features/catalogs/CatalogImportWizard.vue";
 import RequestChatDrawer from "./features/requests/RequestChatDrawer.vue";
@@ -64,6 +65,7 @@ export default {
         VehicleReferenceCatalog,
         CatalogImportWizard,
         RecommendationPanel,
+        RecommendationPreview,
         VehicleModelCreateDialog,
         RequestChatDrawer,
         VehicleHistory,
@@ -1272,7 +1274,7 @@ export default {
                 );
                 this.store.accept(result.request);
                 this.notify(
-                    `Созданы рекомендации ${result.recommendation.number}`,
+                    `Позиции добавлены в рекомендации ${result.recommendation.number}`,
                 );
             } catch (error) {
                 this.notify(error.message);
@@ -1295,6 +1297,7 @@ export default {
                         vin: request.vin || "",
                     },
                     title: `Рекомендации · ${request.plate || request.vin}`,
+                    recommendation: null,
                 });
             await this.activate(id);
         },
@@ -1315,17 +1318,37 @@ export default {
                     kind: "recommendations",
                     vehicleId: "",
                     title: "Рекомендации",
+                    selection: "",
+                    recommendation: null,
                 });
             await this.activate(id);
         },
         openVehicleRecommendations(vehicle) {
             return this.openRecommendations({
-                vehicleId: vehicle.id || vehicle.vehicleId,
+                // Строка перечня рекомендаций несёт id документа и vehicleId,
+                // карточка ТС — только id самого ТС.
+                vehicleId: vehicle.vehicleId || vehicle.id,
                 make: vehicle.make,
                 model: vehicle.model,
                 plate: vehicle.plate,
                 vin: vehicle.vin,
             });
+        },
+        selectRecommendation(doc) {
+            if (this.active?.kind !== "recommendations") return;
+            this.active.selection = doc?.id || "";
+            this.active.recommendation = doc;
+            if (!doc) return;
+            this.panel.state = true;
+            if (window.innerWidth < 760) this.showPanel("state");
+        },
+        recommendationLoaded(doc) {
+            if (this.active?.kind === "recommendations")
+                this.active.recommendation = doc;
+        },
+        async openRequestById(id) {
+            const row = this.store.requests.find((item) => item.id === id);
+            await this.openRecord(row || { id });
         },
         async recommendationsRestored(request) {
             this.store.accept(request);
@@ -2208,8 +2231,13 @@ export default {
                             :vehicle-info="active.vehicleInfo"
                             :requests="store.requests"
                             :pending="store.pending"
+                            :selected-id="active.selection || ''"
+                            :show-company="user.role !== 'station'"
                             @restored="recommendationsRestored"
                             @open-vehicle="openVehicleRecommendations"
+                            @select="selectRecommendation"
+                            @loaded="recommendationLoaded"
+                            @open-request="openRequestById"
                         />
                         <VehicleHistory
                             v-else-if="active?.kind === 'vehicle-history'"
@@ -2253,7 +2281,12 @@ export default {
                     </button>
                 </header>
                 <div v-if="panel.state" class="area-scroll">
+                    <RecommendationPreview
+                        v-if="active?.kind === 'recommendations'"
+                        :doc="active.recommendation"
+                    />
                     <RequestPreview
+                        v-else
                         :item="selected"
                         :kind="current || isRequestList ? 'request' : 'record'"
                     />

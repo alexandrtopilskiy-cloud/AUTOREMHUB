@@ -21,7 +21,6 @@
         ▤ Заявки на ремонт <b>{{ requests.length }}</b>
       </button>
       <button
-        v-if="user.role === 'customer'"
         class="nav-item"
         :class="{
           active: active?.kind === 'recommendations' && !active.vehicleId,

@@ -14,6 +14,7 @@ use App\Support\TimeNormDescription;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use App\DTO\UserDto;
+use App\Support\ApiPresenter;
 use App\Enums\AttachmentPurpose;
 use App\Services\ClosingDocumentService;
 
@@ -141,7 +142,8 @@ final class RepairRequestResource extends JsonResource
 
             // Relations (Resources)
             'statusPeriods'          => RepairRequestStatusPeriodResource::collection($this->periods),
-            'recommendations'        => [], // TODO: если нужно, вынести в RecommendationResource
+            // Документ рекомендаций ТС (один на ТС) и число невыполненных строк.
+            'recommendations'        => app(ApiPresenter::class)->recommendationSummary($this->resource, $dto),
             'works'                  => WorkResource::collection($this->workLines),
             'partMovements'          => [], // TODO: если нужно, вынести в PartMovementResource
             'parts'                  => PartResource::collection($this->parts),

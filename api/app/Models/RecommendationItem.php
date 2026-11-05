@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property string $uuid
  * @property int $recommendation_id
+ * @property int|null $source_request_id
  * @property string $kind
  * @property array<string, mixed> $snapshot
  * @property array<string, mixed> $display
@@ -22,6 +23,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $updated_at
  *
  * @property-read Recommendation $recommendation
+ * @property-read RepairRequest|null $sourceRequest
+ * @property-read RepairRequest|null $targetRequest
  */
 final class RecommendationItem extends Entity
 {
@@ -40,5 +43,17 @@ final class RecommendationItem extends Entity
     public function recommendation(): BelongsTo
     {
         return $this->belongsTo(Recommendation::class);
+    }
+
+    /** @return BelongsTo<RepairRequest, $this> */
+    public function sourceRequest(): BelongsTo
+    {
+        return $this->belongsTo(RepairRequest::class, 'source_request_id');
+    }
+
+    /** @return BelongsTo<RepairRequest, $this> */
+    public function targetRequest(): BelongsTo
+    {
+        return $this->belongsTo(RepairRequest::class, 'target_request_id');
     }
 }

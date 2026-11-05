@@ -38,7 +38,7 @@ final class CatalogAuditService
 
         return CatalogChangeEvent::query()->create([
             'tenant_id'      => $tenantId,
-            'actor_id'       => $dto->userId,
+            'actor_id'       => $dto?->userId,
             'catalog_kind'   => $kind instanceof CatalogKind ? $kind->value : $kind,
             'record_uuid'    => $record->getAttribute('uuid'),
             'record_label'   => $this->label($after),

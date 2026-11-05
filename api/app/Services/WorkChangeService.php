@@ -478,6 +478,9 @@ final class WorkChangeService
             foreach (Recommendation::query()->whereIn('id', $documentIds)->get() as $document) {
                 if (!$document->items()->exists()) {
                     $document->delete();
+                } else {
+                    $document->revision++;
+                    $document->save();
                 }
             }
         }

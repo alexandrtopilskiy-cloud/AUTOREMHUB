@@ -100,6 +100,12 @@ const emit = defineEmits([
 
 const selectedWorkKeys = ref([]);
 const selectedPartIds = ref([]);
+const openRecommendationItems = computed(() =>
+  (props.request.recommendations || []).reduce(
+    (sum, doc) => sum + Number(doc.openItems || 0),
+    0,
+  ),
+);
 const canDefer = computed(() => props.request.permissions?.canDeferRecommendations === true,
 );
 const showRepairBlock = computed(
@@ -1167,6 +1173,22 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- Рекомендации по ТС: документ хранится отдельно от ЗР -->
+    <div
+      v-if="openRecommendationItems"
+      class="info-banner recommendation-banner"
+      role="status"
+    >
+      <span>
+        По ТС {{ request.plate || request.vin }} есть рекомендации
+        {{ request.recommendations.map((doc) => doc.number).join(', ') }}:
+        {{ openRecommendationItems }} поз. не выполнено.
+      </span>
+      <button type="button" class="ghost-btn" @click="$emit('recommendations')">
+        Рекомендации
+      </button>
+    </div>
+
     <!-- 04. Работы -->
     <section
       v-if="showRepairBlock"
@@ -1557,7 +1579,7 @@ onMounted(() => {
         <button v-if="canDefer" class="ghost-btn" :disabled="busy || dirty || !selectedPartIds.length"
           @click="deferSelected('part')"
         >Добавить ЗЧ в рекомендации({{ selectedPartIds.length }})</button>
-        <button v-if="request.recommendations?.length" class="ghost-btn" @click="$emit('recommendations')">Рекомендации ТС ({{ request.recommendations.length }})</button>
+        <button v-if="request.recommendations?.length && !openRecommendationItems" class="ghost-btn" @click="$emit('recommendations')">Рекомендации ТС</button>
       </div>
     </section>
 

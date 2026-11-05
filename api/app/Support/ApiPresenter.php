@@ -44,14 +44,25 @@ final class ApiPresenter
 
         $docs = Recommendation::forUser($dto)
             ->whereIn('vehicle_id', $vehicleIds)
+            ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')])
             ->orderByDesc('id')
-            ->get(['vehicle_id', 'uuid', 'number']);
+            ->get(['id', 'vehicle_id', 'uuid', 'number']);
         foreach ($docs as $doc) {
-            $this->recommendationSummaries[$doc->vehicle_id][] = ['id' => $doc->uuid, 'number' => $doc->number];
+            $this->recommendationSummaries[$doc->vehicle_id][] = self::recommendationLink($doc);
         }
     }
 
-    private function recommendationSummary(RepairRequest $request, UserDto $dto): array
+    /** Ссылка на документ рекомендаций ТС и число ещё не перенесённых строк. */
+    private static function recommendationLink(Recommendation $doc): array
+    {
+        return [
+            'id' => $doc->uuid,
+            'number' => $doc->number,
+            'openItems' => (int) ($doc->open_items_count ?? 0),
+        ];
+    }
+
+    public function recommendationSummary(RepairRequest $request, UserDto $dto): array
     {
         if ($request->vehicle_id === null) {
             return [];
@@ -65,9 +76,10 @@ final class ApiPresenter
         // 2. Если в кэше нет — идем в базу
         $recommendations = Recommendation::forUser($dto)
             ->where('vehicle_id', $request->vehicle_id)
+            ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')])
             ->orderByDesc('id')
-            ->get(['uuid', 'number'])
-            ->map(fn ($doc) => ['id' => $doc->uuid, 'number' => $doc->number])
+            ->get(['id', 'uuid', 'number'])
+            ->map(fn ($doc) => self::recommendationLink($doc))
             ->all();
 
         // 3. Сохраняем в кэш (если вы это делаете где-то еще, иначе смысла нет)

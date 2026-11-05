@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $updated_at
  *
  * @property-read Vehicle|null $vehicle
+ * @property-read Organization|null $customerOrganization
  * @property-read Collection<int, RecommendationItem> $items
  */
 final class Recommendation extends Entity
@@ -44,6 +45,12 @@ final class Recommendation extends Entity
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
+    }
+
+    /** @return BelongsTo<Organization, $this> */
+    public function customerOrganization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class, 'customer_organization_id');
     }
 
     /** @return HasMany<RecommendationItem, $this> */
