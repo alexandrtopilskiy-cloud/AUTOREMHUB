@@ -1717,6 +1717,14 @@ final class RepairRequestService
                 }
             }
 
+            if (
+                $context->action === TransitionAction::Return
+                && $context->from === RepairStage::WaitingVehicle
+                && $request->stage === RepairStage::CustomerApproval
+            ) {
+                $this->notifyCustomerReturnedFromWaitingVehicle($request, $event->id, $context->comment);
+            }
+
             if ($context->isReadyForIssue) {
                 DB::afterCommit(function () use ($request): void {
                     ReadyForIssue::dispatch($request);
@@ -1986,6 +1994,20 @@ final class RepairRequestService
             'customer_final_approval',
             'СТО готова принять автомобиль',
             "Работы, запчасти и время визита по заявке {$request->number} согласованы. Подтвердите финальную заявку.",
+        );
+
+        $this->notifyUsers($dto);
+    }
+
+    private function notifyCustomerReturnedFromWaitingVehicle(RepairRequest $request, int $eventId, string $comment): void
+    {
+        $dto = NotificationDto::fromRequest(
+            $this->customerUsers($request),
+            $request->id,
+            $eventId,
+            'request_returned',
+            'СТО вернула заявку на согласование',
+            "СТО вернула заявку {$request->number} с этапа «Ожидание ТС на СТО». Комментарий СТО: {$comment}. Подтвердите финальную заявку или предложите другое время.",
         );
 
         $this->notifyUsers($dto);

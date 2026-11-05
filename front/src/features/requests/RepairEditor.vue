@@ -362,6 +362,17 @@ const routeActionTitle = computed(() => {
   return step.value.next;
 });
 
+const returnActionTitle = computed(() => {
+  if (managerReviewingStationChanges.value) {
+    return 'Вернуть в СТО для корректировки';
+  }
+  if (props.request.stage === 4) {
+    return 'Вернуть Заказчику на согласование';
+  }
+
+  return 'Вернуть';
+});
+
 const managerRoutesToStation = computed(
   () => isManager.value
     && props.request.stage === 1
@@ -1748,6 +1759,9 @@ onMounted(() => {
         <small v-else-if="canCustomerSlotDecide">
           При согласии заявка перейдёт в «Ожидание ТС на СТО»; иное время вернётся в УК
         </small>
+        <small v-else-if="isStation && request.stage === 4 && request.permissions.canReturn">
+          Оформите приём ТС или верните заявку Заказчику на согласование (комментарий обязателен)
+        </small>
         <small v-else-if="isStation && request.stage === 6">
           Сначала подтвердите выдачу ТС подписанным актом передачи
         </small>
@@ -1799,16 +1813,8 @@ onMounted(() => {
             request.permissions.canReturn
           "
           class="office-action ghost-btn"
-          :title="
-            managerReviewingStationChanges
-              ? 'Вернуть в СТО для корректировки'
-              : 'Вернуть'
-          "
-          :aria-label="
-            managerReviewingStationChanges
-              ? 'Вернуть в СТО для корректировки'
-              : 'Вернуть'
-          "
+          :title="returnActionTitle"
+          :aria-label="returnActionTitle"
           :disabled="busy || dirty"
           @click="openReturn"
         >

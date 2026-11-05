@@ -50,6 +50,9 @@ const error = ref('');
 /* ─── Вычисляемые ─── */
 
 const title = computed(() => {
+  if (props.action === ACTION_RETURN && props.request.stage === 4) {
+    return 'Вернуть заявку Заказчику на согласование';
+  }
   if (props.action === ACTION_RETURN) {
     return 'Вернуть заявку на предыдущий этап';
   }
