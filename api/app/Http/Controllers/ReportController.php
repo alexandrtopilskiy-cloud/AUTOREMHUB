@@ -19,7 +19,8 @@ use Illuminate\Http\Request;
  * Отчёт по ЗР, дошедшим до «Подтверждение оплаты Заказчика», «Оплата в СТО»
  * или «Заявка на ремонт закрыта». УК видит все ЗР, СТО — свои, Заказчик —
  * свои; агентская скидка Заказчику не отдаётся, наименование Заказчика —
- * СТО (как и в карточке ЗР).
+ * СТО (как и в карточке ЗР). СТО видит дату оплаты Заказчика, но не номер
+ * счёта УК→Заказчик.
  */
 final class ReportController
 {
@@ -60,6 +61,9 @@ final class ReportController
                     'stage'         => $item->stage->value,
                     'status'        => $item->stage->label(),
                     'createdAt'     => $item->created_at?->toISOString(),
+                    // Передано на СТО — приёмка ТС по акту (переход в «В работе»).
+                    'transferredAt' => $entered(RepairStage::RepairInProgress),
+                    // Выдано с СТО — переход в «Выдан. Подготовка документов».
                     'issuedAt'      => $entered(RepairStage::Issued),
                     'closedAt'      => $entered(RepairStage::Closed),
                     'customer'      => $role === UserRole::Station ? null : ($item->customerOrganization?->name ?? ''),
@@ -70,7 +74,7 @@ final class ReportController
                     'reason'        => $item->reasonRecord?->name ?? '',
                     'amount'        => (float) $calculator->total($item),
                     'customerInvoice' => $role === UserRole::Station ? null : $customerInvoice?->number,
-                    'customerPaidAt'  => $role === UserRole::Station ? null : $customerInvoice?->paid_at?->toDateString(),
+                    'customerPaidAt'  => $customerInvoice?->paid_at?->toDateString(),
                 ];
 
                 if ($role !== UserRole::Customer) {

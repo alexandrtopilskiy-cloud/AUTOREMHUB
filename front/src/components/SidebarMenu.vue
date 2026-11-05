@@ -31,6 +31,13 @@
       </button>
       <button
         class="nav-item"
+        :class="{ active: active?.kind === 'edo' }"
+        @click="$emit('open-edo')"
+      >
+        ⇄ Документы ЭДО
+      </button>
+      <button
+        class="nav-item"
         :class="{ active: active?.key === 'action' }"
         @click="$emit('open-list', 'action')"
       >
@@ -162,6 +169,7 @@ export default {
   emits: [
     "open-list",
     "open-recommendations",
+    "open-edo",
     "open-report",
     "open-notification",
     "open-unread-chat",
@@ -282,7 +290,7 @@ export default {
 }
 
 .nav-group.open {
-  background: #dbf7e6;
+  background: #dbe7f7;
 }
 
 .catalog-popup {
@@ -296,7 +304,7 @@ export default {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(18, 56, 40, 0.18);
+  box-shadow: 0 10px 28px rgba(18, 34, 56, 0.18);
 }
 
 .catalog-popup-caption {
@@ -305,7 +313,7 @@ export default {
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: #6e8e7d;
+  color: #6e7c8e;
 }
 
 .catalog-popup-item {
@@ -315,7 +323,7 @@ export default {
   border: 0;
   border-radius: 6px;
   padding: 10px;
-  color: #325d48;
+  color: #32455d;
   font-size: 14px;
   line-height: 1.4;
   cursor: pointer;
@@ -323,7 +331,7 @@ export default {
 
 .catalog-popup-item:hover,
 .catalog-popup-item:focus-visible {
-  background: #dbf7e6;
+  background: #dbe7f7;
   outline: none;
 }
 
