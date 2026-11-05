@@ -3989,3 +3989,10 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .excel-grid.works-grid { min-width: 1200px; }
 .parts-panel .parts-grid { min-width: 1150px !important; }
 .parts-panel .parts-grid.with-change-notes { min-width: 1280px !important; }
+
+/* Рекомендации ТС: плашка над блоком 04 и перечень ТС */
+.recommendation-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.recommendation-banner .ghost-btn { flex: 0 0 auto; }
+.recommendation-registry td small { display: block; }
+.recommendation-registry .column-filter-row input { width: 100%; }
+.recommendation-preview .detail-list { margin-top: 12px; }

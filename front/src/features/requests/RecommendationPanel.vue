@@ -1,6 +1,6 @@
 <script>
 import { marketplaceApi } from "../../api/marketplace.js";
-import { money } from "../../data/permissions.js";
+import { money, formatDateTime } from "../../data/permissions.js";
 
 export default {
     name: "RecommendationPanel",
@@ -10,8 +10,13 @@ export default {
         vehicleInfo: { type: Object, default: () => ({}) },
         requests: { type: Array, default: () => [] },
         pending: { type: Object, default: () => ({}) },
+        selectedId: { type: String, default: "" },
+        showCompany: { type: Boolean, default: true },
     },
-    emits: ["restored", "open-vehicle"],
+    // select — одинарный клик по ТС в перечне (панель «Состояние документа»),
+    // open-vehicle — двойной клик/Enter: открыть документ рекомендаций ТС,
+    // loaded — документ ТС загружен (для панели состояния).
+    emits: ["restored", "open-vehicle", "select", "loaded", "open-request"],
     data() {
         return {
             documents: [],
@@ -21,6 +26,7 @@ export default {
             error: "",
             detailItem: null,
             loaded: false,
+            filter: "",
         };
     },
     computed: {
@@ -39,36 +45,41 @@ export default {
             );
         },
         sections() {
-            if (!this.allVehicles) {
-                return [
-                    {
-                        vehicleId: this.vehicleId,
-                        vehicle: this.vehicle,
-                        groups: this.groupsOf(this.documents),
-                    },
-                ];
-            }
-            const byVehicle = new Map();
-            for (const doc of this.documents) {
-                const key = doc.vehicleId || doc.vin;
-                if (!byVehicle.has(key)) byVehicle.set(key, []);
-                byVehicle.get(key).push(doc);
-            }
-            return [...byVehicle.entries()]
-                .map(([key, docs]) => ({
-                    vehicleId: docs[0].vehicleId,
-                    key,
-                    vehicle: docs[0],
-                    groups: this.groupsOf(docs),
-                }))
-                .filter((section) =>
-                    section.groups.some((group) => group.items.length),
+            return [
+                {
+                    vehicleId: this.vehicleId,
+                    vehicle: this.vehicle,
+                    groups: this.groupsOf(this.documents),
+                },
+            ];
+        },
+        // Перечень ТС с рекомендациями: один документ на ТС.
+        rows() {
+            const query = this.filter.toLowerCase().trim();
+            return this.documents
+                .filter((doc) => doc.items.length)
+                .filter(
+                    (doc) =>
+                        !query ||
+                        [
+                            doc.number,
+                            doc.make,
+                            doc.model,
+                            doc.plate,
+                            doc.vin,
+                            doc.company,
+                            ...(doc.sourceRequests || []),
+                        ]
+                            .join(" ")
+                            .toLowerCase()
+                            .includes(query),
                 )
-                .sort((a, b) =>
-                    this.vehicleTitle(a.vehicle).localeCompare(
-                        this.vehicleTitle(b.vehicle),
-                        "ru",
-                    ),
+                .sort(
+                    (a, b) =>
+                        Number(b.openCount > 0) - Number(a.openCount > 0) ||
+                        String(b.lastAddedAt || "").localeCompare(
+                            String(a.lastAddedAt || ""),
+                        ),
                 );
         },
         targets() {
@@ -85,6 +96,7 @@ export default {
     },
     methods: {
         money,
+        formatDateTime,
         vehicleTitle(vehicle) {
             return (
                 [vehicle.make, vehicle.model, vehicle.plate]
@@ -154,6 +166,14 @@ export default {
                     : await marketplaceApi.vehicleRecommendations(
                           this.vehicleId,
                       );
+                if (!this.allVehicles) this.$emit("loaded", this.document || null);
+                else if (this.selectedId)
+                    this.$emit(
+                        "select",
+                        this.documents.find(
+                            (doc) => doc.id === this.selectedId,
+                        ) || null,
+                    );
             } catch (exception) {
                 this.error = exception.message;
             } finally {
@@ -223,48 +243,118 @@ export default {
     <section class="document-panel recommendation-panel">
         <div class="document-head">
             <div>
-                <span class="eyebrow">{{
-                    allVehicles ? "Документы" : "Рекомендации ТС"
-                }}</span>
+                <span class="eyebrow">Документы</span>
                 <h1 v-if="allVehicles">
-                    Рекомендации <span class="count">{{ sections.length }}</span>
+                    Рекомендации <span class="count">{{ rows.length }}</span>
                 </h1>
                 <h1 v-else>
-                    {{
-                        [vehicle.make, vehicle.model, vehicle.plate]
-                            .filter(Boolean)
-                            .join(" · ") || "Рекомендации"
-                    }}
+                    Рекомендации
+                    <template v-if="document?.number">
+                        {{ document.number }}</template
+                    >
                 </h1>
                 <p v-if="allVehicles">
-                    Рекомендации по всем ТС организации. Чтобы перенести позиции
-                    в заявку, откройте рекомендации конкретного ТС.
+                    ТС, по которым есть рекомендации. Один клик — состояние
+                    документа · Двойной клик или Enter — открыть рекомендации ТС.
                 </p>
-                <p v-else>VIN {{ vehicle.vin || "—" }}</p>
+                <p v-else>
+                    {{ vehicleTitle(vehicle) }} · VIN {{ vehicle.vin || "—" }}
+                </p>
             </div>
         </div>
-        <p v-if="allVehicles && loaded && !sections.length" class="muted">
-            Рекомендаций по ТС пока нет.
-        </p>
+        <template v-if="allVehicles">
+            <div class="registry-wrap">
+                <table class="registry recommendation-registry">
+                    <thead>
+                        <tr>
+                            <th>Документ / обновлён</th>
+                            <th>Автомобиль / VIN</th>
+                            <th v-if="showCompany">Заказчик</th>
+                            <th>Рекомендовано</th>
+                            <th>Из заявок</th>
+                            <th />
+                        </tr>
+                        <tr class="column-filter-row">
+                            <th :colspan="showCompany ? 6 : 5">
+                                <input
+                                    v-model="filter"
+                                    aria-label="Фильтр рекомендаций"
+                                    placeholder="Номер, ТС, госномер, VIN, заказчик или ЗР"
+                                />
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="doc in rows"
+                            :key="doc.id"
+                            tabindex="0"
+                            :class="{ selected: selectedId === doc.id }"
+                            @click="$emit('select', doc)"
+                            @dblclick="$emit('open-vehicle', doc)"
+                            @keydown.enter="$emit('open-vehicle', doc)"
+                        >
+                            <td>
+                                <strong>{{ doc.number }}</strong
+                                ><small>{{
+                                    formatDateTime(doc.lastAddedAt || doc.updatedAt)
+                                }}</small>
+                            </td>
+                            <td>
+                                <strong>{{
+                                    [doc.make, doc.model].filter(Boolean).join(" ") ||
+                                    "ТС"
+                                }}</strong
+                                ><small
+                                    >{{ doc.plate || "без госномера" }} ·
+                                    {{ doc.vin || "—" }}</small
+                                >
+                            </td>
+                            <td v-if="showCompany">{{ doc.company || "—" }}</td>
+                            <td>
+                                <span
+                                    class="status"
+                                    :class="doc.openCount ? 'amber' : 'green'"
+                                    >{{
+                                        doc.openCount
+                                            ? `${doc.openCount} поз.`
+                                            : "Всё перенесено"
+                                    }}</span
+                                ><small v-if="doc.openCount"
+                                    >работ {{ doc.openWorks }} · ЗЧ
+                                    {{ doc.openParts }}</small
+                                >
+                            </td>
+                            <td>{{ (doc.sourceRequests || []).join(", ") || "—" }}</td>
+                            <td>
+                                <button
+                                    class="open-row"
+                                    :aria-label="'Открыть ' + doc.number"
+                                    @click.stop="$emit('open-vehicle', doc)"
+                                >
+                                    ↗
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div v-if="loaded && !rows.length" class="empty-state">
+                <h3>Рекомендаций пока нет</h3>
+                <p>
+                    {{
+                        filter
+                            ? "Измените параметры фильтрации."
+                            : "Позиции попадают сюда из заявок кнопкой «Добавить в рекомендации»."
+                    }}
+                </p>
+            </div>
+        </template>
         <section
-            v-for="section in sections"
+            v-for="section in allVehicles ? [] : sections"
             :key="section.key || section.vehicleId"
             class="recommendation-vehicle"
         >
-        <div v-if="allVehicles" class="recommendation-vehicle-head">
-            <div>
-                <h2>{{ vehicleTitle(section.vehicle) }}</h2>
-                <p>VIN {{ section.vehicle.vin || "—" }}</p>
-            </div>
-            <button
-                v-if="section.vehicleId"
-                type="button"
-                class="ghost-btn"
-                @click="$emit('open-vehicle', section.vehicle)"
-            >
-                Открыть рекомендации ТС
-            </button>
-        </div>
         <section
             v-for="group in section.groups"
             :key="group.kind"
@@ -285,6 +375,7 @@ export default {
                             <th>Кол-во</th>
                             <th>Цена / ставка, ₽</th>
                             <th>Сумма, ₽</th>
+                            <th>Из заявки</th>
                             <th>Кто добавил</th>
                             <th>Дата</th>
                             <th>Состояние</th>
@@ -356,6 +447,17 @@ export default {
                                           )
                                 }}
                             </td>
+                            <td>
+                                <button
+                                    v-if="item.sourceRequestId"
+                                    type="button"
+                                    class="link-btn"
+                                    @click="$emit('open-request', item.sourceRequestId)"
+                                >
+                                    {{ item.sourceRequestNumber }}
+                                </button>
+                                <template v-else>—</template>
+                            </td>
                             <td :title="item.actor">{{ item.actor }}</td>
                             <td
                                 :title="
@@ -376,13 +478,15 @@ export default {
                             <td
                                 :title="
                                     item.movedAt
-                                        ? 'Перенесено в заявку'
+                                        ? 'Перенесено в заявку ' +
+                                          (item.targetRequestNumber || '')
                                         : 'Рекомендовано'
                                 "
                             >
                                 {{
                                     item.movedAt
-                                        ? "Перенесено"
+                                        ? "Перенесено " +
+                                          (item.targetRequestNumber || "")
                                         : "Рекомендовано"
                                 }}
                             </td>
@@ -400,7 +504,10 @@ export default {
         </section>
         </section>
         <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
-        <div v-if="!allVehicles" class="record-editor-footer action-buttons">
+        <div
+            v-if="!allVehicles && document"
+            class="record-editor-footer action-buttons"
+        >
             <label
                 ><span>Заявка для этого VIN</span
                 ><select v-model="targetId">

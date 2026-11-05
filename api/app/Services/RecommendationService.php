@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 
 final class RecommendationService
 {
+    private const RELATIONS = ['items.sourceRequest', 'items.targetRequest', 'vehicle', 'customerOrganization'];
+
     public function __construct(
         private readonly RepairRequestService $requests,
         private readonly ApiPresenter $presenter,
@@ -33,7 +35,7 @@ final class RecommendationService
 
         return Recommendation::forUser($dto)
             ->whereIn('vehicle_id', Vehicle::query()->select('id')->where('uuid', $vehicleId))
-            ->with(['items', 'vehicle'])
+            ->with(self::RELATIONS)
             ->orderByDesc('id')
             ->get()
             ->map(fn ($doc) => $this->present($doc, $user))
@@ -49,7 +51,7 @@ final class RecommendationService
         $dto = UserDto::fromUserModel($user);
 
         return Recommendation::forUser(dto: $dto)
-            ->with(['items', 'vehicle'])
+            ->with(self::RELATIONS)
             ->orderByDesc('id')
             ->get()
             ->map(fn ($doc) => $this->present($doc, $user))
@@ -94,19 +96,7 @@ final class RecommendationService
             WorkChangeService::begin($request);
 
             $display = $this->presenter->document($request, $user);
-            $doc = Recommendation::query()->create([
-                'tenant_id'                 => $request->tenant_id,
-                'vehicle_id'                => $request->vehicle_id,
-                'vin'                       => $request->vehicleRecord->vin,
-                'customer_organization_id'  => $request->customer_organization_id,
-                'source_request_id'         => $request->id,
-                'created_by'                => $user->id,
-            ]);
-
-            $doc->forceFill([
-                'number' => 'REC-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT)
-            ])->save();
-
+            $doc = $this->documentForVehicle($request, $user);
             $actorLabel = match ($user->role) {
                 UserRole::Manager   => 'У',
                 UserRole::Station   => 'С',
@@ -122,6 +112,7 @@ final class RecommendationService
                     $deferredLineIds[] = $line->uuid;
                     $deferredItemIds[] = RecommendationItem::query()->create([
                         'recommendation_id'     => $doc->id,
+                        'source_request_id'     => $request->id,
                         'kind'                  => $kind,
                         'snapshot'              => $line->attributesToArray(),
                         'display'               => $shown,
@@ -131,11 +122,13 @@ final class RecommendationService
                     $line->delete();
                 }
             }
+            // Ревизия документа не меняется: добавление строк не мешает
+            // переносу уже выбранных позиций (они проверяются по id).
             WorkChangeService::recordDeferred($request, $deferredLineIds, $deferredItemIds, (string) $doc->number);
             $this->requests->recommendationEstimateChanged($request, $user, false);
 
             return [
-                'comment' => 'Позиции перенесены в рекомендации ' . $doc->number,
+                'comment' => 'Позиции добавлены в рекомендации ' . $doc->number,
                 'details' => [
                     'recommendationId' => $doc->uuid,
                     'selection' => $selection
@@ -145,8 +138,49 @@ final class RecommendationService
 
         return [
             'request' => $this->presenter->document($request, $user),
-            'recommendation' => $this->present($doc->fresh(['items', 'vehicle']), $user)
+            'recommendation' => $this->present($doc->fresh(self::RELATIONS), $user)
         ];
+    }
+
+    /**
+     * Один документ рекомендаций на ТС: при первом переносе он создаётся,
+     * последующие переносы из любых ЗР добавляют в него новые строки.
+     */
+    private function documentForVehicle(RepairRequest $request, User $user): Recommendation
+    {
+        $attributes = ['tenant_id' => $request->tenant_id, 'vehicle_id' => $request->vehicle_id];
+        $doc = Recommendation::query()->where($attributes)->lockForUpdate()->first();
+
+        if ($doc === null) {
+            // Параллельный первый перенос по тому же ТС: уникальный индекс
+            // (tenant_id, vehicle_id) не даст создать второй документ.
+            DB::statement(
+                'INSERT INTO recommendations (uuid, tenant_id, vehicle_id, customer_organization_id, source_request_id, created_by, vin, revision, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 0, now(), now())
+                 ON CONFLICT (tenant_id, vehicle_id) DO NOTHING',
+                [
+                    (string) \Illuminate\Support\Str::uuid(),
+                    $request->tenant_id,
+                    $request->vehicle_id,
+                    $request->customer_organization_id,
+                    $request->id,
+                    $user->id,
+                    $request->vehicleRecord->vin,
+                ],
+            );
+            $doc = Recommendation::query()->where($attributes)->lockForUpdate()->firstOrFail();
+        }
+
+        if ($doc->number === null) {
+            $doc->number = 'REC-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT);
+        }
+        $doc->forceFill([
+            'customer_organization_id' => $request->customer_organization_id,
+            'source_request_id'        => $request->id,
+            'vin'                      => $request->vehicleRecord->vin,
+        ])->save();
+
+        return $doc;
     }
 
     public function restore(User $user, string $id, int $revision, array $itemIds, ?string $requestId, ?int $requestRevision): array
@@ -255,7 +289,7 @@ final class RecommendationService
 
             return [
                 'request' => $this->presenter->document($request, $user),
-                'recommendations' => $docs->map(fn ($doc) => $this->present($doc->fresh(['items', 'vehicle']), $user))->all(),
+                'recommendations' => $docs->map(fn ($doc) => $this->present($doc->fresh(self::RELATIONS), $user))->all(),
             ];
         }, 3);
     }
@@ -317,7 +351,16 @@ final class RecommendationService
 
     public function present(Recommendation $doc, ?User $user = null): array
     {
-        $doc->loadMissing(['items', 'vehicle']);
+        $doc->loadMissing(self::RELATIONS);
+
+        $items = $doc->items;
+        $open = $items->whereNull('moved_at');
+        $sources = $items
+            ->map(fn (RecommendationItem $item) => $item->sourceRequest?->number)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $data = [
             'id' => $doc->uuid,
@@ -329,16 +372,27 @@ final class RecommendationService
             'model' => $doc->vehicle?->model ?? '',
             'plate' => $doc->vehicle?->plate ?? '',
             'vehicleId' => $doc->vehicle?->uuid ?? '',
+            'company' => $user?->role === UserRole::Station ? '' : ($doc->customerOrganization?->name ?? ''),
             'createdAt' => $doc->created_at->toISOString(),
-            'items' => $doc->items->map(fn ($item) => [
+            'updatedAt' => $doc->updated_at?->toISOString(),
+            'openCount' => $open->count(),
+            'movedCount' => $items->count() - $open->count(),
+            'openWorks' => $open->where('kind', 'work')->count(),
+            'openParts' => $open->where('kind', 'part')->count(),
+            'lastAddedAt' => $items->max('created_at')?->toISOString(),
+            'sourceRequests' => $sources,
+            'items' => $items->map(fn (RecommendationItem $item) => [
                 'id' => $item->uuid,
                 'kind' => $item->kind,
                 'position' => $item->display,
                 'actor' => $item->actor_label,
                 'createdAt' => $item->created_at->toISOString(),
                 'movedAt' => $item->moved_at?->toISOString(),
-                'targetRequestId' => $item->target_request_id,
-            ])->all()
+                'sourceRequestId' => $item->sourceRequest?->uuid,
+                'sourceRequestNumber' => $item->sourceRequest?->number,
+                'targetRequestId' => $item->targetRequest?->uuid,
+                'targetRequestNumber' => $item->targetRequest?->number,
+            ])->values()->all()
         ];
 
         return $user === null ? $data : CommercialVisibility::forUser($data, $user);

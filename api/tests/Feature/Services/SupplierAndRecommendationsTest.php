@@ -10,6 +10,7 @@ use App\Exceptions\ApiException;
 use App\Models\CatalogPart;
 use App\Models\Organization;
 use App\Models\PartManufacturer;
+use App\Models\Recommendation;
 use App\Models\RecommendationItem;
 use App\Models\RepairRequest;
 use App\Models\RequestPart;
@@ -354,7 +355,8 @@ final class SupplierAndRecommendationsTest extends TestCase
         $this->assertTrue($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
     }
 
-    private function separateDocuments(): array
+    /** Два переноса из ЗР по одному ТС попадают в один документ рекомендаций. */
+    private function deferTwice(): array
     {
         $service = app(RecommendationService::class);
         $work = $this->work();
@@ -365,20 +367,67 @@ final class SupplierAndRecommendationsTest extends TestCase
         return [$a, $b];
     }
 
-    public function test_restore_multiple_documents_in_one_request_revision_via_http(): void
+    public function test_second_defer_appends_rows_to_the_same_vehicle_document(): void
     {
-        $docs = $this->separateDocuments();
-        $selection = array_map(fn ($doc) => ['id' => $doc['id'], 'revision' => $doc['revision'], 'itemIds' => array_column($doc['items'], 'id')], $docs);
+        [$a, $b] = $this->deferTwice();
+        $this->assertSame($a['id'], $b['id']);
+        $this->assertSame($a['number'], $b['number']);
+        $this->assertCount(2, $b['items']);
+        $this->assertSame($this->request->fresh()->number, $b['items'][1]['sourceRequestNumber']);
+        $this->assertSame(2, $b['openCount']);
+        $this->assertSame([$this->request->fresh()->number], $b['sourceRequests']);
+        $this->assertSame(1, Recommendation::query()->count());
+    }
+
+    public function test_migration_merges_old_documents_of_one_vehicle(): void
+    {
+        $migration = require base_path('database/migrations/2026_11_05_000038_single_recommendation_per_vehicle.php');
+        $migration->down();
+
+        $request = $this->request->fresh();
+        $docs = [];
+        foreach ([1, 2] as $n) {
+            $doc = Recommendation::query()->create([
+                'tenant_id' => $request->tenant_id,
+                'vehicle_id' => $request->vehicle_id,
+                'customer_organization_id' => $request->customer_organization_id,
+                'source_request_id' => $request->id,
+                'vin' => $this->vehicle->vin,
+            ]);
+            $doc->forceFill(['number' => 'REC-OLD-' . $n, 'revision' => $n])->save();
+            RecommendationItem::query()->create([
+                'recommendation_id' => $doc->id,
+                'kind' => 'work',
+                'snapshot' => ['name' => 'Работа ' . $n, 'quantity' => 1],
+                'display' => ['name' => 'Работа ' . $n],
+                'actor_label' => 'УК (У)',
+            ]);
+            $docs[] = $doc;
+        }
+
+        $migration->up();
+
+        $this->assertSame(1, Recommendation::query()->where('vehicle_id', $request->vehicle_id)->count());
+        $kept = Recommendation::query()->findOrFail($docs[0]->id);
+        $this->assertSame('REC-OLD-1', $kept->number);
+        $this->assertSame(3, $kept->revision);
+        $this->assertSame(2, $kept->items()->count());
+        $this->assertSame([$request->id], $kept->items()->pluck('source_request_id')->unique()->values()->all());
+    }
+
+    public function test_restore_rows_of_vehicle_document_in_one_request_revision_via_http(): void
+    {
+        [, $doc] = $this->deferTwice();
+        $selection = [['id' => $doc['id'], 'revision' => $doc['revision'], 'itemIds' => array_column($doc['items'], 'id')]];
         $this->actingAs($this->manager)->postJson('/api/recommendations/restore', ['documents' => $selection, 'requestId' => $this->request->uuid, 'requestRevision' => 2])->assertOk()->assertJsonPath('request.revision', 3)->assertJsonCount(1, 'request.parts')->assertJsonCount(1, 'request.works');
         $this->assertSame('120.00', $this->request->parts()->first()->purchase_price);
         $this->assertSame('Original', $this->request->parts()->first()->manufacturer_snapshot);
     }
 
-    public function test_batch_conflict_rolls_back_all_recommendations(): void
+    public function test_conflict_rolls_back_restore(): void
     {
-        $docs = $this->separateDocuments();
-        $selection = array_map(fn ($doc) => ['id' => $doc['id'], 'revision' => 0, 'itemIds' => array_column($doc['items'], 'id')], $docs);
-        $selection[1]['revision'] = 99;
+        [, $doc] = $this->deferTwice();
+        $selection = [['id' => $doc['id'], 'revision' => 99, 'itemIds' => array_column($doc['items'], 'id')]];
         try {
             app(RecommendationService::class)->restoreMany($this->manager, $selection, $this->request->uuid, 2);
             $this->fail('Expected conflict');

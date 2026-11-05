@@ -304,6 +304,10 @@ final class RecommendationAndEstimateTest extends TestCase
         $this->getJson(uri: '/api/recommendations?vehicleId=' . $this->vehicle->uuid)
             ->assertOk()
             ->assertJsonPath('recommendations.0.number', $deferred['number']);
+        $this->getJson(uri: '/api/requests/' . $this->request->uuid)
+            ->assertOk()
+            ->assertJsonPath('request.recommendations.0.number', $deferred['number'])
+            ->assertJsonPath('request.recommendations.0.openItems', 1);
         $this->postJson(
             uri: '/api/recommendations/' . $deferred['id'] . '/restore',
             data: [

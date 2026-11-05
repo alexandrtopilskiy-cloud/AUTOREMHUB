@@ -287,7 +287,7 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
             },
         );
         await t.test(
-            "customer recommendations list groups documents by vehicle",
+            "recommendations list shows one document per vehicle with items",
             () => {
                 const item = (id, kind) => ({
                     id,
@@ -295,31 +295,25 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
                     createdAt: "2026-10-15T10:00:00Z",
                 });
                 const documents = [
-                    { id: "a", vehicleId: "v2", make: "Lada", plate: "B222BB", vin: "V2", items: [item("w2", "work")] },
-                    { id: "b", vehicleId: "v1", make: "Kia", plate: "A111AA", vin: "V1", items: [item("p1", "part")] },
-                    { id: "c", vehicleId: "v2", make: "Lada", plate: "B222BB", vin: "V2", items: [item("p2", "part")] },
-                    { id: "d", vehicleId: "v3", make: "Gaz", vin: "V3", items: [] },
+                    { id: "a", number: "REC-000001", vehicleId: "v2", make: "Lada", plate: "B222BB", vin: "V2", openCount: 0, lastAddedAt: "2026-10-16T10:00:00Z", items: [item("w2", "work")] },
+                    { id: "b", number: "REC-000002", vehicleId: "v1", make: "Kia", plate: "A111AA", vin: "V1", openCount: 1, lastAddedAt: "2026-10-15T10:00:00Z", sourceRequests: ["ZR-000007"], items: [item("p1", "part")] },
+                    { id: "d", number: "REC-000003", vehicleId: "v3", make: "Gaz", vin: "V3", openCount: 0, items: [] },
                 ];
-                const ctx = {
-                    documents,
-                    allVehicles: true,
-                    ...Recommendations.methods,
-                };
-                const sections = Recommendations.computed.sections.call(ctx);
+                const ctx = { documents, filter: "" };
+                const rows = Recommendations.computed.rows.call(ctx);
                 assert.deepEqual(
-                    sections.map((s) => [
-                        s.vehicleId,
-                        s.groups.map((g) => g.items.map((i) => i.id)),
-                    ]),
-                    [
-                        ["v1", [[], ["p1"]]],
-                        ["v2", [["w2"], ["p2"]]],
-                    ],
+                    rows.map((row) => row.vehicleId),
+                    ["v1", "v2"],
+                );
+                ctx.filter = "zr-000007";
+                assert.deepEqual(
+                    Recommendations.computed.rows.call(ctx).map((row) => row.id),
+                    ["b"],
                 );
             },
         );
         await t.test(
-            "recommendation header includes make model plate and VIN without document selector",
+            "recommendation header shows document number, vehicle and VIN without document selector",
             async () => {
                 const docs = [
                     {
@@ -347,7 +341,8 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
                 );
                 assert.match(html, /Toyota · Camry · А111АА78/);
                 assert.match(html, /VIN123/);
-                assert.doesNotMatch(html, /REC-000002/);
+                assert.match(html, /Рекомендации\s*(<!--\[-->)?\s*REC-000002/);
+                assert.doesNotMatch(html, /<select[^>]*>\s*<option[^>]*>REC-/);
             },
         );
         await t.test(
