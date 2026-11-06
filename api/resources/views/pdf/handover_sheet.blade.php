@@ -84,7 +84,7 @@
             <td><b>{{ ($v['plate'] ?? '') ?: '—' }}</b></td>
             <td><b>{{ ($v['vin'] ?? '') ?: '—' }}</b></td>
             <td><b>{{ ($v['year'] ?? '') ?: '—' }}</b></td>
-            <td><span class="f"></span></td>
+            <td></td>
             <td>{!! $cb !!}0 {!! $cb !!}¼ {!! $cb !!}½ {!! $cb !!}¾ {!! $cb !!}1</td>
         </tr>
     </table>
