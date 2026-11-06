@@ -198,7 +198,6 @@ export default {
 <template>
     <section v-if="canAccept || request.acceptanceAct" class="feature-card acceptance-card">
         <div class="section-title">
-            <span>06</span>
             <div>
                 <h3>Приём и ремонт ТС</h3>
                 <p>Акт после сохранения становится неизменяемой частью заявки.</p>

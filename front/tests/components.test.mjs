@@ -141,12 +141,14 @@ test("Options API component rendering and interactive methods", async (context) 
                 );
 
                 assert.match(html, /ZR-000001/);
-                assert.match(html, /Предыдущий пробег и дата заполнения/);
+                assert.match(html, /Предыдущий пробег, км/);
+                assert.match(html, /class="form-grid mileage-row"/);
                 assert.match(
                     html,
                     /Дополнительная информация \(необязательно\)/,
                 );
-                assert.match(html, /> Водитель </);
+                assert.match(html, /> Водитель Заказчика </);
+                assert.match(html, /> Контактное лицо Заказчика </);
                 assert.doesNotMatch(html, /Добавить позицию/);
                 assert.doesNotMatch(html, /Добавить запчасть/);
                 assert.doesNotMatch(html, /СТО-партнёр/);
@@ -213,7 +215,9 @@ test("Options API component rendering and interactive methods", async (context) 
                 assert.ok(addButton);
                 assert.doesNotMatch(addButton, /disabled/);
                 assert.doesNotMatch(html, /Добавить позицию/);
-                assert.match(html, /05[\s\S]*Фото, видео и документы/);
+                assert.match(html, /Фото, видео и документы/);
+                // Блоки ЗР разделены вкладками и больше не нумеруются.
+                assert.doesNotMatch(html, /class="section-title"><span>\d\d<\/span>/);
                 // Вкладки ЗР: шесть разделов, при открытии активна первая.
                 const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>([^<]*)<\/button>/g)];
                 assert.deepEqual(tabs.map((m) => m[1]), [
@@ -223,6 +227,7 @@ test("Options API component rendering and interactive methods", async (context) 
                     "Документы по заявке",
                     "Фото, видео и документы",
                     "Взаиморасчёты",
+                    "История ТО и работ",
                 ]);
                 assert.match(tabs[0][0], /aria-selected="true"/);
                 assert.ok(tabs.slice(1).every((m) => /aria-selected="false"/.test(m[0])));
@@ -263,8 +268,9 @@ test("Options API component rendering and interactive methods", async (context) 
                     }),
                 );
 
-                assert.match(html, /Расчётное время завершения ремонта/);
-                assert.match(html, /class="calculated-completion-info"/);
+                assert.match(html, /Фактическая дата и время окончания ремонта/);
+                assert.match(html, /Ремонт не завершён/);
+                assert.match(html, /class="form-grid visit-dates-row"/);
                 assert.match(html, /Отказаться от выполнения/);
                 assert.match(html, /Предложить другое время/);
                 assert.match(html, /Подтвердить время/);
@@ -311,10 +317,9 @@ test("Options API component rendering and interactive methods", async (context) 
                     html,
                     /class="search-results work-search-results"/,
                 );
-                assert.match(
-                    html,
-                    /Ручное значение сохраняется только в этой заявке/,
-                );
+                assert.match(html, /aria-label="Норма времени для этой заявки"/);
+                assert.match(html, /Итого по работам/);
+                assert.match(html, />Кратность</);
 
                 const { default: WorkTypePicker } = await server.ssrLoadModule(
                     "/src/features/requests/WorkTypePicker.vue",
@@ -387,11 +392,90 @@ test("Options API component rendering and interactive methods", async (context) 
                 );
 
                 assert.match(html, /aria-label="Добавить строку работы"/);
-                assert.match(html, /class="excel-grid works-grid"/);
+                assert.match(html, /class="excel-grid works-grid compact-works-grid"/);
                 assert.match(html, /Запчасти и поставщики/);
                 assert.match(html, /class="excel-grid parts-grid"/);
                 assert.match(html, /Начните вводить запчасть/);
                 assert.match(html, /Комментарий к решению необязателен/);
+            },
+        );
+
+        await context.test(
+            "works grid is compact with totals; work card shows all fields",
+            async () => {
+                const current = {
+                    ...request(),
+                    stage: 2,
+                    laborHourRate: 1500,
+                    stationId: "station-1",
+                    stationDetails: {
+                        name: "ООО «КУБ»",
+                        address: "г. Москва, ул. Ленинская Слобода, д. 19",
+                        contact: "Орлов Максим",
+                        phone: "+74953332211",
+                        email: "",
+                        workday: "10:00–20:00",
+                    },
+                    repairCompletedAt: "2026-11-05T12:30:00Z",
+                    works: [
+                        { id: "w1", name: "Замена масла", qty: 2, normHours: 0.5, hourlyRate: 1500, lineAmount: 1500, agentDiscountPercent: 10, comment: "Масло клиента" },
+                        { id: "w2", name: "Диагностика", qty: 1, normHours: 1.25, hourlyRate: 1500, lineAmount: 1875, agentDiscountPercent: 10 },
+                    ],
+                    permissions: { editableFields: [], canEditParts: false },
+                };
+                const html = await renderToString(
+                    createSSRApp(RepairEditor, {
+                        ...props,
+                        user: { role: "station" },
+                        request: current,
+                    }),
+                );
+                const head = html.match(/<thead>([\s\S]*?)<\/thead>/)[1];
+                const headers = [...head.matchAll(/<th[^>]*>([^<]*)/g)].map((m) => m[1].trim()).filter(Boolean);
+
+                assert.deepEqual(headers, [
+                    "Наименование работы",
+                    "Норма времени, ч",
+                    "Стоимость нормо/часа, ₽",
+                    "Кратность",
+                    "Стоимость, ₽",
+                    "Агентская скидка, ₽",
+                ]);
+                assert.doesNotMatch(head, /Комментарий/);
+                const foot = html.match(/<tfoot>([\s\S]*?)<\/tfoot>/)[1];
+                assert.match(foot, /Итого по работам/);
+                assert.match(foot, />2,25</);
+                assert.match(foot, />3\s?375</);
+                assert.match(foot, />337,5</);
+                assert.match(html, /💬 Масло клиента/);
+                assert.match(html, /ООО «КУБ»/);
+                assert.match(html, /Фактический адрес/);
+                assert.match(html, /\+74953332211/);
+                assert.doesNotMatch(html, /Ремонт не завершён/);
+
+                const { default: WorkLineDialog } = await server.ssrLoadModule(
+                    "/src/features/requests/WorkLineDialog.vue",
+                );
+                const card = await renderToString(
+                    createSSRApp(WorkLineDialog, {
+                        work: { ...current.works[0], normApplicabilityLabel: "Общая норма", normIsManual: false },
+                        position: 1,
+                        hourlyRate: 1500,
+                        amount: 1500,
+                        showAgentDiscount: true,
+                        agentPercent: 10,
+                        agentDiscount: 150,
+                        scopeText: "общая",
+                    }),
+                );
+
+                assert.match(card, /Работа № 1/);
+                assert.match(card, /Применимость нормы/);
+                assert.match(card, /Общая норма/);
+                assert.match(card, /Масло клиента/);
+                assert.match(card, /Кратность/);
+                assert.match(card, /К оплате СТО/);
+                assert.match(card, /1\s?350/);
             },
         );
 
@@ -572,7 +656,7 @@ test("Options API component rendering and interactive methods", async (context) 
                     }),
                 );
 
-                assert.match(html, /06[\s\S]*Приём и ремонт ТС/);
+                assert.match(html, /Приём и ремонт ТС/);
                 assert.match(
                     html,
                     /После прибытия автомобиля оформите электронный акт/,

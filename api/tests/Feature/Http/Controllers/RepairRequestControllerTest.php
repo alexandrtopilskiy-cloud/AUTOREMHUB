@@ -152,6 +152,22 @@ final class RepairRequestControllerTest extends TestCase
             ->assertJsonPath('request.stage', Workflow::STAGE_DRAFT);
     }
 
+    public function test_show_returns_station_reference_details_for_customer(): void
+    {
+        $this->stationOrg->update(['actual_address' => 'г. Москва, ул. Тестовая, д. 1', 'phone' => '+74950000001']);
+        $this->stationRecord->update(['contact' => 'Мастер Иванов']);
+        $request = $this->makeRequest($this->customer, Workflow::STAGE_CUSTOMER_APPROVAL, $this->stationRecord);
+
+        $this->actingAs($this->customer);
+        $this->getJson('/api/requests/' . $request->uuid)
+            ->assertOk()
+            ->assertJsonPath('request.stationDetails.name', 'Тестовая СТО')
+            ->assertJsonPath('request.stationDetails.address', 'г. Москва, ул. Тестовая, д. 1')
+            ->assertJsonPath('request.stationDetails.contact', 'Мастер Иванов')
+            ->assertJsonPath('request.stationDetails.phone', '+74950000001')
+            ->assertJsonMissingPath('request.stationDetails.agentDiscountPercent');
+    }
+
     public function test_show_returns_404_for_unknown_uuid(): void
     {
         $this->actingAs($this->customer);

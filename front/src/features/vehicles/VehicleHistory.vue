@@ -10,6 +10,11 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  /** Встроено во вкладку ЗР «История ТО и работ»: без собственной панели. */
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 /* ─── Состояние ─── */
@@ -69,25 +74,53 @@ function actualHours(value) {
 </script>
 
 <template>
-  <section class="document-panel">
-    <h1>История автомобиля</h1>
+  <section :class="embedded ? 'vehicle-history-embedded' : 'document-panel'">
+    <h1 v-if="!embedded">История автомобиля</h1>
+    <div v-else class="section-title">
+      <h3>История ТО и работ</h3>
+    </div>
 
     <p v-if="loading">Загрузка…</p>
     <p v-if="error" class="error-message">{{ error }}</p>
 
     <template v-if="result">
-      <h2>{{ result.vehicle.vehicle }} · {{ result.vehicle.plate }}</h2>
-      <p>{{ result.vehicle.vin }}</p>
+      <dl v-if="embedded" class="vehicle-history-summary">
+        <div>
+          <dt>Автомобиль</dt>
+          <dd>{{ result.vehicle.vehicle }} · {{ result.vehicle.plate }}</dd>
+        </div>
+        <div>
+          <dt>VIN</dt>
+          <dd>{{ result.vehicle.vin }}</dd>
+        </div>
+        <div>
+          <dt>Пробег на последнем ТО, км</dt>
+          <dd>{{ previousMileage(result.vehicle.previousServiceMileage) }}</dd>
+        </div>
+        <div>
+          <dt>Выполнено работ</dt>
+          <dd>{{ result.statistics.completedWorks }}</dd>
+        </div>
+        <div>
+          <dt>Посещений ТО</dt>
+          <dd>{{ result.statistics.maintenanceVisits }}</dd>
+        </div>
+      </dl>
 
-      <p>
-        Пробег на последнем ТО:
-        <strong>{{ previousMileage(result.vehicle.previousServiceMileage) }}</strong>
-      </p>
+      <template v-else>
+        <h2>{{ result.vehicle.vehicle }} · {{ result.vehicle.plate }}</h2>
+        <p>{{ result.vehicle.vin }}</p>
 
-      <p>
-        Работ: {{ result.statistics.completedWorks }}
-        · Посещений ТО: {{ result.statistics.maintenanceVisits }}
-      </p>
+        <p>
+          Пробег на последнем ТО:
+          <strong>{{ previousMileage(result.vehicle.previousServiceMileage) }}</strong>
+        </p>
+
+        <p>
+          Работ: {{ result.statistics.completedWorks }}
+          · Посещений ТО: {{ result.statistics.maintenanceVisits }}
+        </p>
+      </template>
 
       <div class="table-wrap">
         <table>
@@ -118,7 +151,7 @@ function actualHours(value) {
       </div>
 
       <p v-if="!result.statistics.history.length" class="muted">
-        Выполненных работ пока нет.
+        Выполненных работ по закрытым заявкам пока нет.
       </p>
     </template>
   </section>

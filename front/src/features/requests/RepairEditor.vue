@@ -14,13 +14,13 @@ import StationDecisionDialog from './StationDecisionDialog.vue';
 import CustomerSlotDecisionDialog from './CustomerSlotDecisionDialog.vue';
 import AcceptanceActPanel from './AcceptanceActPanel.vue';
 import WorkChangePanel from './WorkChangePanel.vue';
+import WorkLineDialog from './WorkLineDialog.vue';
+import VehicleHistory from '../vehicles/VehicleHistory.vue';
 import ConfirmedDateTimeInput from '../../components/ConfirmedDateTimeInput.vue';
-import InfoHint from '../../components/InfoHint.vue';
 import { VISIT_TIME_END, VISIT_TIME_START } from '../../data/schedule.js';
 import { workflow, statusClass } from '../../data/workflow.js';
 import { money, total, formatDateTime, duration , agentDiscountPercent, agentDiscountAmount,
 } from '../../data/permissions.js';
-import { startColumnResize } from '../../utils/columnResize.js';
 import { calculatePlannedCompletion } from '../../utils/plannedCompletion.js';
 
 /* ─── Константы ─── */
@@ -211,6 +211,66 @@ const selectedStation = computed(() =>
   || null,
 );
 
+/** Справочная информация о СТО-партнёре: фактический адрес и контакты. */
+const stationDetails = computed(() => {
+  const saved = props.request.stationDetails || null;
+  const record = selectedStation.value;
+
+  // УК выбрала другое СТО, но ещё не сохранила ЗР: данные из справочника.
+  if (record && (!saved || saved.name !== record.name)) {
+    const start = record.workdayStart || '';
+    const end = record.workdayEnd || '';
+
+    return {
+      name: record.name || '',
+      address: record.actualAddress || record.address || '',
+      contact: record.contact || '',
+      phone: record.phone || '',
+      email: record.email || '',
+      workday: start && end ? `${start}–${end}` : '',
+    };
+  }
+
+  return saved || { name: props.request.station || '' };
+});
+
+/** Дата и время в том же виде, что и в полях визита: «6 ноября 2026 г., 11:02». */
+function longDateTime(value) {
+  const date = new Date(value);
+
+  if (!value || Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const zone = import.meta.env?.VITE_SERVICE_TIMEZONE || 'Europe/Moscow';
+  const day = new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: zone,
+  }).format(date);
+  const time = new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: zone,
+  }).format(date);
+
+  return `${day}, ${time}`;
+}
+
+/** Контакты СТО без повтора телефона, если он уже указан в контактном лице. */
+const stationContacts = computed(() => {
+  const details = stationDetails.value;
+  const digits = (text) => String(text || '').replace(/\D/g, '');
+  const contact = details.contact || '';
+  const phone = details.phone && !digits(contact).includes(digits(details.phone))
+    ? details.phone
+    : '';
+
+  return [contact, phone, details.email].filter(Boolean).join(' · ');
+});
+
+const previousMileageText = computed(() => (
+  props.request.previousServiceMileage != null
+    ? Number(props.request.previousServiceMileage).toLocaleString('ru-RU')
+    : 'Нет данных из предыдущих заявок'
+));
+
 const calculatedCompletionAt = computed(() => {
   if (!props.dirty && props.request.plannedCompletionAt) {
     return props.request.plannedCompletionAt;
@@ -311,9 +371,48 @@ const ZR_TABS = [
   { key: 'documents', label: 'Документы по заявке' },
   { key: 'media', label: 'Фото, видео и документы' },
   { key: 'payments', label: 'Взаиморасчёты' },
+  { key: 'history', label: 'История ТО и работ' },
 ];
 const activeTab = ref(ZR_TABS[0].key);
-watch(() => props.request.id, () => { activeTab.value = ZR_TABS[0].key; });
+/** Историю ТС загружаем только после первого открытия вкладки. */
+const historyVisited = ref(false);
+const panelRoot = ref(null);
+watch(() => props.request.id, () => {
+  activeTab.value = ZR_TABS[0].key;
+  historyVisited.value = false;
+});
+
+/** Ближайший прокручиваемый контейнер рабочей области (или окно). */
+function scrollParent(element) {
+  for (let node = element?.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+
+    if (/(auto|scroll)/.test(overflowY) && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+
+  return null;
+}
+
+/** Переход между вкладками ЗР всегда начинается с верха карточки. */
+async function selectTab(key) {
+  activeTab.value = key;
+
+  if (key === 'history') {
+    historyVisited.value = true;
+  }
+
+  await nextTick();
+
+  const container = scrollParent(panelRoot.value);
+
+  if (container) {
+    container.scrollTop = 0;
+  }
+
+  window.scrollTo?.(0, 0);
+}
 const closingDocuments = computed(() => props.request.closing?.documents || []);
 const hasActs = computed(() =>
   Boolean(
@@ -752,10 +851,6 @@ function manualNormChanged(row) {
   touch();
 }
 
-function manualNormReasonChanged(row) {
-  touch();
-}
-
 function scopeLabel(scope) {
   return (
     {
@@ -845,6 +940,101 @@ const agentDiscountTotals = computed(() => {
   }
   discount = Math.round(discount * 100) / 100;
   return { discount, station: Math.round((sum - discount) * 100) / 100 };
+});
+
+
+/* ─── Карточка работы и итоги таблицы ─── */
+
+const dialogWork = ref(null);
+const dialogWorkPosition = computed(() => displayedWorks.value.indexOf(dialogWork.value) + 1);
+
+/** Двойное нажатие по строке открывает карточку (кроме флажка и кнопки удаления). */
+function openWorkDialog(work, event) {
+  if (event?.target?.closest?.('.selection-col, .delete-row')) {
+    return;
+  }
+
+  dialogWork.value = work;
+}
+
+watch(() => props.request.revision, () => {
+  if (dialogWork.value && !displayedWorks.value.includes(dialogWork.value)) {
+    dialogWork.value = null;
+  }
+});
+
+function workRate(work) {
+  const rate = work.hourlyRate ?? props.request.laborHourRate;
+
+  return rate == null || rate === '' ? null : Number(rate);
+}
+
+/** Строка-подсказка под наименованием: что требует внимания в карточке. */
+function workAttention(work) {
+  if (customerDraftWorks.value) {
+    return work.comment ? { text: `💬 ${work.comment}`, error: false } : null;
+  }
+
+  if (work._normLoading) {
+    return { text: 'Подбираем норму…', error: false };
+  }
+
+  if (work._normMessage) {
+    return { text: work._normMessage, error: /^(Конфликт|Подходящая|Для выбранной)/.test(work._normMessage) };
+  }
+
+  if (canWork.value && work.normIsManual && !String(work.normOverrideReason || '').trim()) {
+    return { text: 'Ручная норма: укажите причину в карточке работы', error: true };
+  }
+
+  if (canChangeInWork.value && lineChange('work', work) && !String(work.changeNote || '').trim()) {
+    return { text: 'Укажите примечание к изменению в карточке работы', error: true };
+  }
+
+  return work.comment ? { text: `💬 ${work.comment}`, error: false } : null;
+}
+
+function workTooltip(work) {
+  const applicability = work.normIsManual
+    ? 'Ручная норма для этой заявки'
+    : work.normApplicabilityLabel || work._normApplicabilityLabel || '';
+
+  return [work.name, applicability, 'Двойное нажатие — карточка работы']
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatHours(value) {
+  return Number(value || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+}
+
+/** Итого по работам: нормо-часы × кратность, стоимость и агентская скидка. */
+const worksTotals = computed(() => {
+  let hours = 0;
+  let amount = 0;
+  let discount = 0;
+
+  for (const work of props.request.works || []) {
+    const norm = Number(work.normHours);
+    const qty = Number(work.qty);
+
+    if (work.normHours != null && work.normHours !== '' && Number.isFinite(norm) && Number.isFinite(qty)) {
+      hours += norm * qty;
+    }
+
+    const line = workAmount(work);
+
+    if (line != null) {
+      amount += line;
+      discount += workAgentDiscount(work) ?? 0;
+    }
+  }
+
+  return {
+    hours: Math.round(hours * 100) / 100,
+    amount: Math.round(amount * 100) / 100,
+    discount: Math.round(discount * 100) / 100,
+  };
 });
 
 /* ─── Диагностика ─── */
@@ -982,7 +1172,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="document-panel">
+  <section ref="panelRoot" class="document-panel">
     <!-- Шапка -->
     <div class="document-head">
       <div>
@@ -1011,14 +1201,13 @@ onMounted(() => {
         :class="{ active: activeTab === tab.key }"
         :aria-selected="activeTab === tab.key"
         :aria-controls="`zr-tab-${tab.key}`"
-        @click="activeTab = tab.key"
+        @click="selectTab(tab.key)"
       >{{ tab.label }}</button>
     </nav>
 
     <div v-show="activeTab === 'vehicle'" id="zr-tab-vehicle" class="zr-tab-panel" role="tabpanel">
-      <!-- 01. Автомобиль -->
+      <!-- Автомобиль -->
       <div class="section-title">
-        <span>01</span>
         <h3>Автомобиль</h3>
       </div>
 
@@ -1028,10 +1217,10 @@ onMounted(() => {
         :vehicle="selectedVehicle"
         :disabled="busy || !isCustomer || !isAllowed('vehicleId')"
         @select="selectVehicle"
-        @history="$emit('vehicle-history', $event)"
       />
 
-      <div class="form-grid vehicle-grid">
+      <!-- Текущий и предыдущий пробег в одну строку, единое оформление -->
+      <div class="form-grid mileage-row">
         <label>
           Текущий пробег, км
           <input
@@ -1043,21 +1232,29 @@ onMounted(() => {
           />
         </label>
 
-        <div class="previous-mileage-info full">
-          <span>Предыдущий пробег и дата заполнения</span>
-          <strong v-if="request.previousServiceMileage != null">
-            {{ Number(request.previousServiceMileage).toLocaleString('ru-RU') }} км
-          </strong>
-          <strong v-else>Нет данных из предыдущих заявок</strong>
-          <small v-if="request.previousServiceAt">
-            {{ formatDateTime(request.previousServiceAt) }}
+        <label class="previous-mileage-field">
+          Предыдущий пробег, км
+          <input
+            :value="previousMileageText"
+            type="text"
+            readonly
+            disabled
+            tabindex="-1"
+            aria-readonly="true"
+            title="Справочно: из предыдущих заявок по ТС, не редактируется"
+          />
+          <small class="field-hint">
+            {{
+              request.previousServiceAt
+                ? 'Справочно, заполнен ' + formatDateTime(request.previousServiceAt)
+                : 'Справочно, из предыдущих заявок по ТС'
+            }}
           </small>
-        </div>
+        </label>
       </div>
 
-      <!-- 02. Причина обращения -->
+      <!-- Причина обращения -->
       <div class="section-title">
-        <span>02</span>
         <h3>Причина обращения</h3>
       </div>
 
@@ -1107,15 +1304,69 @@ onMounted(() => {
         </label>
       </div>
 
-      <!-- 03. Контакт и дата визита -->
+      <!-- Контактные лица и даты -->
       <div class="section-title">
-        <span>03</span>
-        <h3>Контактное лицо, дата и время визита</h3>
+        <h3>Контактные лица и дата обращения</h3>
       </div>
 
-      <div class="form-grid">
+      <!-- Даты: желаемая, подтверждённая СТО и фактическое окончание ремонта -->
+      <div class="form-grid visit-dates-row">
+        <ConfirmedDateTimeInput
+          v-model="request.slot"
+          title="Желаемая дата и время визита"
+          :disabled="!isAllowed('slot')"
+          :min-time="VISIT_TIME_START"
+          :max-time="VISIT_TIME_END"
+          @confirm="touch"
+        />
+
+        <ConfirmedDateTimeInput
+          v-model="request.stationSlot"
+          title="Дата и время визита, подтверждённые СТО"
+          :disabled="isCustomer || isManager || !isAllowed('stationSlot')"
+          :min-time="VISIT_TIME_START"
+          :max-time="VISIT_TIME_END"
+          @confirm="touch"
+        />
+
+        <div class="confirmed-datetime is-disabled repair-completed-field">
+          <span class="confirmed-datetime__label">
+            Фактическая дата и время окончания ремонта
+          </span>
+          <div class="confirmed-datetime-control">
+            <button
+              type="button"
+              class="confirmed-datetime-trigger"
+              disabled
+              title="Фиксируется при переходе ЗР на этап «ТС готово к выдаче Заказчику»"
+            >
+              <span class="confirmed-datetime-trigger__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
+                </svg>
+              </span>
+              <span class="confirmed-datetime-trigger__value">
+                <small>Дата и время</small>
+                <strong>
+                  {{ request.repairCompletedAt ? longDateTime(request.repairCompletedAt) : 'Ремонт не завершён' }}
+                </strong>
+              </span>
+            </button>
+          </div>
+          <small v-if="!request.repairCompletedAt" class="confirmed-datetime__hint">
+            {{
+              calculatedCompletionAt
+                ? 'Расчётное время: ' + formatDateTime(calculatedCompletionAt)
+                : 'Заполнится при переходе на этап выдачи ТС'
+            }}
+          </small>
+        </div>
+      </div>
+
+      <!-- Контактное лицо и водитель Заказчика -->
+      <div class="form-grid contacts-row">
         <label>
-          Контактное лицо
+          Контактное лицо Заказчика
           <select
             v-model="request.contactId"
             :disabled="
@@ -1155,7 +1406,7 @@ onMounted(() => {
         </label>
 
         <label>
-          Водитель
+          Водитель Заказчика
           <select
             v-model="request.driverId"
             :disabled="
@@ -1194,7 +1445,11 @@ onMounted(() => {
           </small>
         </label>
 
-        <label v-if="!isCustomer">
+      </div>
+
+      <!-- СТО: справочная информация (адрес и контакты) -->
+      <div class="form-grid station-row">
+        <label v-if="!isCustomer && isAllowed('stationId')">
           СТО-партнёр
           <select
             v-model="request.stationId"
@@ -1221,34 +1476,27 @@ onMounted(() => {
           </select>
         </label>
 
-        <ConfirmedDateTimeInput
-          v-model="request.slot"
-          title="Желаемая дата и время визита"
-          :disabled="!isAllowed('slot')"
-          :min-time="VISIT_TIME_START"
-          :max-time="VISIT_TIME_END"
-          @confirm="touch"
-        />
-
-        <ConfirmedDateTimeInput
-          v-model="request.stationSlot"
-          title="Дата и время визита, подтверждённые СТО"
-          :disabled="isCustomer || isManager || !isAllowed('stationSlot')"
-          :min-time="VISIT_TIME_START"
-          :max-time="VISIT_TIME_END"
-          @confirm="touch"
-        />
-
-        <div class="calculated-completion-info">
-          <span>Расчётное время завершения ремонта</span>
-          <output>
-            {{
-              calculatedCompletionAt
-                ? formatDateTime(calculatedCompletionAt)
-                : 'Не рассчитано'
-            }}
-          </output>
+        <div v-if="request.stationId" class="station-reference" :class="{ full: !(!isCustomer && isAllowed('stationId')) }">
+          <span class="station-reference__label">СТО-партнёр</span>
+          <strong>{{ stationDetails.name || '—' }}</strong>
+          <dl>
+            <div>
+              <dt>Фактический адрес</dt>
+              <dd>{{ stationDetails.address || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Контакты</dt>
+              <dd>
+                {{ stationContacts || '—' }}
+              </dd>
+            </div>
+            <div v-if="stationDetails.workday">
+              <dt>Часы работы</dt>
+              <dd>{{ stationDetails.workday }}</dd>
+            </div>
+          </dl>
         </div>
+        <p v-else-if="!isCustomer && !isAllowed('stationId')" class="muted">СТО-партнёр не назначен.</p>
       </div>
     </div>
 
@@ -1269,13 +1517,12 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- 04. Работы -->
+      <!-- Работы -->
       <section
         v-if="showRepairBlock || customerDraftWorks"
         class="repair-calculation-section"
       >
         <div class="section-title">
-          <span>04</span>
           <div>
             <h3>Работы</h3>
             <p v-if="customerDraftWorks">
@@ -1369,8 +1616,19 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="table-wrap excel-grid-wrap">
-          <table class="excel-grid works-grid" :class="{ 'customer-draft-grid': customerDraftWorks }">
+        <!-- Компактная таблица работ; все параметры строки — в карточке по двойному нажатию -->
+        <div class="table-wrap excel-grid-wrap works-grid-wrap">
+          <table class="excel-grid works-grid compact-works-grid" :class="{ 'customer-draft-grid': customerDraftWorks }">
+            <colgroup>
+              <col v-if="canSelectWorks" class="selection-col" />
+              <col class="work-name-col" />
+              <col v-if="!customerDraftWorks" class="work-norm-col" />
+              <col v-if="!customerDraftWorks" class="work-rate-col" />
+              <col class="work-qty-col" />
+              <col v-if="!customerDraftWorks" class="work-amount-col" />
+              <col v-if="showAgentDiscount && !customerDraftWorks" class="work-discount-col" />
+              <col class="row-command-col" />
+            </colgroup>
             <thead>
               <tr>
                 <th v-if="canSelectWorks" class="selection-col">
@@ -1383,49 +1641,17 @@ onMounted(() => {
                     @change="toggleAllWorks($event.target.checked)"
                   />
                 </th>
-                <th class="resizable-column work-name-column">
-                  Наименование работы
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th v-if="!customerDraftWorks" class="resizable-column work-norm-column">
-                  Норма времени
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th class="resizable-column work-qty-column">
-                  Кол-во
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th v-if="!customerDraftWorks" class="resizable-column">
-                  Стоимость нормо/часа, ₽
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th v-if="!customerDraftWorks" class="resizable-column">
-                  Стоимость, ₽
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
+                <th class="work-name-column">Наименование работы</th>
+                <th v-if="!customerDraftWorks" class="num-column">Норма времени, ч</th>
+                <th v-if="!customerDraftWorks" class="num-column">Стоимость нормо/часа, ₽</th>
+                <th class="num-column work-qty-column">Кратность</th>
+                <th v-if="!customerDraftWorks" class="num-column">Стоимость, ₽</th>
                 <th
-                  v-if="showAgentDiscount"
-                  class="resizable-column agent-discount-column"
+                  v-if="showAgentDiscount && !customerDraftWorks"
+                  class="num-column agent-discount-column"
                   title="Агентская скидка СТО из реквизитов СТО. В заявке не меняется, Заказчику не видна."
                 >
-                  Агентская скидка, %
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th v-if="showAgentDiscount" class="resizable-column agent-discount-column">
-                  Скидка, ₽
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th class="resizable-column work-comment-column">
-                  Комментарий
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
-                </th>
-                <th
-                  v-if="showChangeNotes"
-                  class="resizable-column work-comment-column"
-                  title="Обязательно для каждой добавленной или изменённой работы в ходе ремонта"
-                >
-                  Примечание к изменению
-                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                  Агентская скидка, ₽
                 </th>
                 <th class="row-command-column" />
               </tr>
@@ -1434,7 +1660,10 @@ onMounted(() => {
               <tr
                 v-for="(work, index) in displayedWorks"
                 :key="work.id || work._clientId || index"
+                class="work-row"
                 :class="lineChange('work', work) ? 'line-' + lineChange('work', work) : ''"
+                title="Двойное нажатие — карточка работы"
+                @dblclick="openWorkDialog(work, $event)"
               >
                 <td v-if="canSelectWorks" class="selection-col">
                   <input
@@ -1447,7 +1676,7 @@ onMounted(() => {
                     @change="toggleWork(work, $event.target.checked)"
                   />
                 </td>
-                <td :title="work.name">
+                <td class="work-name-cell" :title="workTooltip(work)">
                   <WorkTypePicker
                     v-if="canWork"
                     v-model="work.workTypeId"
@@ -1459,144 +1688,62 @@ onMounted(() => {
                     @edit="workNameEdited(work, $event)"
                     @create="createWork(work, $event)"
                   />
-                  <span v-else>{{ work.name || '—' }}</span>
+                  <span v-else class="work-name-text">{{ work.name || '—' }}</span>
                   <small
-                    v-if="!customerDraftWorks && (work.workTypeId || work.normId)"
-                    class="norm-applicability"
-                    :title="
-                      work.normApplicabilityLabel || work._normApplicabilityLabel
-                    "
-                    >{{
-                      work.normIsManual
-                        ? "Ручная норма для этой заявки"
-                        : work.normApplicabilityLabel ||
-                          work._normApplicabilityLabel ||
-                          "Применимость не определена"
-                    }}</small
-                  >
+                    v-if="workAttention(work)"
+                    class="work-row-note"
+                    :class="{ 'norm-selection-error': workAttention(work).error }"
+                  >{{ workAttention(work).text }}</small>
                 </td>
 
-                <td v-if="!customerDraftWorks">
-                  <div v-if="canWork" class="norm-time-control">
-                    <div class="manual-norm-field">
-                      <input
-                        v-model.number="work.normHours"
-                        :title="String(work.normHours ?? '')"
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        placeholder="Ввести вручную"
-                        aria-label="Норма времени для этой заявки"
-                        :disabled="busy || !work.workTypeId || work._normLoading"
-                        @input="manualNormChanged(work)"
-                      />
-                      <InfoHint
-                        text="Ручное значение сохраняется только в этой заявке."
-                      />
-                    </div>
-                    <input
-                      v-if="work.normIsManual"
-                      v-model.trim="work.normOverrideReason"
-                      :title="work.normOverrideReason"
-                      class="norm-override-reason"
-                      :disabled="busy"
-                      type="text"
-                      maxlength="2000"
-                      required
-                      placeholder="Причина ручной корректировки"
-                      aria-label="Причина ручной корректировки нормы"
-                      @input="manualNormReasonChanged(work)"
-                    />
-                    <small v-if="work._normLoading">Подбираем норму…</small>
-                    <small
-                      v-else-if="work._normMessage"
-                      :title="work._normMessage"
-                      :class="{
-                        'norm-selection-error':
-                          work._normMessage.startsWith('Конфликт') ||
-                          work._normMessage.startsWith('Подходящая') ||
-                          work._normMessage.startsWith('Для выбранной'),
-                      }"
-                    >
-                      {{ work._normMessage }}
-                    </small>
-                  </div>
-                  <span v-else>{{ work.normHours ?? '—' }}</span>
-                </td>
-
-                <td>
+                <td v-if="!customerDraftWorks" class="num-cell">
                   <input
+                    v-if="canWork"
+                    v-model.number="work.normHours"
+                    :title="String(work.normHours ?? '')"
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    placeholder="—"
+                    aria-label="Норма времени для этой заявки"
+                    :disabled="busy || !work.workTypeId || work._normLoading"
+                    @input="manualNormChanged(work)"
+                  />
+                  <span v-else>{{ work.normHours == null || work.normHours === '' ? '—' : formatHours(work.normHours) }}</span>
+                </td>
+
+                <td v-if="!customerDraftWorks" class="num-cell">
+                  {{ workRate(work) == null ? '—' : money(workRate(work)) }}
+                </td>
+
+                <td class="num-cell">
+                  <input
+                    v-if="canWork"
                     v-model.number="work.qty"
                     :title="String(work.qty ?? '')"
                     type="number"
                     min="0.1"
                     step="0.1"
-                    :disabled="busy || !canWork || !work.workTypeId"
+                    aria-label="Кратность"
+                    :disabled="busy || !work.workTypeId"
                     @input="workQuantityChanged(work)"
                   />
+                  <span v-else>{{ work.qty == null || work.qty === '' ? '—' : formatHours(work.qty) }}</span>
                 </td>
 
-                <td v-if="!customerDraftWorks">
-                  <input
-                    :value="work.hourlyRate ?? request.laborHourRate ?? ''"
-                    :title="
-                      String(work.hourlyRate ?? request.laborHourRate ?? '')
-                    "
-                    type="number"
-                    readonly
-                    disabled
-                  />
+                <td v-if="!customerDraftWorks" class="num-cell">
+                  {{ workAmount(work) == null ? '—' : money(workAmount(work)) }}
                 </td>
 
-                <td v-if="!customerDraftWorks">
-                  {{ workAmount(work) == null ? 'Не рассчитано' : money(workAmount(work)) }}
-                </td>
-
-                <td v-if="showAgentDiscount" class="agent-discount-cell">
-                  <input
-                    :value="lineAgentPercent(work) ?? ''"
-                    type="number"
-                    readonly
-                    disabled
-                    placeholder="—"
-                    aria-label="Агентская скидка, %"
-                    title="Подставляется из реквизитов СТО"
-                  />
-                </td>
-                <td v-if="showAgentDiscount" class="agent-discount-cell">
+                <td
+                  v-if="showAgentDiscount && !customerDraftWorks"
+                  class="num-cell agent-discount-cell"
+                  :title="lineAgentPercent(work) == null ? '' : `${lineAgentPercent(work)}% из реквизитов СТО`"
+                >
                   {{ workAgentDiscount(work) == null ? '—' : money(workAgentDiscount(work)) }}
                 </td>
 
-                <td class="line-comment-cell" :title="work.comment || ''">
-                  <input
-                    v-if="canWork && work !== placeholderWork"
-                    v-model="work.comment"
-                    type="text"
-                    maxlength="2000"
-                    :disabled="busy"
-                    placeholder="Комментарий"
-                    aria-label="Комментарий к работе (только для этой заявки)"
-                    @input="touch"
-                  />
-                  <span v-else>{{ work.comment || '' }}</span>
-                </td>
-
-                <td v-if="showChangeNotes" class="line-comment-cell" :title="work.changeNote || ''">
-                  <input
-                    v-if="canChangeInWork && work !== placeholderWork"
-                    v-model="work.changeNote"
-                    type="text"
-                    maxlength="2000"
-                    :disabled="busy"
-                    :class="{ 'missing-note': lineChange('work', work) && !String(work.changeNote || '').trim() }"
-                    placeholder="Что и почему изменено"
-                    aria-label="Примечание к изменению работы"
-                    @input="touch"
-                  />
-                  <span v-else>{{ work.changeNote || '' }}</span>
-                </td>
-
-                <td>
+                <td class="row-command-column">
                   <button
                     v-if="canWork && work !== placeholderWork"
                     type="button"
@@ -1610,6 +1757,18 @@ onMounted(() => {
                 </td>
               </tr>
             </tbody>
+            <tfoot v-if="!customerDraftWorks">
+              <tr class="works-total-row">
+                <td v-if="canSelectWorks" />
+                <th scope="row">Итого по работам</th>
+                <td class="num-cell">{{ formatHours(worksTotals.hours) }}</td>
+                <td />
+                <td />
+                <td class="num-cell">{{ money(worksTotals.amount) }}</td>
+                <td v-if="showAgentDiscount" class="num-cell">{{ money(worksTotals.discount) }}</td>
+                <td />
+              </tr>
+            </tfoot>
           </table>
         </div>
 
@@ -1705,7 +1864,7 @@ onMounted(() => {
     </div>
 
     <div v-show="activeTab === 'acts'" id="zr-tab-acts" class="zr-tab-panel" role="tabpanel">
-      <!-- 06. Приём ТС -->
+      <!-- Приём ТС -->
       <AcceptanceActPanel
         :request="request"
         :busy="busy"
@@ -1736,9 +1895,8 @@ onMounted(() => {
     </div>
 
     <div v-show="activeTab === 'media'" id="zr-tab-media" class="zr-tab-panel" role="tabpanel">
-      <!-- 05. Вложения -->
+      <!-- Вложения -->
       <div class="section-title">
-        <span>05</span>
         <h3>Фото, видео и документы</h3>
       </div>
       <AttachmentPanel
@@ -1759,6 +1917,17 @@ onMounted(() => {
       />
       <p v-if="!hasInvoices" class="muted zr-tab-empty">
         Счета по заявке ещё не выставлены.
+      </p>
+    </div>
+
+    <div v-show="activeTab === 'history'" id="zr-tab-history" class="zr-tab-panel" role="tabpanel">
+      <VehicleHistory
+        v-if="historyVisited && request.vehicleId"
+        :vehicle-id="request.vehicleId"
+        embedded
+      />
+      <p v-else-if="!request.vehicleId" class="muted zr-tab-empty">
+        Выберите автомобиль, чтобы увидеть историю ТО и работ.
       </p>
     </div>
 
@@ -1934,6 +2103,32 @@ onMounted(() => {
         </button>
       </div>
     </div>
+
+    <WorkLineDialog
+      v-if="dialogWork"
+      :work="dialogWork"
+      :position="dialogWorkPosition"
+      :work-types="references.workTypes"
+      :editable="canWork"
+      :customer-draft="customerDraftWorks"
+      :busy="busy"
+      :hourly-rate="workRate(dialogWork)"
+      :amount="workAmount(dialogWork)"
+      :show-agent-discount="showAgentDiscount"
+      :agent-percent="lineAgentPercent(dialogWork)"
+      :agent-discount="workAgentDiscount(dialogWork)"
+      :show-change-notes="showChangeNotes"
+      :can-change-in-work="canChangeInWork && dialogWork !== placeholderWork"
+      :change="lineChange('work', dialogWork)"
+      :scope-text="dialogWork.normSelectionScope ? scopeLabel(dialogWork.normSelectionScope) : ''"
+      @select="workTypeChanged(dialogWork, $event)"
+      @edit="workNameEdited(dialogWork, $event)"
+      @create="createWork(dialogWork, $event)"
+      @norm="manualNormChanged(dialogWork)"
+      @qty="workQuantityChanged(dialogWork)"
+      @touch="touch"
+      @close="dialogWork = null"
+    />
 
     <dialog v-if="declinedStationDialog" open class="action-dialog repeat-station-dialog">
       <p>Выбранное СТО ранее отказалось от выполнения этой заявки. Направить заявку повторно?</p>

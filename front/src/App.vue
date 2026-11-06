@@ -494,7 +494,7 @@ export default {
                     state: false,
                     work: true,
                 };
-            await this.openList();
+            // При первом открытии рабочая область пустая (заставка с логотипом).
             await this.refresh();
             this.startNotificationPolling();
             this.startLockHeartbeat();

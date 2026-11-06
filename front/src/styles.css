@@ -4075,3 +4075,97 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .recommendation-registry td small { display: block; }
 .recommendation-registry .column-filter-row input { width: 100%; }
 .recommendation-preview .detail-list { margin-top: 12px; }
+
+/* ─── ЗР 0.41.002: вкладки без нумерации блоков ─── */
+
+/* Текущий и предыдущий пробег — в одну строку, единое оформление */
+.form-grid.mileage-row { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; }
+.mileage-row label { display: block; }
+.previous-mileage-field input:disabled { cursor: default; }
+.field-hint { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+
+/* Контактные лица и дата обращения */
+.form-grid.visit-dates-row { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+.form-grid.contacts-row { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 15px; }
+.form-grid.station-row { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin-top: 15px; align-items: start; }
+.form-grid.station-row > .full { grid-column: 1 / -1; }
+.repair-completed-field .confirmed-datetime-trigger { grid-template-columns: 36px minmax(0, 1fr); }
+.station-reference { padding: 10px 14px; border: 1px solid #afc9ec; border-radius: 8px; background: #f0f5fc; }
+.station-reference__label { display: block; margin-bottom: 2px; color: var(--muted); font-size: 12px; }
+.station-reference > strong { display: block; color: var(--brand-navy-dark); font-size: 15px; }
+.station-reference dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px; margin: 8px 0 0; }
+.station-reference dt { color: var(--muted); font-size: 12px; }
+.station-reference dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+
+@media (max-width: 1100px) {
+  .form-grid.visit-dates-row { grid-template-columns: 1fr; }
+  .form-grid.station-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .form-grid.mileage-row, .form-grid.contacts-row { grid-template-columns: 1fr; }
+}
+
+/* Работы: компактная таблица без внутреннего скролла + строка «Итого» */
+.works-grid-wrap { overflow: visible; }
+.excel-grid.works-grid.compact-works-grid,
+.excel-grid.works-grid.compact-works-grid.customer-draft-grid { width: 100%; min-width: 0; table-layout: fixed; }
+.compact-works-grid col.selection-col { width: 38px; }
+.compact-works-grid col.work-norm-col { width: 112px; }
+.compact-works-grid col.work-rate-col { width: 118px; }
+.compact-works-grid col.work-qty-col { width: 100px; }
+.compact-works-grid col.work-amount-col { width: 120px; }
+.compact-works-grid col.work-discount-col { width: 118px; }
+.compact-works-grid col.row-command-col { width: 40px; }
+.compact-works-grid th { position: static; white-space: normal; line-height: 1.25; vertical-align: bottom; }
+.compact-works-grid th.work-name-column { width: auto; }
+.compact-works-grid .num-column, .compact-works-grid .num-cell { text-align: right; }
+.compact-works-grid td { vertical-align: middle; }
+.compact-works-grid td.work-name-cell { white-space: normal; }
+.compact-works-grid .work-name-text { display: block; white-space: normal; overflow-wrap: anywhere; }
+.compact-works-grid .work-row-note { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.compact-works-grid .work-row-note.norm-selection-error { color: var(--red-error); }
+.compact-works-grid td.num-cell input { text-align: right; }
+.compact-works-grid tbody tr.work-row { cursor: default; }
+.compact-works-grid tbody tr.work-row:hover > td { background: #f4f8fd; }
+.compact-works-grid tbody tr.work-row.line-added:hover > td { background: var(--brand-teal-soft); }
+.compact-works-grid tfoot td, .compact-works-grid tfoot th { padding: 10px 8px; border-top: 2px solid var(--brand-navy); background: #f0f5fc; color: var(--brand-navy-dark); font-weight: 700; white-space: nowrap; }
+.compact-works-grid tfoot th { text-align: left; }
+
+/* Карточка работы (двойное нажатие по строке) */
+.work-line-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgb(2 40 85 / 45%); }
+.work-line-dialog { width: min(820px, 100%); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px 22px; border-radius: 14px; background: #fff; box-shadow: 0 20px 80px rgb(2 40 85 / 35%); }
+.work-line-dialog__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.work-line-dialog__head h2 { margin: 4px 0 0; color: var(--brand-navy-dark); font-size: 19px; }
+.work-line-dialog__change { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #fff7e6; }
+.work-line-dialog__change.line-added { background: var(--brand-teal-soft); }
+.work-line-dialog__close { flex: none; width: 36px; height: 36px; padding: 0; font-size: 20px; }
+.work-line-dialog__section { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.work-line-dialog__section > h3 { grid-column: 1 / -1; margin: 0; color: var(--brand-navy); font-size: 15px; }
+.work-line-dialog__section > small { grid-column: 1 / -1; }
+.work-line-dialog__grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.work-line-dialog__wide { grid-column: span 2; }
+.work-line-dialog__section > .work-line-dialog__wide:only-child,
+.work-line-dialog__section > h3 + .work-line-dialog__wide { grid-column: 1 / -1; }
+.work-line-dialog label, .work-line-dialog__grid > div, .work-line-dialog__section > div:not(.work-line-dialog__grid) { display: block; min-width: 0; }
+.work-line-dialog label > span, .work-line-dialog__grid > div > span, .work-line-dialog__section > div:not(.work-line-dialog__grid) > span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
+.work-line-dialog output { display: flex; align-items: center; min-height: 42px; padding: 9px 11px; border: 1px solid #d5e1f0; border-radius: 6px; background: #f6f9fd; color: var(--ink); font-size: 14px; }
+.work-line-dialog output.work-line-dialog__text { min-height: 60px; align-items: flex-start; white-space: pre-wrap; }
+.work-line-dialog textarea.missing-note, .work-line-dialog input.missing-note { border-color: var(--red-error); }
+.work-line-dialog__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; }
+
+@media (max-width: 760px) {
+  .work-line-dialog__section, .work-line-dialog__grid { grid-template-columns: 1fr; }
+  .work-line-dialog__wide { grid-column: 1 / -1; }
+  .works-grid-wrap { overflow-x: auto; }
+  .excel-grid.works-grid.compact-works-grid { min-width: 640px; }
+}
+/* Три поля дат в строке выравниваются по полю ввода, даже если подпись в две строки */
+.visit-dates-row > .confirmed-datetime { display: flex; flex-direction: column; }
+.visit-dates-row .confirmed-datetime__label { min-height: 2.5em; display: flex; align-items: flex-end; }
+@media (max-width: 1100px) { .visit-dates-row .confirmed-datetime__label { min-height: 0; } }
+
+/* Вкладка ЗР «История ТО и работ» */
+.vehicle-history-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 16px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid #afc9ec; border-radius: 8px; background: #f0f5fc; }
+.vehicle-history-summary dt { color: var(--muted); font-size: 12px; }
+.vehicle-history-summary dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
