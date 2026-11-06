@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { marketplaceApi } from '../../api/marketplace.js';
 import { formatDateTime, money } from '../../data/permissions.js';
-import { printBlob } from './handoverSheet.js';
+import { handoverSheet } from './handoverSheet.js';
 
 /*
  * Закрытие ЗР:
@@ -124,10 +124,11 @@ function markPaid() {
   return run(method, { ...payment.value });
 }
 
-async function printDoc(doc) {
+/** Лист приёма-передачи ТС (выдача): формируется в момент выгрузки — дата и представитель СТО из ЛК. */
+async function sheet(mode) {
   error.value = '';
   try {
-    printBlob(await marketplaceApi.requestDocumentPdf(doc.id));
+    await handoverSheet(props.request, 'out', mode);
   } catch (e) {
     error.value = e.message;
   }
@@ -166,8 +167,8 @@ async function download(doc) {
         </span>
       </div>
       <div class="closing-actions">
-        <button type="button" class="ghost-btn" :disabled="busy" @click="download(act)">Выгрузить в PDF</button>
-        <button type="button" class="ghost-btn" :disabled="busy" @click="printDoc(act)">Распечатать</button>
+        <button type="button" class="ghost-btn" :disabled="busy" @click="sheet('pdf')">Выгрузить в PDF</button>
+        <button type="button" class="ghost-btn" :disabled="busy" @click="sheet('print')">Распечатать</button>
         <small class="muted">Стороны, водитель, ТС и доверенность заполняются автоматически; пробег, отметки и подписи — от руки.</small>
       </div>
 

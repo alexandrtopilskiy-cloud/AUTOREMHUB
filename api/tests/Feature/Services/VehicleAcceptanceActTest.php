@@ -208,7 +208,19 @@ final class VehicleAcceptanceActTest extends TestCase
         $this->assertSame('Петров Иван', $in['driver']['fullName']);
         $this->assertSame('Смирнов Алексей', $in['stationRepresentative']['fullName']);
         $this->assertSame(['name' => 'Kia Rio', 'plate' => 'А123ВС777', 'vin' => 'Z94C241BBLR123456', 'year' => 2020], $in['vehicle']);
+        $this->assertSame(now()->toDateString(), $in['date']);
         $this->assertSame($request->numberWithPrefix('APP') . '/2', $service->handoverSheet($request, 'out')['number']);
+
+        // Представитель СТО — пользователь ЛК СТО, который выгружает лист.
+        $stationUser = $this->user($stationOrganization, 'station');
+        $stationUser->forceFill(['last_name' => 'Соколов', 'first_name' => 'Максим', 'middle_name' => 'Николаевич'])->save();
+        $this->assertSame(
+            $stationUser->refresh()->fullName(),
+            $service->handoverSheet($request, 'out', $stationUser)['stationRepresentative']['fullName'],
+        );
+        $this->assertStringContainsString('Соколов', $stationUser->fullName());
+        // Для ЛК Заказчика/УК — контактное лицо СТО.
+        $this->assertSame('Смирнов Алексей', $service->handoverSheet($request, 'in', $customer)['stationRepresentative']['fullName']);
 
         $this->actingAs($customer);
         foreach (['in', 'out'] as $direction) {

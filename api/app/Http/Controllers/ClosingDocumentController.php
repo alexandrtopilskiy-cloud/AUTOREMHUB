@@ -133,8 +133,8 @@ final class ClosingDocumentController
     public function handoverSheet(Request $request, string $id, string $direction): Response
     {
         $repairRequest = RepairRequest::resolveFor(UserDto::fromUserModel($request->user()), $id);
-        $sheet = $this->documents->handoverSheet($repairRequest, $direction);
-        $pdf = $this->documents->handoverSheetPdf($repairRequest, $direction);
+        $sheet = $this->documents->handoverSheet($repairRequest, $direction, $request->user());
+        $pdf = $this->documents->handoverSheetPdf($repairRequest, $direction, $request->user());
         $name = str_replace('/', '-', (string) $sheet['number']) . ' Лист приёма-передачи ТС.pdf';
 
         return response($pdf, 200, [
