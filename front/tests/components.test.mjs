@@ -1746,10 +1746,22 @@ test("Options API component rendering and interactive methods", async (context) 
                 const memory = await server.ssrLoadModule(
                     "/src/features/requests/zrTabMemory.js",
                 );
-                assert.equal(memory.rememberedZrTab("zr-1", "vehicle"), "vehicle");
-                memory.rememberZrTab("zr-1", "works");
-                assert.equal(memory.rememberedZrTab("zr-1", "vehicle"), "works");
-                assert.equal(memory.rememberedZrTab("zr-2", "vehicle"), "vehicle");
+                // Стартовая вкладка ЗР зависит от этапа.
+                const starts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((stage) => memory.startZrTab(stage));
+                assert.deepEqual(starts, [
+                    "vehicle", "vehicle", "vehicle", "vehicle", "acts", "works",
+                    "acts", "documents", "payments", "payments", "vehicle",
+                ]);
+                assert.equal(memory.rememberedZrTab("zr-1", 0), "vehicle");
+                memory.rememberZrTab("zr-1", 0, "works");
+                assert.equal(memory.rememberedZrTab("zr-1", 0), "works");
+                // Сменился этап — снова стартовая вкладка.
+                assert.equal(memory.rememberedZrTab("zr-1", 5), "works");
+                assert.equal(memory.rememberedZrTab("zr-1", 7), "documents");
+                assert.equal(memory.rememberedZrTab("zr-2", 8), "payments");
+                // После закрытия ЗР память сбрасывается.
+                memory.forgetZrTab("zr-1");
+                assert.equal(memory.rememberedZrTab("zr-1", 0), "vehicle");
                 assert.equal(block(""), "");
                 assert.equal(Panel.computed.canCreateRequest.call({ userRole: "customer" }), true);
                 assert.equal(Panel.computed.canCreateRequest.call({ userRole: "manager" }), false);

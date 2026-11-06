@@ -173,9 +173,9 @@ async function download(doc) {
       </div>
 
       <dl class="closing-facts">
-        <div><dt>Водитель Заказчика</dt><dd>{{ act.driver?.fullName || '—' }}<small v-if="act.driver?.phone">{{ act.driver.phone }}</small></dd></div>
+        <div><dt>Подписанный лист</dt><dd><template v-if="act.signedAt">{{ act.signedAttachmentName }}<small>{{ formatDateTime(act.signedAt) }}</small></template><template v-else>—</template></dd></div>
         <div><dt>Доверенность</dt><dd>{{ act.powerOfAttorney?.number || '—' }}<small v-if="act.powerOfAttorney?.date">от {{ formatDate(act.powerOfAttorney.date) }}</small></dd></div>
-        <div v-if="act.signedAt"><dt>Подписанный акт</dt><dd>{{ act.signedAttachmentName }}<small>{{ formatDateTime(act.signedAt) }}</small></dd></div>
+        <div><dt>Водитель Заказчика</dt><dd>{{ act.driver?.fullName || '—' }}<small v-if="act.driver?.phone">{{ act.driver.phone }}</small></dd></div>
       </dl>
 
       <form v-if="permissions.canSignTransferAct" class="closing-sign" @submit.prevent="sign">

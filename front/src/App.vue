@@ -2,6 +2,7 @@
 import { matchesReference } from "./utils/referenceSearch.js";
 import LoginForm from "./features/auth/LoginForm.vue";
 import RepairEditor from "./features/requests/RepairEditor.vue";
+import { forgetZrTab } from "./features/requests/zrTabMemory.js";
 import RequestReport from "./features/reports/RequestReport.vue";
 import UnsavedChangesDialog from "./features/requests/UnsavedChangesDialog.vue";
 import RequestPreview from "./features/requests/RequestPreview.vue";
@@ -32,6 +33,7 @@ import { workflow, statusClass } from "./data/workflow.js";
 /** Действия, после которых ЗР закрывается у текущего пользователя. */
 const CLOSING_ACTIONS = [
     "transition",
+    "workChangeSubmit",
     "stationDecision",
     "customerSlotDecision",
     "workChangeDecision",
@@ -1071,6 +1073,11 @@ export default {
                 this.chatRequestId = "";
             }
 
+            // Следующее открытие ЗР начнётся со стартовой вкладки этапа.
+            if (this.tabs[i].kind === "request") {
+                forgetZrTab(this.tabs[i].recordId);
+            }
+
             this.releaseTabLock(id);
             this.tabs.splice(i, 1);
             // Все вкладки закрыты — показываем заставку с логотипом.
@@ -1407,6 +1414,13 @@ export default {
             const tabId = this.activeId;
             if (!key) throw new Error("Заявка не выбрана");
             try {
+                // «Отправить изменения на согласование»: несохранённые правки
+                // работ и ЗЧ сначала сохраняются.
+                if (method === "workChangeSubmit" && this.store.pending[key]) {
+                    await this.store.save(key);
+                    if (this.store.pending[key])
+                        throw new Error(this.store.saveError || "Не удалось сохранить изменения заявки");
+                }
                 const result = await this.store.act(key, method, ...args);
                 // «Далее по маршруту», «Вернуть», «Согласовать» / «Не согласовано»:
                 // решение принято — ЗР закрывается у текущего пользователя.

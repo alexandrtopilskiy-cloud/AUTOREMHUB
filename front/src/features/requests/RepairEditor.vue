@@ -365,8 +365,8 @@ const customerDraftWorks = computed(
 );
 
 /**
- * Вкладки внутри ЗР. Компонент пересоздаётся на каждую ЗР: открывается
- * вкладка, на которой ЗР оставили в этом сеансе (иначе первая).
+ * Вкладки внутри ЗР. При открытии ЗР вкладка выбирается по этапу
+ * (zrTabMemory.js); пока ЗР открыта, сохраняется вкладка, на которой её оставили.
  */
 const ZR_TABS = [
   { key: 'vehicle', label: 'Автомобиль и причина обращения' },
@@ -377,14 +377,14 @@ const ZR_TABS = [
   { key: 'payments', label: 'Взаиморасчёты' },
   { key: 'history', label: 'История ТО и работ' },
 ];
-const activeTab = ref(rememberedZrTab(props.request.id, ZR_TABS[0].key));
-watch(activeTab, (key) => rememberZrTab(props.request.id, key));
+const activeTab = ref(rememberedZrTab(props.request.id, props.request.stage));
+watch(activeTab, (key) => rememberZrTab(props.request.id, props.request.stage, key));
 /** Историю ТС загружаем только после первого открытия вкладки. */
 const historyVisited = ref(activeTab.value === 'history');
 const panelRoot = ref(null);
-watch(() => props.request.id, (id) => {
-  activeTab.value = rememberedZrTab(id, ZR_TABS[0].key);
-  historyVisited.value = activeTab.value === 'history';
+watch(() => [props.request.id, props.request.stage], ([id, stage]) => {
+  activeTab.value = rememberedZrTab(id, stage);
+  historyVisited.value = historyVisited.value || activeTab.value === 'history';
 });
 
 /** Ближайший прокручиваемый контейнер рабочей области (или окно). */
@@ -1188,7 +1188,7 @@ onMounted(() => {
       </p>
     </div>
 
-    <!-- Вкладки ЗР: при открытии всегда первая -->
+    <!-- Вкладки ЗР: стартовая вкладка зависит от этапа -->
     <nav class="zr-tabs" role="tablist" aria-label="Разделы заявки">
       <button
         v-for="tab in ZR_TABS"
