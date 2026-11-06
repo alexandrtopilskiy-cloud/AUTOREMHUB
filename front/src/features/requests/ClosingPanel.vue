@@ -17,6 +17,8 @@ const props = defineProps({
   request: { type: Object, required: true },
   busy: { type: Boolean, default: false },
   perform: { type: Function, required: true },
+  /** Часть панели для вкладки ЗР: act | documents | payments | all. */
+  part: { type: String, default: 'all' },
 });
 
 const error = ref('');
@@ -30,7 +32,14 @@ const act = computed(() => closing.value.transferAct);
 const documents = computed(() => closing.value.documents || []);
 const stationDocuments = computed(() => documents.value.filter((doc) => doc.side === 'station'));
 const customerDocuments = computed(() => documents.value.filter((doc) => doc.side === 'customer'));
-const visible = computed(() => props.request.stage >= 6 && (act.value || documents.value.length || permissions.value.canGenerateDocuments));
+const showPart = (name) => props.part === 'all' || props.part === name;
+const showAct = computed(() => showPart('act') && Boolean(act.value));
+const showDocuments = computed(() => showPart('documents') && Boolean(documents.value.length || permissions.value.canGenerateDocuments && props.request.stage === 7));
+const invoices = computed(() => documents.value.filter((doc) => doc.type.endsWith('invoice')));
+const showPayment = computed(() => showPart('payments') && Boolean(payableInvoice.value));
+/** Вкладка «Взаиморасчёты»: сводка по счетам ЗР, без дублирования в режиме all. */
+const showSettlements = computed(() => props.part === 'payments' && invoices.value.length > 0);
+const visible = computed(() => props.request.stage >= 6 && (showAct.value || showDocuments.value || showPayment.value || showSettlements.value));
 
 const signedFiles = computed(() =>
   (props.request.attachments || []).filter((file) => file.purpose === PURPOSE_TRANSFER_ACT),
@@ -131,10 +140,10 @@ async function download(doc) {
 
 <template>
   <section v-if="visible" class="feature-card closing-panel">
-    <h3>Выдача ТС и закрывающие документы</h3>
+    <h3 v-if="part === 'all'">Выдача ТС и закрывающие документы</h3>
 
     <!-- Акт передачи ТС -->
-    <div v-if="act" class="closing-block">
+    <div v-if="showAct" class="closing-block">
       <div class="closing-head">
         <div>
           <strong>Акт передачи ТС {{ act.number }}</strong>
@@ -194,7 +203,7 @@ async function download(doc) {
     </div>
 
     <!-- Документы по ЗР -->
-    <div v-if="documents.length || permissions.canGenerateDocuments && request.stage === 7" class="closing-block">
+    <div v-if="showDocuments" class="closing-block">
       <div class="closing-head">
         <strong>Документы по заявке</strong>
         <button
@@ -241,8 +250,35 @@ async function download(doc) {
       </template>
     </div>
 
+    <!-- Взаиморасчёты по счетам -->
+    <div v-if="showSettlements" class="closing-block">
+      <strong>Счета по заявке</strong>
+      <div class="table-wrap closing-docs">
+        <table>
+          <thead>
+            <tr>
+              <th>Счёт</th><th>Плательщик → получатель</th>
+              <th class="num">Сумма, ₽</th><th class="num">Оплачено, ₽</th><th>Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="doc in invoices" :key="doc.id">
+              <td><strong>{{ doc.number }}</strong><small>от {{ formatDate(doc.date) }}</small></td>
+              <td>{{ doc.buyer }} → {{ doc.seller }}</td>
+              <td class="num">{{ money(doc.amount) }}</td>
+              <td class="num">{{ doc.paidAt ? money(doc.paidAmount ?? doc.amount) : '—' }}</td>
+              <td>
+                <span v-if="doc.paidAt" class="closing-state done">Оплачен {{ formatDate(doc.paidAt) }}</span>
+                <span v-else class="closing-state">Не оплачен</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Отметка об оплате -->
-    <form v-if="payableInvoice" class="closing-block closing-payment" @submit.prevent="markPaid">
+    <form v-if="showPayment" class="closing-block closing-payment" @submit.prevent="markPaid">
       <strong>{{ paymentTitle }} по счёту {{ payableInvoice.number }} на {{ money(payableInvoice.amount) }} ₽</strong>
       <div class="form-grid">
         <label>Дата оплаты<input v-model="payment.paidAt" type="date" :max="today()" required :disabled="busy" /></label>

@@ -303,6 +303,33 @@ const customerDraftWorks = computed(
   () => isCustomer.value && props.request.stage === 0,
 );
 
+/** Вкладки внутри ЗР; компонент пересоздаётся на каждую ЗР, поэтому открывается первая. */
+const ZR_TABS = [
+  { key: 'vehicle', label: 'Автомобиль и причина обращения' },
+  { key: 'works', label: 'Работы и материалы' },
+  { key: 'acts', label: 'Акты приёма-передачи' },
+  { key: 'documents', label: 'Документы по заявке' },
+  { key: 'media', label: 'Фото, видео и документы' },
+  { key: 'payments', label: 'Взаиморасчёты' },
+];
+const activeTab = ref(ZR_TABS[0].key);
+watch(() => props.request.id, () => { activeTab.value = ZR_TABS[0].key; });
+const closingDocuments = computed(() => props.request.closing?.documents || []);
+const hasActs = computed(() =>
+  Boolean(
+    props.request.acceptanceAct ||
+      props.request.permissions?.canAcceptVehicle ||
+      props.request.closing?.transferAct,
+  ),
+);
+const hasClosingDocuments = computed(() =>
+  closingDocuments.value.length > 0 ||
+  (props.request.permissions?.canGenerateDocuments === true && props.request.stage === 7),
+);
+const hasInvoices = computed(() =>
+  closingDocuments.value.some((doc) => String(doc.type).endsWith('invoice')),
+);
+
 const canDiagnose = computed(
   () => props.request.permissions?.canDiagnose === true,
 );
@@ -973,710 +1000,767 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 01. Автомобиль -->
-    <div class="section-title">
-      <span>01</span>
-      <h3>Автомобиль</h3>
-    </div>
+    <!-- Вкладки ЗР: при открытии всегда первая -->
+    <nav class="zr-tabs" role="tablist" aria-label="Разделы заявки">
+      <button
+        v-for="tab in ZR_TABS"
+        :key="tab.key"
+        type="button"
+        role="tab"
+        class="zr-tab"
+        :class="{ active: activeTab === tab.key }"
+        :aria-selected="activeTab === tab.key"
+        :aria-controls="`zr-tab-${tab.key}`"
+        @click="activeTab = tab.key"
+      >{{ tab.label }}</button>
+    </nav>
 
-    <VehiclePicker
-      :request-id="request.id"
-      :vehicle-id="request.vehicleId"
-      :vehicle="selectedVehicle"
-      :disabled="busy || !isCustomer || !isAllowed('vehicleId')"
-      @select="selectVehicle"
-      @history="$emit('vehicle-history', $event)"
-    />
-
-    <div class="form-grid vehicle-grid">
-      <label>
-        Текущий пробег, км
-        <input
-          v-model="request.mileage"
-          :disabled="!isAllowed('mileage')"
-          inputmode="numeric"
-          placeholder="Введите пробег"
-          @input="touch"
-        />
-      </label>
-
-      <div class="previous-mileage-info full">
-        <span>Предыдущий пробег и дата заполнения</span>
-        <strong v-if="request.previousServiceMileage != null">
-          {{ Number(request.previousServiceMileage).toLocaleString('ru-RU') }} км
-        </strong>
-        <strong v-else>Нет данных из предыдущих заявок</strong>
-        <small v-if="request.previousServiceAt">
-          {{ formatDateTime(request.previousServiceAt) }}
-        </small>
-      </div>
-    </div>
-
-    <!-- 02. Причина обращения -->
-    <div class="section-title">
-      <span>02</span>
-      <h3>Причина обращения</h3>
-    </div>
-
-    <div class="form-grid">
-      <label>
-        Причина обращения
-        <select
-          v-model="request.reasonId"
-          :disabled="!isAllowed('reasonId')"
-          @change="reasonChanged"
-        >
-          <option value="">Выберите причину</option>
-          <option v-for="reason in roots" :key="reason.id" :value="reason.id">
-            {{ reason.name }}
-          </option>
-        </select>
-      </label>
-
-      <label v-if="!isCustomer">
-        Подвид обращения
-        <select
-          v-model="request.reasonSubtypeId"
-          :disabled="!isAllowed('reasonSubtypeId') || !subtypes.length"
-          @change="touch"
-        >
-          <option value="">
-            {{ subtypes.length ? 'Выберите подвид' : 'Без подвида' }}
-          </option>
-          <option
-            v-for="subtype in subtypes"
-            :key="subtype.id"
-            :value="subtype.id"
-          >
-            {{ subtype.name }}
-          </option>
-        </select>
-      </label>
-
-      <label class="full">
-        Дополнительная информация (необязательно)
-        <textarea
-          v-model="request.description"
-          :disabled="!isAllowed('description')"
-          placeholder="Укажите дополнительную информацию при необходимости"
-          @input="touch"
-        />
-      </label>
-    </div>
-
-    <!-- 03. Контакт и дата визита -->
-    <div class="section-title">
-      <span>03</span>
-      <h3>Контактное лицо, дата и время визита</h3>
-    </div>
-
-    <div class="form-grid">
-      <label>
-        Контактное лицо
-        <select
-          v-model="request.contactId"
-          :disabled="
-            !isAllowed('contactId') || !request.vehicleId || contactsLoading
-          "
-          @change="touch"
-        >
-          <option value="">
-            {{
-              !request.vehicleId
-                ? 'Сначала выберите ТС'
-                : contactsLoading
-                  ? 'Загружаем контакты…'
-                  : 'Выберите контактное лицо'
-            }}
-          </option>
-          <option
-            v-if="
-              request.contactId &&
-              !contacts.some((item) => item.id === request.contactId)
-            "
-            :value="request.contactId"
-          >
-            {{ request.contact || 'Выбранное контактное лицо' }}
-          </option>
-          <option
-            v-for="contact in contacts"
-            :key="contact.id"
-            :value="contact.id"
-          >
-            {{ contactLabel(contact) }}
-          </option>
-        </select>
-        <small v-if="contactsError" class="error-message">
-          {{ contactsError }}
-        </small>
-      </label>
-
-      <label>
-        Водитель
-        <select
-          v-model="request.driverId"
-          :disabled="
-            !isAllowed('driverId') || !request.vehicleId || driversLoading
-          "
-          @change="touch"
-        >
-          <option value="">
-            {{
-              !request.vehicleId
-                ? 'Сначала выберите ТС'
-                : driversLoading
-                  ? 'Загружаем водителей…'
-                  : 'Выберите водителя'
-            }}
-          </option>
-          <option
-            v-if="
-              request.driverId &&
-              !drivers.some((item) => item.id === request.driverId)
-            "
-            :value="request.driverId"
-          >
-            {{ request.driver || 'Выбранный водитель' }}
-          </option>
-          <option
-            v-for="driver in drivers"
-            :key="driver.id"
-            :value="driver.id"
-          >
-            {{ contactLabel(driver) }}
-          </option>
-        </select>
-        <small v-if="driversError" class="error-message">
-          {{ driversError }}
-        </small>
-      </label>
-
-      <label v-if="!isCustomer">
-        СТО-партнёр
-        <select
-          v-model="request.stationId"
-          :disabled="!isAllowed('stationId')"
-          @change="touch"
-        >
-          <option value="">Не выбрано</option>
-          <option
-            v-for="station in stations"
-            :key="station.id"
-            :value="station.id"
-          >
-            {{ station.name }}
-          </option>
-          <option
-            v-if="
-              request.stationId &&
-              !stations.some((station) => station.id === request.stationId)
-            "
-            :value="request.stationId"
-          >
-            {{ request.station }}
-          </option>
-        </select>
-      </label>
-
-      <ConfirmedDateTimeInput
-        v-model="request.slot"
-        title="Желаемая дата и время визита"
-        :disabled="!isAllowed('slot')"
-        :min-time="VISIT_TIME_START"
-        :max-time="VISIT_TIME_END"
-        @confirm="touch"
-      />
-
-      <ConfirmedDateTimeInput
-        v-model="request.stationSlot"
-        title="Дата и время визита, подтверждённые СТО"
-        :disabled="isCustomer || isManager || !isAllowed('stationSlot')"
-        :min-time="VISIT_TIME_START"
-        :max-time="VISIT_TIME_END"
-        @confirm="touch"
-      />
-
-      <div class="calculated-completion-info">
-        <span>Расчётное время завершения ремонта</span>
-        <output>
-          {{
-            calculatedCompletionAt
-              ? formatDateTime(calculatedCompletionAt)
-              : 'Не рассчитано'
-          }}
-        </output>
-      </div>
-    </div>
-
-    <!-- Рекомендации по ТС: документ хранится отдельно от ЗР -->
-    <div
-      v-if="openRecommendationItems"
-      class="info-banner recommendation-banner"
-      role="status"
-    >
-      <span>
-        По ТС {{ request.plate || request.vin }} есть рекомендации
-        {{ request.recommendations.map((doc) => doc.number).join(', ') }}:
-        {{ openRecommendationItems }} поз. не выполнено.
-      </span>
-      <button type="button" class="ghost-btn" @click="$emit('recommendations')">
-        Рекомендации
-      </button>
-    </div>
-
-    <!-- 04. Работы -->
-    <section
-      v-if="showRepairBlock || customerDraftWorks"
-      class="repair-calculation-section"
-    >
+    <div v-show="activeTab === 'vehicle'" id="zr-tab-vehicle" class="zr-tab-panel" role="tabpanel">
+      <!-- 01. Автомобиль -->
       <div class="section-title">
-        <span>04</span>
-        <div>
-          <h3>Работы</h3>
-          <p v-if="customerDraftWorks">
-            Укажите работы, которые нужно выполнить. Нормы времени и стоимость
-            заполнит Управляющая компания.
-          </p>
-        </div>
+        <span>01</span>
+        <h3>Автомобиль</h3>
       </div>
 
-      <p v-if="managerReviewingStationChanges" class="info-banner repair-consensus-banner">
-        <template v-if="estimateChangedSinceReview">
-          УК скорректировала работы или запчасти. Согласуйте итоговую редакцию
-          для Заказчика либо верните в СТО с обязательным комментарием.
-        </template>
-        <template v-else>
-          СТО изменила работы или запчасти. Если УК согласна с текущей редакцией,
-          финальная заявка будет направлена Заказчику, а СТО получит уведомление.
-        </template>
-      </p>
-
-      <label v-if="user.role === 'manager'" class="labor-rate-selector">Тариф нормо/час
-        <select v-model="request.laborRateType" :disabled="
-            !request.permissions?.editableFields?.includes('laborRateType') ||
-            busy
-          "
-          @change="laborRateChanged">
-          <option value="general">Общий</option><option value="official">Официальный</option><option value="other">Прочий</option>
-        </select>
-      </label>
-
-      <p v-if="stationReviewingManagerChanges" class="info-banner repair-consensus-banner">
-        <template v-if="estimateChangedSinceReview">
-          СТО повторно изменила работы или запчасти. Эта редакция будет повторно
-          направлена на согласование в УК.
-        </template>
-        <template v-else>
-          УК скорректировала работы или запчасти. Примите изменения либо внесите
-          новую редакцию для повторного согласования.
-        </template>
-      </p>
-
-      <p
-        v-if="isCustomer && request.stage === 3"
-        class="info-banner repair-consensus-banner"
-      >
-        Работы, запчасти и время визита согласованы УК и СТО. Подтвердите
-        финальную заявку, чтобы СТО ожидала автомобиль.
-      </p>
-
-      <WorkChangePanel
-        :request="request"
-        :busy="busy"
-        :dirty="dirty"
-        :perform="perform"
+      <VehiclePicker
+        :request-id="request.id"
+        :vehicle-id="request.vehicleId"
+        :vehicle="selectedVehicle"
+        :disabled="busy || !isCustomer || !isAllowed('vehicleId')"
+        @select="selectVehicle"
+        @history="$emit('vehicle-history', $event)"
       />
 
-      <div
-        v-if="canSelectWorks"
-        class="work-bulk-actions"
-        role="toolbar"
-        aria-label="Действия с выбранными работами"
-      >
-        <span class="work-bulk-count">Выбрано: {{ selectedWorks.length }}</span>
-        <button
-          v-if="canWork"
-          type="button"
-          class="ghost-btn"
-          :disabled="busy || !selectedWorks.length"
-          @click="deleteSelectedWorks"
-        >
-          Удалить
-        </button>
-        <button
-          v-if="canWork"
-          type="button"
-          class="ghost-btn"
-          :disabled="busy || !selectedWorks.length"
-          @click="copySelectedWorks"
-        >
-          Создать копию
-        </button>
-        <button
-          v-if="canDefer"
-          type="button"
-          class="ghost-btn"
-          :disabled="busy || !canMoveSelectedWorks"
-          :title="dirty ? 'Изменения заявки будут сохранены перед переносом' : ''"
-          @click="deferSelected('work')"
-        >
-          Переместить в Рекомендации
-        </button>
-      </div>
+      <div class="form-grid vehicle-grid">
+        <label>
+          Текущий пробег, км
+          <input
+            v-model="request.mileage"
+            :disabled="!isAllowed('mileage')"
+            inputmode="numeric"
+            placeholder="Введите пробег"
+            @input="touch"
+          />
+        </label>
 
-      <div class="table-wrap excel-grid-wrap">
-        <table class="excel-grid works-grid" :class="{ 'customer-draft-grid': customerDraftWorks }">
-          <thead>
-            <tr>
-              <th v-if="canSelectWorks" class="selection-col">
-                <input
-                  type="checkbox"
-                  class="selection-checkbox"
-                  :checked="allWorksSelected"
-                  :disabled="busy || !selectableWorks.length"
-                  aria-label="Выбрать все работы"
-                  @change="toggleAllWorks($event.target.checked)"
-                />
-              </th>
-              <th class="resizable-column work-name-column">
-                Наименование работы
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th v-if="!customerDraftWorks" class="resizable-column work-norm-column">
-                Норма времени
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th class="resizable-column work-qty-column">
-                Кол-во
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th v-if="!customerDraftWorks" class="resizable-column">
-                Стоимость нормо/часа, ₽
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th v-if="!customerDraftWorks" class="resizable-column">
-                Стоимость, ₽
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th
-                v-if="showAgentDiscount"
-                class="resizable-column agent-discount-column"
-                title="Агентская скидка СТО из реквизитов СТО. В заявке не меняется, Заказчику не видна."
-              >
-                Агентская скидка, %
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th v-if="showAgentDiscount" class="resizable-column agent-discount-column">
-                Скидка, ₽
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th class="resizable-column work-comment-column">
-                Комментарий
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th
-                v-if="showChangeNotes"
-                class="resizable-column work-comment-column"
-                title="Обязательно для каждой добавленной или изменённой работы в ходе ремонта"
-              >
-                Примечание к изменению
-                <span class="column-resize-handle" @pointerdown="startColumnResize" />
-              </th>
-              <th class="row-command-column" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(work, index) in displayedWorks"
-              :key="work.id || work._clientId || index"
-              :class="lineChange('work', work) ? 'line-' + lineChange('work', work) : ''"
-            >
-              <td v-if="canSelectWorks" class="selection-col">
-                <input
-                  v-if="isWorkSelectable(work)"
-                  type="checkbox"
-                  class="selection-checkbox"
-                  :checked="isWorkSelected(work)"
-                  :disabled="busy"
-                  aria-label="Выбрать работу"
-                  @change="toggleWork(work, $event.target.checked)"
-                />
-              </td>
-              <td :title="work.name">
-                <WorkTypePicker
-                  v-if="canWork"
-                  v-model="work.workTypeId"
-                  :name="work.name"
-                  :options="references.workTypes"
-                  :disabled="busy"
-                  :create-label="customerDraftWorks ? '' : 'Добавить работу'"
-                  @select="workTypeChanged(work, $event)"
-                  @edit="workNameEdited(work, $event)"
-                  @create="createWork(work, $event)"
-                />
-                <span v-else>{{ work.name || '—' }}</span>
-                <small
-                  v-if="!customerDraftWorks && (work.workTypeId || work.normId)"
-                  class="norm-applicability"
-                  :title="
-                    work.normApplicabilityLabel || work._normApplicabilityLabel
-                  "
-                  >{{
-                    work.normIsManual
-                      ? "Ручная норма для этой заявки"
-                      : work.normApplicabilityLabel ||
-                        work._normApplicabilityLabel ||
-                        "Применимость не определена"
-                  }}</small
-                >
-              </td>
-
-              <td v-if="!customerDraftWorks">
-                <div v-if="canWork" class="norm-time-control">
-                  <div class="manual-norm-field">
-                    <input
-                      v-model.number="work.normHours"
-                      :title="String(work.normHours ?? '')"
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      placeholder="Ввести вручную"
-                      aria-label="Норма времени для этой заявки"
-                      :disabled="busy || !work.workTypeId || work._normLoading"
-                      @input="manualNormChanged(work)"
-                    />
-                    <InfoHint
-                      text="Ручное значение сохраняется только в этой заявке."
-                    />
-                  </div>
-                  <input
-                    v-if="work.normIsManual"
-                    v-model.trim="work.normOverrideReason"
-                    :title="work.normOverrideReason"
-                    class="norm-override-reason"
-                    :disabled="busy"
-                    type="text"
-                    maxlength="2000"
-                    required
-                    placeholder="Причина ручной корректировки"
-                    aria-label="Причина ручной корректировки нормы"
-                    @input="manualNormReasonChanged(work)"
-                  />
-                  <small v-if="work._normLoading">Подбираем норму…</small>
-                  <small
-                    v-else-if="work._normMessage"
-                    :title="work._normMessage"
-                    :class="{
-                      'norm-selection-error':
-                        work._normMessage.startsWith('Конфликт') ||
-                        work._normMessage.startsWith('Подходящая') ||
-                        work._normMessage.startsWith('Для выбранной'),
-                    }"
-                  >
-                    {{ work._normMessage }}
-                  </small>
-                </div>
-                <span v-else>{{ work.normHours ?? '—' }}</span>
-              </td>
-
-              <td>
-                <input
-                  v-model.number="work.qty"
-                  :title="String(work.qty ?? '')"
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  :disabled="busy || !canWork || !work.workTypeId"
-                  @input="workQuantityChanged(work)"
-                />
-              </td>
-
-              <td v-if="!customerDraftWorks">
-                <input
-                  :value="work.hourlyRate ?? request.laborHourRate ?? ''"
-                  :title="
-                    String(work.hourlyRate ?? request.laborHourRate ?? '')
-                  "
-                  type="number"
-                  readonly
-                  disabled
-                />
-              </td>
-
-              <td v-if="!customerDraftWorks">
-                {{ workAmount(work) == null ? 'Не рассчитано' : money(workAmount(work)) }}
-              </td>
-
-              <td v-if="showAgentDiscount" class="agent-discount-cell">
-                <input
-                  :value="lineAgentPercent(work) ?? ''"
-                  type="number"
-                  readonly
-                  disabled
-                  placeholder="—"
-                  aria-label="Агентская скидка, %"
-                  title="Подставляется из реквизитов СТО"
-                />
-              </td>
-              <td v-if="showAgentDiscount" class="agent-discount-cell">
-                {{ workAgentDiscount(work) == null ? '—' : money(workAgentDiscount(work)) }}
-              </td>
-
-              <td class="line-comment-cell" :title="work.comment || ''">
-                <input
-                  v-if="canWork && work !== placeholderWork"
-                  v-model="work.comment"
-                  type="text"
-                  maxlength="2000"
-                  :disabled="busy"
-                  placeholder="Комментарий"
-                  aria-label="Комментарий к работе (только для этой заявки)"
-                  @input="touch"
-                />
-                <span v-else>{{ work.comment || '' }}</span>
-              </td>
-
-              <td v-if="showChangeNotes" class="line-comment-cell" :title="work.changeNote || ''">
-                <input
-                  v-if="canChangeInWork && work !== placeholderWork"
-                  v-model="work.changeNote"
-                  type="text"
-                  maxlength="2000"
-                  :disabled="busy"
-                  :class="{ 'missing-note': lineChange('work', work) && !String(work.changeNote || '').trim() }"
-                  placeholder="Что и почему изменено"
-                  aria-label="Примечание к изменению работы"
-                  @input="touch"
-                />
-                <span v-else>{{ work.changeNote || '' }}</span>
-              </td>
-
-              <td>
-                <button
-                  v-if="canWork && work !== placeholderWork"
-                  type="button"
-                  class="delete-row"
-                  aria-label="Удалить работу"
-                  :disabled="busy"
-                  @click="removeWork(index)"
-                >
-                  ×
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="table-actions">
-        <button
-          v-if="canWork"
-          type="button"
-          class="grid-add-row"
-          :disabled="busy || (request.laborHourRate == null && !customerDraftWorks) || !canAddWork"
-          aria-label="Добавить строку работы"
-          title="Добавить строку"
-          @click="addWork"
-        >
-          ＋
-        </button>
-
-        <div v-if="!customerDraftWorks" class="total">
-          <span>Работы и запчасти</span>
-          <strong>{{ money(total(request)) }} ₽</strong>
-          <small v-if="showAgentDiscount" class="agent-discount-total">
-            в т.ч. агентская скидка СТО {{ money(agentDiscountTotals.discount) }} ₽ ·
-            к оплате СТО {{ money(agentDiscountTotals.station) }} ₽
+        <div class="previous-mileage-info full">
+          <span>Предыдущий пробег и дата заполнения</span>
+          <strong v-if="request.previousServiceMileage != null">
+            {{ Number(request.previousServiceMileage).toLocaleString('ru-RU') }} км
+          </strong>
+          <strong v-else>Нет данных из предыдущих заявок</strong>
+          <small v-if="request.previousServiceAt">
+            {{ formatDateTime(request.previousServiceAt) }}
           </small>
         </div>
       </div>
 
-      <PartsPanel
-        :request="request"
-        :customer-view="isCustomer"
-        :station-agent-percent="stationAgentPercent"
-        :suppliers="references.suppliers"
-        :catalog-parts="references.parts"
-        :part-units="references.partUnits"
-        :busy="busy"
-        :perform="perform"
-        :can-create-catalog-part="
-          (isManager || isStation) && request.permissions.canEditParts
-        "
-        @create-part="$emit('create-part', $event)"
-        :selectable="canDefer"
-        :show-change-notes="showChangeNotes"
-        :can-change-in-work="canChangeInWork"
-        :change-items="changeItems"
-        v-model:selected-ids="selectedPartIds"
-        @touch="touch"
-      />
-      <div class="recommendation-actions">
-        <button v-if="canDefer" class="ghost-btn" :disabled="busy || dirty || !selectedPartIds.length"
-          @click="deferSelected('part')"
-        >Добавить ЗЧ в рекомендации({{ selectedPartIds.length }})</button>
-        <button v-if="request.recommendations?.length && !openRecommendationItems" class="ghost-btn" @click="$emit('recommendations')">Рекомендации ТС</button>
+      <!-- 02. Причина обращения -->
+      <div class="section-title">
+        <span>02</span>
+        <h3>Причина обращения</h3>
       </div>
-    </section>
 
-    <!-- Диагностика -->
-    <section
-      v-if="showRepairBlock"
-      class="feature-card"
-      :class="{ 'draft-disabled-section': isCustomer && request.stage === 0 }"
-    >
-      <h3>Заключение диагностики СТО <small class="muted">(необязательно)</small></h3>
-
-      <article
-        v-for="report in request.diagnosticReports"
-        :key="report.id"
-        class="diagnostic-entry"
-      >
-        <small>
-          {{ formatDateTime(report.createdAt) }} · {{ report.mileage }} км
-        </small>
-        <p>{{ report.conclusion }}</p>
-      </article>
-
-      <p v-if="!request.diagnosticReports.length" class="muted">
-        Заключение пока не сохранено.
-      </p>
-
-      <form v-if="canDiagnose" @submit.prevent="saveDiagnosis">
+      <div class="form-grid">
         <label>
-          Результат диагностики
-          <textarea v-model="conclusion" required :disabled="busy" />
+          Причина обращения
+          <select
+            v-model="request.reasonId"
+            :disabled="!isAllowed('reasonId')"
+            @change="reasonChanged"
+          >
+            <option value="">Выберите причину</option>
+            <option v-for="reason in roots" :key="reason.id" :value="reason.id">
+              {{ reason.name }}
+            </option>
+          </select>
         </label>
 
-        <button class="primary-btn" :disabled="busy">
-          Сохранить заключение
-        </button>
+        <label v-if="!isCustomer">
+          Подвид обращения
+          <select
+            v-model="request.reasonSubtypeId"
+            :disabled="!isAllowed('reasonSubtypeId') || !subtypes.length"
+            @change="touch"
+          >
+            <option value="">
+              {{ subtypes.length ? 'Выберите подвид' : 'Без подвида' }}
+            </option>
+            <option
+              v-for="subtype in subtypes"
+              :key="subtype.id"
+              :value="subtype.id"
+            >
+              {{ subtype.name }}
+            </option>
+          </select>
+        </label>
 
-        <p v-if="diagnosisError" class="error-message">
-          {{ diagnosisError }}
-        </p>
-      </form>
-    </section>
+        <label class="full">
+          Дополнительная информация (необязательно)
+          <textarea
+            v-model="request.description"
+            :disabled="!isAllowed('description')"
+            placeholder="Укажите дополнительную информацию при необходимости"
+            @input="touch"
+          />
+        </label>
+      </div>
 
-    <!-- Выдача ТС, документы и оплаты -->
-    <ClosingPanel
-      :request="request"
-      :busy="busy"
-      :perform="perform"
-    />
+      <!-- 03. Контакт и дата визита -->
+      <div class="section-title">
+        <span>03</span>
+        <h3>Контактное лицо, дата и время визита</h3>
+      </div>
 
-    <!-- 05. Вложения -->
-    <div class="section-title">
-      <span>05</span>
-      <h3>Фото, видео и документы</h3>
+      <div class="form-grid">
+        <label>
+          Контактное лицо
+          <select
+            v-model="request.contactId"
+            :disabled="
+              !isAllowed('contactId') || !request.vehicleId || contactsLoading
+            "
+            @change="touch"
+          >
+            <option value="">
+              {{
+                !request.vehicleId
+                  ? 'Сначала выберите ТС'
+                  : contactsLoading
+                    ? 'Загружаем контакты…'
+                    : 'Выберите контактное лицо'
+              }}
+            </option>
+            <option
+              v-if="
+                request.contactId &&
+                !contacts.some((item) => item.id === request.contactId)
+              "
+              :value="request.contactId"
+            >
+              {{ request.contact || 'Выбранное контактное лицо' }}
+            </option>
+            <option
+              v-for="contact in contacts"
+              :key="contact.id"
+              :value="contact.id"
+            >
+              {{ contactLabel(contact) }}
+            </option>
+          </select>
+          <small v-if="contactsError" class="error-message">
+            {{ contactsError }}
+          </small>
+        </label>
+
+        <label>
+          Водитель
+          <select
+            v-model="request.driverId"
+            :disabled="
+              !isAllowed('driverId') || !request.vehicleId || driversLoading
+            "
+            @change="touch"
+          >
+            <option value="">
+              {{
+                !request.vehicleId
+                  ? 'Сначала выберите ТС'
+                  : driversLoading
+                    ? 'Загружаем водителей…'
+                    : 'Выберите водителя'
+              }}
+            </option>
+            <option
+              v-if="
+                request.driverId &&
+                !drivers.some((item) => item.id === request.driverId)
+              "
+              :value="request.driverId"
+            >
+              {{ request.driver || 'Выбранный водитель' }}
+            </option>
+            <option
+              v-for="driver in drivers"
+              :key="driver.id"
+              :value="driver.id"
+            >
+              {{ contactLabel(driver) }}
+            </option>
+          </select>
+          <small v-if="driversError" class="error-message">
+            {{ driversError }}
+          </small>
+        </label>
+
+        <label v-if="!isCustomer">
+          СТО-партнёр
+          <select
+            v-model="request.stationId"
+            :disabled="!isAllowed('stationId')"
+            @change="touch"
+          >
+            <option value="">Не выбрано</option>
+            <option
+              v-for="station in stations"
+              :key="station.id"
+              :value="station.id"
+            >
+              {{ station.name }}
+            </option>
+            <option
+              v-if="
+                request.stationId &&
+                !stations.some((station) => station.id === request.stationId)
+              "
+              :value="request.stationId"
+            >
+              {{ request.station }}
+            </option>
+          </select>
+        </label>
+
+        <ConfirmedDateTimeInput
+          v-model="request.slot"
+          title="Желаемая дата и время визита"
+          :disabled="!isAllowed('slot')"
+          :min-time="VISIT_TIME_START"
+          :max-time="VISIT_TIME_END"
+          @confirm="touch"
+        />
+
+        <ConfirmedDateTimeInput
+          v-model="request.stationSlot"
+          title="Дата и время визита, подтверждённые СТО"
+          :disabled="isCustomer || isManager || !isAllowed('stationSlot')"
+          :min-time="VISIT_TIME_START"
+          :max-time="VISIT_TIME_END"
+          @confirm="touch"
+        />
+
+        <div class="calculated-completion-info">
+          <span>Расчётное время завершения ремонта</span>
+          <output>
+            {{
+              calculatedCompletionAt
+                ? formatDateTime(calculatedCompletionAt)
+                : 'Не рассчитано'
+            }}
+          </output>
+        </div>
+      </div>
     </div>
-    <AttachmentPanel
-      :request="request"
-      :busy="busy"
-      :perform="perform"
-      optional
-      hide-title
-    />
+
+    <div v-show="activeTab === 'works'" id="zr-tab-works" class="zr-tab-panel" role="tabpanel">
+      <!-- Рекомендации по ТС: документ хранится отдельно от ЗР -->
+      <div
+        v-if="openRecommendationItems"
+        class="info-banner recommendation-banner"
+        role="status"
+      >
+        <span>
+          По ТС {{ request.plate || request.vin }} есть рекомендации
+          {{ request.recommendations.map((doc) => doc.number).join(', ') }}:
+          {{ openRecommendationItems }} поз. не выполнено.
+        </span>
+        <button type="button" class="ghost-btn" @click="$emit('recommendations')">
+          Рекомендации
+        </button>
+      </div>
+
+      <!-- 04. Работы -->
+      <section
+        v-if="showRepairBlock || customerDraftWorks"
+        class="repair-calculation-section"
+      >
+        <div class="section-title">
+          <span>04</span>
+          <div>
+            <h3>Работы</h3>
+            <p v-if="customerDraftWorks">
+              Укажите работы, которые нужно выполнить. Нормы времени и стоимость
+              заполнит Управляющая компания.
+            </p>
+          </div>
+        </div>
+
+        <p v-if="managerReviewingStationChanges" class="info-banner repair-consensus-banner">
+          <template v-if="estimateChangedSinceReview">
+            УК скорректировала работы или запчасти. Согласуйте итоговую редакцию
+            для Заказчика либо верните в СТО с обязательным комментарием.
+          </template>
+          <template v-else>
+            СТО изменила работы или запчасти. Если УК согласна с текущей редакцией,
+            финальная заявка будет направлена Заказчику, а СТО получит уведомление.
+          </template>
+        </p>
+
+        <label v-if="user.role === 'manager'" class="labor-rate-selector">Тариф нормо/час
+          <select v-model="request.laborRateType" :disabled="
+              !request.permissions?.editableFields?.includes('laborRateType') ||
+              busy
+            "
+            @change="laborRateChanged">
+            <option value="general">Общий</option><option value="official">Официальный</option><option value="other">Прочий</option>
+          </select>
+        </label>
+
+        <p v-if="stationReviewingManagerChanges" class="info-banner repair-consensus-banner">
+          <template v-if="estimateChangedSinceReview">
+            СТО повторно изменила работы или запчасти. Эта редакция будет повторно
+            направлена на согласование в УК.
+          </template>
+          <template v-else>
+            УК скорректировала работы или запчасти. Примите изменения либо внесите
+            новую редакцию для повторного согласования.
+          </template>
+        </p>
+
+        <p
+          v-if="isCustomer && request.stage === 3"
+          class="info-banner repair-consensus-banner"
+        >
+          Работы, запчасти и время визита согласованы УК и СТО. Подтвердите
+          финальную заявку, чтобы СТО ожидала автомобиль.
+        </p>
+
+        <WorkChangePanel
+          :request="request"
+          :busy="busy"
+          :dirty="dirty"
+          :perform="perform"
+        />
+
+        <div
+          v-if="canSelectWorks"
+          class="work-bulk-actions"
+          role="toolbar"
+          aria-label="Действия с выбранными работами"
+        >
+          <span class="work-bulk-count">Выбрано: {{ selectedWorks.length }}</span>
+          <button
+            v-if="canWork"
+            type="button"
+            class="ghost-btn"
+            :disabled="busy || !selectedWorks.length"
+            @click="deleteSelectedWorks"
+          >
+            Удалить
+          </button>
+          <button
+            v-if="canWork"
+            type="button"
+            class="ghost-btn"
+            :disabled="busy || !selectedWorks.length"
+            @click="copySelectedWorks"
+          >
+            Создать копию
+          </button>
+          <button
+            v-if="canDefer"
+            type="button"
+            class="ghost-btn"
+            :disabled="busy || !canMoveSelectedWorks"
+            :title="dirty ? 'Изменения заявки будут сохранены перед переносом' : ''"
+            @click="deferSelected('work')"
+          >
+            Переместить в Рекомендации
+          </button>
+        </div>
+
+        <div class="table-wrap excel-grid-wrap">
+          <table class="excel-grid works-grid" :class="{ 'customer-draft-grid': customerDraftWorks }">
+            <thead>
+              <tr>
+                <th v-if="canSelectWorks" class="selection-col">
+                  <input
+                    type="checkbox"
+                    class="selection-checkbox"
+                    :checked="allWorksSelected"
+                    :disabled="busy || !selectableWorks.length"
+                    aria-label="Выбрать все работы"
+                    @change="toggleAllWorks($event.target.checked)"
+                  />
+                </th>
+                <th class="resizable-column work-name-column">
+                  Наименование работы
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th v-if="!customerDraftWorks" class="resizable-column work-norm-column">
+                  Норма времени
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th class="resizable-column work-qty-column">
+                  Кол-во
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th v-if="!customerDraftWorks" class="resizable-column">
+                  Стоимость нормо/часа, ₽
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th v-if="!customerDraftWorks" class="resizable-column">
+                  Стоимость, ₽
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th
+                  v-if="showAgentDiscount"
+                  class="resizable-column agent-discount-column"
+                  title="Агентская скидка СТО из реквизитов СТО. В заявке не меняется, Заказчику не видна."
+                >
+                  Агентская скидка, %
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th v-if="showAgentDiscount" class="resizable-column agent-discount-column">
+                  Скидка, ₽
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th class="resizable-column work-comment-column">
+                  Комментарий
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th
+                  v-if="showChangeNotes"
+                  class="resizable-column work-comment-column"
+                  title="Обязательно для каждой добавленной или изменённой работы в ходе ремонта"
+                >
+                  Примечание к изменению
+                  <span class="column-resize-handle" @pointerdown="startColumnResize" />
+                </th>
+                <th class="row-command-column" />
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(work, index) in displayedWorks"
+                :key="work.id || work._clientId || index"
+                :class="lineChange('work', work) ? 'line-' + lineChange('work', work) : ''"
+              >
+                <td v-if="canSelectWorks" class="selection-col">
+                  <input
+                    v-if="isWorkSelectable(work)"
+                    type="checkbox"
+                    class="selection-checkbox"
+                    :checked="isWorkSelected(work)"
+                    :disabled="busy"
+                    aria-label="Выбрать работу"
+                    @change="toggleWork(work, $event.target.checked)"
+                  />
+                </td>
+                <td :title="work.name">
+                  <WorkTypePicker
+                    v-if="canWork"
+                    v-model="work.workTypeId"
+                    :name="work.name"
+                    :options="references.workTypes"
+                    :disabled="busy"
+                    :create-label="customerDraftWorks ? '' : 'Добавить работу'"
+                    @select="workTypeChanged(work, $event)"
+                    @edit="workNameEdited(work, $event)"
+                    @create="createWork(work, $event)"
+                  />
+                  <span v-else>{{ work.name || '—' }}</span>
+                  <small
+                    v-if="!customerDraftWorks && (work.workTypeId || work.normId)"
+                    class="norm-applicability"
+                    :title="
+                      work.normApplicabilityLabel || work._normApplicabilityLabel
+                    "
+                    >{{
+                      work.normIsManual
+                        ? "Ручная норма для этой заявки"
+                        : work.normApplicabilityLabel ||
+                          work._normApplicabilityLabel ||
+                          "Применимость не определена"
+                    }}</small
+                  >
+                </td>
+
+                <td v-if="!customerDraftWorks">
+                  <div v-if="canWork" class="norm-time-control">
+                    <div class="manual-norm-field">
+                      <input
+                        v-model.number="work.normHours"
+                        :title="String(work.normHours ?? '')"
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        placeholder="Ввести вручную"
+                        aria-label="Норма времени для этой заявки"
+                        :disabled="busy || !work.workTypeId || work._normLoading"
+                        @input="manualNormChanged(work)"
+                      />
+                      <InfoHint
+                        text="Ручное значение сохраняется только в этой заявке."
+                      />
+                    </div>
+                    <input
+                      v-if="work.normIsManual"
+                      v-model.trim="work.normOverrideReason"
+                      :title="work.normOverrideReason"
+                      class="norm-override-reason"
+                      :disabled="busy"
+                      type="text"
+                      maxlength="2000"
+                      required
+                      placeholder="Причина ручной корректировки"
+                      aria-label="Причина ручной корректировки нормы"
+                      @input="manualNormReasonChanged(work)"
+                    />
+                    <small v-if="work._normLoading">Подбираем норму…</small>
+                    <small
+                      v-else-if="work._normMessage"
+                      :title="work._normMessage"
+                      :class="{
+                        'norm-selection-error':
+                          work._normMessage.startsWith('Конфликт') ||
+                          work._normMessage.startsWith('Подходящая') ||
+                          work._normMessage.startsWith('Для выбранной'),
+                      }"
+                    >
+                      {{ work._normMessage }}
+                    </small>
+                  </div>
+                  <span v-else>{{ work.normHours ?? '—' }}</span>
+                </td>
+
+                <td>
+                  <input
+                    v-model.number="work.qty"
+                    :title="String(work.qty ?? '')"
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    :disabled="busy || !canWork || !work.workTypeId"
+                    @input="workQuantityChanged(work)"
+                  />
+                </td>
+
+                <td v-if="!customerDraftWorks">
+                  <input
+                    :value="work.hourlyRate ?? request.laborHourRate ?? ''"
+                    :title="
+                      String(work.hourlyRate ?? request.laborHourRate ?? '')
+                    "
+                    type="number"
+                    readonly
+                    disabled
+                  />
+                </td>
+
+                <td v-if="!customerDraftWorks">
+                  {{ workAmount(work) == null ? 'Не рассчитано' : money(workAmount(work)) }}
+                </td>
+
+                <td v-if="showAgentDiscount" class="agent-discount-cell">
+                  <input
+                    :value="lineAgentPercent(work) ?? ''"
+                    type="number"
+                    readonly
+                    disabled
+                    placeholder="—"
+                    aria-label="Агентская скидка, %"
+                    title="Подставляется из реквизитов СТО"
+                  />
+                </td>
+                <td v-if="showAgentDiscount" class="agent-discount-cell">
+                  {{ workAgentDiscount(work) == null ? '—' : money(workAgentDiscount(work)) }}
+                </td>
+
+                <td class="line-comment-cell" :title="work.comment || ''">
+                  <input
+                    v-if="canWork && work !== placeholderWork"
+                    v-model="work.comment"
+                    type="text"
+                    maxlength="2000"
+                    :disabled="busy"
+                    placeholder="Комментарий"
+                    aria-label="Комментарий к работе (только для этой заявки)"
+                    @input="touch"
+                  />
+                  <span v-else>{{ work.comment || '' }}</span>
+                </td>
+
+                <td v-if="showChangeNotes" class="line-comment-cell" :title="work.changeNote || ''">
+                  <input
+                    v-if="canChangeInWork && work !== placeholderWork"
+                    v-model="work.changeNote"
+                    type="text"
+                    maxlength="2000"
+                    :disabled="busy"
+                    :class="{ 'missing-note': lineChange('work', work) && !String(work.changeNote || '').trim() }"
+                    placeholder="Что и почему изменено"
+                    aria-label="Примечание к изменению работы"
+                    @input="touch"
+                  />
+                  <span v-else>{{ work.changeNote || '' }}</span>
+                </td>
+
+                <td>
+                  <button
+                    v-if="canWork && work !== placeholderWork"
+                    type="button"
+                    class="delete-row"
+                    aria-label="Удалить работу"
+                    :disabled="busy"
+                    @click="removeWork(index)"
+                  >
+                    ×
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-actions">
+          <button
+            v-if="canWork"
+            type="button"
+            class="grid-add-row"
+            :disabled="busy || (request.laborHourRate == null && !customerDraftWorks) || !canAddWork"
+            aria-label="Добавить строку работы"
+            title="Добавить строку"
+            @click="addWork"
+          >
+            ＋
+          </button>
+
+          <div v-if="!customerDraftWorks" class="total">
+            <span>Работы и запчасти</span>
+            <strong>{{ money(total(request)) }} ₽</strong>
+            <small v-if="showAgentDiscount" class="agent-discount-total">
+              в т.ч. агентская скидка СТО {{ money(agentDiscountTotals.discount) }} ₽ ·
+              к оплате СТО {{ money(agentDiscountTotals.station) }} ₽
+            </small>
+          </div>
+        </div>
+
+        <PartsPanel
+          :request="request"
+          :customer-view="isCustomer"
+          :station-agent-percent="stationAgentPercent"
+          :suppliers="references.suppliers"
+          :catalog-parts="references.parts"
+          :part-units="references.partUnits"
+          :busy="busy"
+          :perform="perform"
+          :can-create-catalog-part="
+            (isManager || isStation) && request.permissions.canEditParts
+          "
+          @create-part="$emit('create-part', $event)"
+          :selectable="canDefer"
+          :show-change-notes="showChangeNotes"
+          :can-change-in-work="canChangeInWork"
+          :change-items="changeItems"
+          v-model:selected-ids="selectedPartIds"
+          @touch="touch"
+        />
+        <div class="recommendation-actions">
+          <button v-if="canDefer" class="ghost-btn" :disabled="busy || dirty || !selectedPartIds.length"
+            @click="deferSelected('part')"
+          >Добавить ЗЧ в рекомендации({{ selectedPartIds.length }})</button>
+          <button v-if="request.recommendations?.length && !openRecommendationItems" class="ghost-btn" @click="$emit('recommendations')">Рекомендации ТС</button>
+        </div>
+      </section>
+
+      <!-- Диагностика -->
+      <section
+        v-if="showRepairBlock"
+        class="feature-card"
+        :class="{ 'draft-disabled-section': isCustomer && request.stage === 0 }"
+      >
+        <h3>Заключение диагностики СТО <small class="muted">(необязательно)</small></h3>
+
+        <article
+          v-for="report in request.diagnosticReports"
+          :key="report.id"
+          class="diagnostic-entry"
+        >
+          <small>
+            {{ formatDateTime(report.createdAt) }} · {{ report.mileage }} км
+          </small>
+          <p>{{ report.conclusion }}</p>
+        </article>
+
+        <p v-if="!request.diagnosticReports.length" class="muted">
+          Заключение пока не сохранено.
+        </p>
+
+        <form v-if="canDiagnose" @submit.prevent="saveDiagnosis">
+          <label>
+            Результат диагностики
+            <textarea v-model="conclusion" required :disabled="busy" />
+          </label>
+
+          <button class="primary-btn" :disabled="busy">
+            Сохранить заключение
+          </button>
+
+          <p v-if="diagnosisError" class="error-message">
+            {{ diagnosisError }}
+          </p>
+        </form>
+      </section>
+    </div>
+
+    <div v-show="activeTab === 'acts'" id="zr-tab-acts" class="zr-tab-panel" role="tabpanel">
+      <!-- 06. Приём ТС -->
+      <AcceptanceActPanel
+        :request="request"
+        :busy="busy"
+        :perform="perform"
+      />
+
+      <ClosingPanel
+        :request="request"
+        :busy="busy"
+        :perform="perform"
+        part="act"
+      />
+      <p v-if="!hasActs" class="muted zr-tab-empty">
+        Акты появятся после приёма ТС на СТО.
+      </p>
+    </div>
+
+    <div v-show="activeTab === 'documents'" id="zr-tab-documents" class="zr-tab-panel" role="tabpanel">
+      <ClosingPanel
+        :request="request"
+        :busy="busy"
+        :perform="perform"
+        part="documents"
+      />
+      <p v-if="!hasClosingDocuments" class="muted zr-tab-empty">
+        Закрывающие документы формируются после выдачи ТС.
+      </p>
+    </div>
+
+    <div v-show="activeTab === 'media'" id="zr-tab-media" class="zr-tab-panel" role="tabpanel">
+      <!-- 05. Вложения -->
+      <div class="section-title">
+        <span>05</span>
+        <h3>Фото, видео и документы</h3>
+      </div>
+      <AttachmentPanel
+        :request="request"
+        :busy="busy"
+        :perform="perform"
+        optional
+        hide-title
+      />
+    </div>
+
+    <div v-show="activeTab === 'payments'" id="zr-tab-payments" class="zr-tab-panel" role="tabpanel">
+      <ClosingPanel
+        :request="request"
+        :busy="busy"
+        :perform="perform"
+        part="payments"
+      />
+      <p v-if="!hasInvoices" class="muted zr-tab-empty">
+        Счета по заявке ещё не выставлены.
+      </p>
+    </div>
 
     <label v-if="isStation" class="feature-card route-comment-field">
       <span>Комментарий (необязательно)
@@ -1686,13 +1770,6 @@ onMounted(() => {
         "
         @input="touch" />
     </label>
-    <!-- 06. Приём ТС -->
-    <AcceptanceActPanel
-      :request="request"
-      :busy="busy"
-      :perform="perform"
-    />
-
     <!-- Переход -->
     <div
       class="route-action"

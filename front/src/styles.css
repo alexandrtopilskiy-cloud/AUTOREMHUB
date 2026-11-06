@@ -1067,6 +1067,56 @@ button:focus-visible,
   padding: 16px 18px 0;
 }
 
+/* Вкладки внутри ЗР: переносятся на вторую строку, все видны сразу */
+.zr-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 18px;
+  padding: 8px 0 10px;
+  border-bottom: 2px solid var(--line);
+  background: #fff;
+}
+
+.zr-tab {
+  flex: 0 1 auto;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--brand-navy);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.zr-tab:hover {
+  border-color: var(--brand-teal-dark);
+  background: var(--brand-teal-soft);
+}
+
+.zr-tab.active {
+  border-color: var(--brand-navy);
+  background: var(--brand-navy);
+  color: #fff;
+  box-shadow: inset 0 -3px 0 var(--brand-orange);
+}
+
+.zr-tab-panel {
+  /* Короткая вкладка не поднимает панель маршрута к середине экрана */
+  min-height: 55vh;
+}
+
+.zr-tab-empty {
+  margin: 0;
+  padding: 18px 0;
+}
+
 .document-panel h1 {
   margin: 8px 0 12px;
 }
