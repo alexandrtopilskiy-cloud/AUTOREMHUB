@@ -222,7 +222,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>([^<]*)<\/button>/g)];
                 assert.deepEqual(tabs.map((m) => m[1]), [
                     "Автомобиль и причина обращения",
-                    "Работы и материалы",
+                    "Работы и ЗЧ",
                     "Акты приёма-передачи",
                     "Документы по заявке",
                     "Фото, видео и документы",

@@ -366,7 +366,7 @@ const customerDraftWorks = computed(
 /** Вкладки внутри ЗР; компонент пересоздаётся на каждую ЗР, поэтому открывается первая. */
 const ZR_TABS = [
   { key: 'vehicle', label: 'Автомобиль и причина обращения' },
-  { key: 'works', label: 'Работы и материалы' },
+  { key: 'works', label: 'Работы и ЗЧ' },
   { key: 'acts', label: 'Акты приёма-передачи' },
   { key: 'documents', label: 'Документы по заявке' },
   { key: 'media', label: 'Фото, видео и документы' },
