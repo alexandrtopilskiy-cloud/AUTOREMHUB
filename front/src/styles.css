@@ -1146,6 +1146,44 @@ button:focus-visible,
   font-weight: 400;
 }
 
+/* Компактная шапка ЗР: всё в одну строку, на узком экране переносится */
+.zr-head {
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.zr-head-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.zr-head-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.document-panel .zr-head h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.zr-head-created {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.zr-head-overdue {
+  margin: 0;
+}
+
 .title-row {
   justify-content: flex-start;
   flex-wrap: wrap;

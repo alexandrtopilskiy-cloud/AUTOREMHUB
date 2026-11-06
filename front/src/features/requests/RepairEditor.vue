@@ -1173,20 +1173,19 @@ onMounted(() => {
 <template>
   <section ref="panelRoot" class="document-panel">
     <!-- Шапка -->
-    <div class="document-head">
-      <div>
-        <span class="eyebrow">Заявка на ремонт</span>
+    <!-- Компактная шапка: название, номер, статус и дата создания в одну строку -->
+    <div class="document-head zr-head">
+      <div class="zr-head-line">
+        <span class="zr-head-title">Заявка на ремонт</span>
         <h1>{{ request.number }}</h1>
         <span class="status" :class="statusClass(request.stage, request.permissions)">
           {{ step.status }}
         </span>
+        <small class="zr-head-created">Создана {{ formatDateTime(request.createdAt) }}</small>
       </div>
-      <div>
-        <small>Создана {{ formatDateTime(request.createdAt) }}</small>
-        <p v-if="request.overdueSeconds" class="overdue">
-          Превышение планового срока: {{ duration(request.overdueSeconds) }}
-        </p>
-      </div>
+      <p v-if="request.overdueSeconds" class="overdue zr-head-overdue">
+        Превышение планового срока: {{ duration(request.overdueSeconds) }}
+      </p>
     </div>
 
     <!-- Вкладки ЗР: при открытии всегда первая -->
