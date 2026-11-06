@@ -180,13 +180,14 @@ final class StationDecisionTest extends TestCase
         $added = $works[0];
         unset($added['id']);
         $added['name'] = 'Доп. диагностика';
+        $originalIds = array_column($works, 'id');
         $request = $this->patchJson("/api/requests/{$request['id']}", [
             'revision' => $request['revision'],
             'works'    => [...$works, $added],
         ])->assertOk()->json('request');
         $this->assertTrue($request['estimateChangedSinceReview']);
 
-        $newId = collect($request['works'])->firstWhere('name', 'Доп. диагностика')['id'];
+        $newId = collect($request['works'])->first(static fn (array $work): bool => !in_array($work['id'], $originalIds, true))['id'];
         $request = $this->postJson("/api/requests/{$request['id']}/recommendations", [
             'revision' => $request['revision'],
             'workIds'  => [$newId],

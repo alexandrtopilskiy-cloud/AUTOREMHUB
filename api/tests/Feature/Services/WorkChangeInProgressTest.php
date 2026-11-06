@@ -360,11 +360,12 @@ final class WorkChangeInProgressTest extends TestCase
         unset($added['id']);
         $added['name'] = 'Доп. работа';
         $added['changeNote'] = 'Выявлено при ремонте';
+        $originalIds = array_column($doc['works'], 'id');
         $doc = $this->patchLines($this->station, ['works' => [...$doc['works'], $added]]);
         $this->assertSame('editing', $doc['workChange']['status']);
         $this->assertFalse($doc['permissions']['canAdvance']);
 
-        $newId = collect($doc['works'])->firstWhere('name', 'Доп. работа')['id'];
+        $newId = collect($doc['works'])->first(static fn (array $work): bool => !in_array($work['id'], $originalIds, true))['id'];
         $result = app(RecommendationService::class)->defer(
             $this->station,
             $this->request->uuid,
@@ -388,9 +389,10 @@ final class WorkChangeInProgressTest extends TestCase
         $added = $doc['works'][0];
         unset($added['id']);
         $added['name'] = 'Доп. работа';
+        $originalIds = array_column($doc['works'], 'id');
         $doc = $this->patchLines($this->station, ['works' => [...$doc['works'], $added]]);
 
-        $original = collect($doc['works'])->firstWhere('name', 'Замена масла')['id'];
+        $original = $originalIds[0];
         $result = app(RecommendationService::class)->defer(
             $this->station,
             $this->request->uuid,
