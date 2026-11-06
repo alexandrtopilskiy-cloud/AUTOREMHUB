@@ -213,6 +213,24 @@ final class ClosingRouteTest extends TestCase
         $this->api('POST', "/requests/{$request['id']}/payments/customer", [
             'revision' => $request['revision'], 'paidAt' => now()->toDateString(), 'amount' => '1000',
         ])->assertStatus(422);
+        // Удалить оплату нельзя, пока она не принята; оплату СТО на этапе 8 — нельзя.
+        $this->api('DELETE', "/requests/{$request['id']}/payments/customer", ['revision' => $request['revision']])
+            ->assertStatus(422);
+        $request = $this->api('POST', "/requests/{$request['id']}/payments/customer", [
+            'revision' => $request['revision'], 'paidAt' => now()->toDateString(), 'amount' => '1500',
+        ])->assertOk()->json('request');
+        $this->api('DELETE', "/requests/{$request['id']}/payments/station", ['revision' => $request['revision']])
+            ->assertForbidden();
+
+        // «Удалить оплату» снимает записи, сформированные при «Принять оплату».
+        $request = $this->api('DELETE', "/requests/{$request['id']}/payments/customer", ['revision' => $request['revision']])
+            ->assertOk()->json('request');
+        $invoice = collect($request['closing']['documents'])->firstWhere('type', 'customer_invoice');
+        $this->assertNull($invoice['paidAt']);
+        $this->assertNull($invoice['paidAmount']);
+        $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => '', 'attachmentIds' => []])
+            ->assertStatus(422);
+
         $request = $this->api('POST', "/requests/{$request['id']}/payments/customer", [
             'revision' => $request['revision'], 'paidAt' => now()->toDateString(), 'amount' => '1500',
         ])->assertOk()->json('request');
@@ -221,6 +239,15 @@ final class ClosingRouteTest extends TestCase
         $this->assertSame(RepairStage::StationPayment->value, $request['stage']);
 
         // 8. Оплата в СТО → заявка закрыта.
+        $request = $this->api('POST', "/requests/{$request['id']}/payments/station", [
+            'revision' => $request['revision'], 'paidAt' => now()->toDateString(), 'amount' => '1350',
+        ])->assertOk()->json('request');
+        // На этапе 9 оплату Заказчика уже не удалить; оплату СТО — можно.
+        $this->api('DELETE', "/requests/{$request['id']}/payments/customer", ['revision' => $request['revision']])
+            ->assertForbidden();
+        $request = $this->api('DELETE', "/requests/{$request['id']}/payments/station", ['revision' => $request['revision']])
+            ->assertOk()->json('request');
+        $this->assertNull(collect($request['closing']['documents'])->firstWhere('type', 'station_invoice')['paidAt']);
         $request = $this->api('POST', "/requests/{$request['id']}/payments/station", [
             'revision' => $request['revision'], 'paidAt' => now()->toDateString(), 'amount' => '1350',
         ])->assertOk()->json('request');

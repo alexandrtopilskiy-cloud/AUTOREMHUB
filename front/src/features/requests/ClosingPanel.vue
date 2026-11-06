@@ -9,7 +9,8 @@ import { handoverSheet } from './handoverSheet.js';
  *  6 «ТС готово к выдаче Заказчику» — акт передачи ТС; СТО загружает скан,
  *    подписанный водителем, и подтверждает сверку документов с доверенностью;
  *  7 «Выдан. Подготовка документов» — УК формирует 7 документов;
- *  8 «Подтверждение оплаты Заказчика», 9 «Оплата в СТО» — отметки об оплате УК.
+ *  8 «Подтверждение оплаты Заказчика», 9 «Оплата в СТО» — УК принимает оплату
+ *    («Принять оплату») и может удалить её («Удалить оплату») только на своём этапе.
  */
 
 const PURPOSE_TRANSFER_ACT = 'transfer_act';
@@ -122,6 +123,14 @@ function markPaid() {
   const method = permissions.value.canMarkCustomerPayment ? 'markCustomerPayment' : 'markStationPayment';
 
   return run(method, { ...payment.value });
+}
+
+function deletePayment() {
+  if (!payableInvoice.value?.paidAt) return undefined;
+  if (!window.confirm(`Удалить принятую оплату по счёту ${payableInvoice.value.number}?`)) return undefined;
+  const method = permissions.value.canMarkCustomerPayment ? 'deleteCustomerPayment' : 'deleteStationPayment';
+
+  return run(method);
 }
 
 /** Лист приёма-передачи ТС (выдача): формируется в момент выгрузки — дата и представитель СТО из ЛК. */
@@ -304,9 +313,18 @@ async function download(doc) {
         <label class="full">Комментарий (необязательно)<input v-model="payment.comment" :disabled="busy" placeholder="Номер платёжного поручения" /></label>
       </div>
       <div class="closing-actions">
-        <button class="primary-btn" :disabled="busy">Отметить оплату</button>
+        <button class="primary-btn" :disabled="busy">Принять оплату</button>
+        <button
+          type="button"
+          class="ghost-btn danger-btn"
+          :disabled="busy || !payableInvoice.paidAt"
+          :title="payableInvoice.paidAt ? '' : 'Оплата ещё не принята'"
+          @click="deletePayment"
+        >
+          Удалить оплату
+        </button>
         <span v-if="payableInvoice.paidAt" class="closing-state done">
-          Отмечено: {{ formatDate(payableInvoice.paidAt) }}, {{ money(payableInvoice.paidAmount) }} ₽ — нажмите «Далее по маршруту»
+          Принято: {{ formatDate(payableInvoice.paidAt) }}, {{ money(payableInvoice.paidAmount) }} ₽ — нажмите «Далее по маршруту»
         </span>
       </div>
     </form>

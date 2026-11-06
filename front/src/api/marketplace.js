@@ -166,9 +166,9 @@ function isValidRequest(request) {
  * @param {object} [body]
  * @returns {Promise<object>}
  */
-async function command(key, path, revision, body = {}) {
+async function command(key, path, revision, body = {}, method = "POST") {
     const response = await http.request(`/requests/${encodeId(key)}${path}`, {
-        method: "POST",
+        method,
         body: { revision, ...body },
     });
 
@@ -1190,6 +1190,28 @@ export const marketplaceApi = {
      */
     markStationPayment(key, revision, body) {
         return command(key, "/payments/station", revision, body);
+    },
+
+    /**
+     * УК: удалить принятую оплату Заказчика (только этап 8).
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @returns {Promise<object>}
+     */
+    deleteCustomerPayment(key, revision) {
+        return command(key, "/payments/customer", revision, {}, "DELETE");
+    },
+
+    /**
+     * УК: удалить принятую оплату в пользу СТО (только этап 9).
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @returns {Promise<object>}
+     */
+    deleteStationPayment(key, revision) {
+        return command(key, "/payments/station", revision, {}, "DELETE");
     },
 
     /**
