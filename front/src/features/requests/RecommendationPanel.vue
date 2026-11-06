@@ -15,6 +15,8 @@ export default {
         requestId: { type: String, default: "" },
         userRole: { type: String, default: "" },
         showCompany: { type: Boolean, default: true },
+        // Сохранение ЗР с несохранёнными правками перед переносом в неё.
+        saveRequest: { type: Function, default: null },
     },
     // select — одинарный клик по ТС в перечне (панель «Состояние документа»),
     // open-vehicle — двойной клик/Enter: открыть документ рекомендаций ТС,
@@ -103,7 +105,7 @@ export default {
                 return `ТС в заявке ${target.number} не совпадает с ТС рекомендаций`;
             if (!target.permissions?.canRestoreRecommendations)
                 return "Перенос в заявку возможен на этапах с «Черновик» по «В работе»";
-            if (this.pending[target.id])
+            if (this.pending[target.id] && !this.saveRequest)
                 return "Сначала сохраните изменения заявки";
             return "";
         },
@@ -265,6 +267,20 @@ export default {
             if (!selection.length) return;
             this.busy = true;
             this.error = "";
+            // УК на маршрутизации обычно правит нормы и тариф: несохранённые
+            // правки ЗР сохраняются перед переносом, а не блокируют его.
+            if (!createNew && this.pending[target.id]) {
+                try {
+                    await this.saveRequest(target.id);
+                } catch (exception) {
+                    this.error = exception.message;
+                    this.busy = false;
+                    return;
+                }
+            }
+            const targetRevision = createNew
+                ? null
+                : (this.sourceRequest || target).revision;
             const locks = [];
             try {
                 for (const doc of [...selection].sort((a, b) =>
@@ -282,7 +298,7 @@ export default {
                     await marketplaceApi.restoreRecommendationSelection(
                         selection,
                         createNew ? null : target.id,
-                        createNew ? null : target.revision,
+                        targetRevision,
                     );
                 this.selectedIds = [];
                 await this.load();
@@ -558,6 +574,7 @@ export default {
                     class="primary-btn"
                     :disabled="busy || !selectedIds.length || Boolean(transferBlock)"
                     @click="restore(false)"
+                 :title="pending[sourceRequest.id] ? 'Изменения заявки будут сохранены перед переносом' : ''"
                 >
                     Перенести в {{ sourceRequest.number }}
                 </button>

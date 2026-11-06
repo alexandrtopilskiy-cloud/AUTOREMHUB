@@ -1355,6 +1355,11 @@ export default {
             const row = this.store.requests.find((item) => item.id === id);
             await this.openRecord(row || { id });
         },
+        async saveRequestBeforeTransfer(id) {
+            await this.store.save(id);
+            if (this.store.pending[id])
+                throw new Error("Не удалось сохранить изменения заявки");
+        },
         async recommendationsRestored(request) {
             this.store.accept(request);
             this.notify("Позиции перенесены в " + request.number);
@@ -2239,6 +2244,7 @@ export default {
                             :selected-id="active.selection || ''"
                             :request-id="active.requestId || ''"
                             :user-role="user.role"
+                            :save-request="saveRequestBeforeTransfer"
                             :show-company="user.role !== 'station'"
                             @restored="recommendationsRestored"
                             @open-vehicle="openVehicleRecommendations"
