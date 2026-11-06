@@ -54,7 +54,8 @@ const reviewingManagerChanges = computed(
   () => props.request.reviewContext === 'manager_changes',
 );
 const estimateChanged = computed(
-  () => props.request.estimateVersion !== props.request.reviewBaselineVersion,
+  () => props.request.estimateChangedSinceReview
+    ?? props.request.estimateVersion !== props.request.reviewBaselineVersion,
 );
 const copy = computed(() => {
   if (props.decision !== 'confirmed') {

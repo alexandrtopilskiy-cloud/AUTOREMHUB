@@ -448,7 +448,8 @@ const canCustomerSlotDecide = computed(
 );
 
 const estimateChangedSinceReview = computed(
-  () => props.request.estimateVersion !== props.request.reviewBaselineVersion,
+  () => props.request.estimateChangedSinceReview
+    ?? props.request.estimateVersion !== props.request.reviewBaselineVersion,
 );
 
 const managerReviewingStationChanges = computed(

@@ -352,4 +352,55 @@ final class WorkChangeInProgressTest extends TestCase
         $this->assertSame(1, $this->request->parts()->count());
         $this->assertSame(0, RecommendationItem::query()->whereIn('recommendation_id', \App\Models\Recommendation::query()->select('id')->where('source_request_id', $this->request->id))->count());
     }
+
+    public function test_added_lines_moved_to_recommendations_need_no_approval(): void
+    {
+        $doc = $this->document($this->station);
+        $added = $doc['works'][0];
+        unset($added['id']);
+        $added['name'] = 'Доп. работа';
+        $added['changeNote'] = 'Выявлено при ремонте';
+        $originalIds = array_column($doc['works'], 'id');
+        $doc = $this->patchLines($this->station, ['works' => [...$doc['works'], $added]]);
+        $this->assertSame('editing', $doc['workChange']['status']);
+        $this->assertFalse($doc['permissions']['canAdvance']);
+
+        $newId = collect($doc['works'])->first(static fn (array $work): bool => !in_array($work['id'], $originalIds, true))['id'];
+        $result = app(RecommendationService::class)->defer(
+            $this->station,
+            $this->request->uuid,
+            $this->revision(),
+            ['workIds' => [$newId], 'partIds' => []],
+        );
+
+        // Состав работ и запчастей совпадает с согласованным — согласование не нужно.
+        $this->assertNull($result['request']['workChange']);
+        $this->assertNull($this->request->fresh()->work_change);
+        $this->assertSame(3, $this->request->fresh()->estimate_version);
+        $doc = $this->document($this->station);
+        $this->assertTrue($doc['permissions']['canAdvance']);
+        $this->assertFalse($doc['permissions']['advanceBlockedByWorkChange']);
+        $this->assertSame(1, RecommendationItem::query()->where('source_request_id', $this->request->id)->count());
+    }
+
+    public function test_moving_approved_line_to_recommendations_still_needs_approval(): void
+    {
+        $doc = $this->document($this->station);
+        $added = $doc['works'][0];
+        unset($added['id']);
+        $added['name'] = 'Доп. работа';
+        $originalIds = array_column($doc['works'], 'id');
+        $doc = $this->patchLines($this->station, ['works' => [...$doc['works'], $added]]);
+
+        $original = $originalIds[0];
+        $result = app(RecommendationService::class)->defer(
+            $this->station,
+            $this->request->uuid,
+            $this->revision(),
+            ['workIds' => [$original], 'partIds' => []],
+        );
+
+        $this->assertSame('editing', $result['request']['workChange']['status']);
+        $this->assertFalse($this->document($this->station)['permissions']['canAdvance']);
+    }
 }
