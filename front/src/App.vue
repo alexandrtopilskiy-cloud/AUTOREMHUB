@@ -27,7 +27,7 @@ import WorkspaceAlerts from "./components/WorkspaceAlerts.vue";
 import { createRequestStore } from "./stores/requestStore.js";
 import { marketplaceApi, restoreToken, clearToken } from "./api/marketplace.js";
 import { http } from "./api/client.js";
-import { workflow, statusClass, CLOSED_STAGE } from "./data/workflow.js";
+import { workflow, statusClass } from "./data/workflow.js";
 
 /** Действия, после которых ЗР закрывается у текущего пользователя. */
 const CLOSING_ACTIONS = [
@@ -163,7 +163,7 @@ export default {
             return this.tabs.find((tab) => tab.id === this.pendingCloseTabId);
         },
         isRequestList() {
-            return ["requests", "action", "archive"].includes(this.active?.key);
+            return ["requests", "action"].includes(this.active?.key);
         },
         activeFiltersApplied() {
             return Object.values(this.active?.filters || {}).some(
@@ -266,8 +266,6 @@ export default {
                         r.permissions.requiresAction ??
                         r.permissions.canAdvance,
                 );
-            if (this.active.key === "archive")
-                rows = rows.filter((r) => r.stage === CLOSED_STAGE);
             const filters = this.active.filters || {};
 
             return rows.filter((row) =>
@@ -894,7 +892,6 @@ export default {
                         {
                             requests: "Заявки на ремонт",
                             action: "Ожидают действия",
-                            archive: "Архив",
                         }[key] || catalogNames[key],
                     filters: {},
                     selection: null,

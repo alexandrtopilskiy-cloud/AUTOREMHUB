@@ -45,13 +45,6 @@
       </button>
       <button
         class="nav-item"
-        :class="{ active: active?.key === 'archive' }"
-        @click="$emit('open-list', 'archive')"
-      >
-        ▣ Архив
-      </button>
-      <button
-        class="nav-item"
         :class="{ active: active?.kind === 'report' }"
         @click="$emit('open-report')"
       >
