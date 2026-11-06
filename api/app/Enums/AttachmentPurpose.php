@@ -22,9 +22,9 @@ enum AttachmentPurpose: string
             self::Diagnostic    => 'Материалы диагностики',
             self::IssuedInvoice => 'Выставленный счёт',
             self::PaidInvoice   => 'Закрытый счёт',
-            self::AcceptanceAct => 'Акт приёмки ТС',
+            self::AcceptanceAct => 'Лист приёма-передачи ТС (приём)',
             self::EdoPayload    => 'XML для ЭДО',
-            self::TransferAct   => 'Подписанный акт передачи ТС',
+            self::TransferAct   => 'Лист приёма-передачи ТС (выдача)',
             self::GeneratedDocument => 'Документ по заявке',
         };
     }

@@ -555,6 +555,7 @@ final class ApiPresenter
             'defectTypes'     => $act->defect_types,
             'diagramMarks'    => $act->diagram_marks,
             'attachmentId'    => $act->attachment?->uuid,
+            'attachmentName'  => $act->attachment?->original_name,
             'lockedAt'        => $act->locked_at->toISOString(),
             'immutable'       => true,
         ];

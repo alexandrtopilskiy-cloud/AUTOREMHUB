@@ -54,6 +54,7 @@ final class RepairRequestValidateNextTest extends TestCase
 
     private const STAGE_DRAFT            = 0;
     private const STAGE_REVIEW           = 1;
+    private const STAGE_WAITING_VEHICLE  = 4;
     private const STAGE_ESTIMATE_REVIEW  = 5;
     private const STAGE_READY_TO_REPAIR  = 5;
     private const STAGE_READY_TO_ISSUE   = 6;
@@ -206,6 +207,18 @@ final class RepairRequestValidateNextTest extends TestCase
                 null,
             ],
 
+            /* ─── Ожидание ТС на СТО (4) ─── */
+            'WaitingVehicle: без листа приёма-передачи' => [
+                self::STAGE_WAITING_VEHICLE,
+                [],
+                'Загрузите подписанный лист приёма-передачи ТС в блок «Приём ТС от Заказчика на СТО»',
+            ],
+            'WaitingVehicle: лист загружен' => [
+                self::STAGE_WAITING_VEHICLE,
+                ['acceptance'],
+                null,
+            ],
+
             /* ─── EstimateReview (5) ─── */
             // Заключение диагностики больше не обязательно (04.11.2026).
             'EstimateReview: без diagnoses и planned' => [
@@ -270,7 +283,7 @@ final class RepairRequestValidateNextTest extends TestCase
             'ReadyToIssue: акт передачи не подписан' => [
                 self::STAGE_READY_TO_ISSUE,
                 ['work_order', 'transfer_act'],
-                'Загрузите подписанный водителем акт передачи ТС и подтвердите сверку документов водителя с доверенностью',
+                'Загрузите подписанный лист приёма-передачи ТС в блок «Приём ТС от СТО на Заказчика» и подтвердите, что лицо, которому передаётся ТС, сверено с действующей доверенностью',
             ],
             'ReadyToIssue: ок' => [
                 self::STAGE_READY_TO_ISSUE,

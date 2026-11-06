@@ -26,6 +26,7 @@ final class AcceptanceActResource extends JsonResource
             'defectTypes'     => $this->defect_types,
             'diagramMarks'    => $this->diagram_marks,
             'attachmentId'    => $this->attachment?->uuid,
+            'attachmentName'  => $this->attachment?->original_name,
             'lockedAt'        => $this->locked_at->toISOString(),
             'immutable'       => true,
         ];

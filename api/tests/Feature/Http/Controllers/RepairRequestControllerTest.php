@@ -493,7 +493,7 @@ final class RepairRequestControllerTest extends TestCase
 
     /* ─────────────────── acceptVehicle ─────────────────── */
 
-    public function test_accept_vehicle_electronic_creates_act(): void
+    public function test_accept_vehicle_requires_signed_sheet(): void
     {
         $request = $this->makeRequest($this->customer, Workflow::STAGE_WAITING_VEHICLE);
         $request->update(['assigned_station_id' => $this->stationRecord->id]);
@@ -507,15 +507,10 @@ final class RepairRequestControllerTest extends TestCase
             'condition'    => 'Без видимых повреждений',
             'defectTypes'  => [],
             'diagramMarks' => [],
-        ])
-            ->assertOk()
-            ->assertJsonPath('request.stage', Workflow::STAGE_REPAIR_IN_PROGRESS);
+        ])->assertUnprocessable();
 
-        $this->assertDatabaseHas('vehicle_acceptance_acts', [
-            'repair_request_id' => $request->id,
-            'mode'              => 'electronic',
-            'mileage'           => 15000,
-        ]);
+        $this->assertDatabaseMissing('vehicle_acceptance_acts', ['repair_request_id' => $request->id]);
+        $this->assertSame(Workflow::STAGE_WAITING_VEHICLE, $request->refresh()->stage->value);
     }
 
     public function test_accept_vehicle_rejects_second_act(): void

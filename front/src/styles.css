@@ -4172,3 +4172,24 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 /* Итог ЗР (работы + запчасти) под таблицей запчастей, справа */
 .repair-grand-total { justify-content: flex-end; margin-top: 12px; padding-top: 10px; border-top: 2px solid var(--brand-navy); }
 .repair-grand-total .total { text-align: right; }
+
+/* ─── Вкладка «Акты приёма-передачи»: блоки приёма и выдачи ТС ─── */
+.handover-block { display: grid; gap: 10px; }
+.handover-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.handover-head > div { display: grid; margin-right: auto; }
+.handover-head h3 { margin: 0; }
+.handover-head small, .handover-facts dd small { display: block; color: var(--muted); font-size: 12px; }
+.handover-state { padding: 4px 10px; border-radius: 999px; background: #fff5de; color: #815c18; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.handover-state.done { background: #e8eef7; color: #173863; }
+.handover-state.muted-state { background: #f1f3f6; color: var(--muted); }
+.handover-actions, .handover-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.handover-form { display: grid; gap: 10px; }
+.handover-form p { margin: 0; }
+.handover-upload { position: relative; cursor: pointer; }
+.handover-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.handover-row select { flex: 1; min-width: 220px; }
+.handover-mileage { max-width: 220px; }
+.handover-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; margin: 0; }
+.handover-facts dt { font-size: 12px; color: var(--muted); }
+.handover-facts dd { margin: 2px 0 0; font-weight: 600; }
+.handover-note { margin: 0; font-size: 13px; }

@@ -1,170 +1,88 @@
 <script>
-const DEFECTS = [
-    ["scratch", "Царапина"],
-    ["dent", "Вмятина"],
-    ["chip", "Скол"],
-    ["glass_crack", "Трещина на стекле"],
-    ["corrosion", "Коррозия"],
-    ["other", "Другое"],
-];
+import { formatDateTime } from '../../data/permissions.js';
+import { handoverSheet } from './handoverSheet.js';
 
-const ZONES = [
-    ["front", "Передняя часть"],
-    ["rear", "Задняя часть"],
-    ["left", "Левая сторона"],
-    ["right", "Правая сторона"],
-    ["roof", "Крыша"],
-    ["windshield", "Лобовое стекло"],
-    ["rear_glass", "Заднее стекло"],
-];
+/*
+ * Блок «Приём ТС от Заказчика на СТО» вкладки «Акты приёма-передачи».
+ * СТО печатает предзаполненный лист приёма-передачи ТС, загружает
+ * подписанный экземпляр и переводит ЗР «В работу» кнопкой «Далее по маршруту».
+ */
+const PURPOSE = 'acceptance_act';
+const STAGE_WAITING_VEHICLE = 4;
 
 export default {
     name: "AcceptanceActPanel",
     props: {
-        request: {
-            type: Object,
-            required: true,
-        },
-        busy: {
-            type: Boolean,
-            default: false,
-        },
-        perform: {
-            type: Function,
-            required: true,
-        },
+        request: { type: Object, required: true },
+        busy: { type: Boolean, default: false },
+        perform: { type: Function, required: true },
     },
     data() {
         return {
-            defects: DEFECTS,
-            zones: ZONES,
-            formOpen: false,
-            mode: "electronic",
             mileage: this.request.mileage || "",
-            fuelLevel: "",
-            condition: "",
-            defectTypes: [],
-            diagramMarks: [],
             attachmentId: "",
-            attachmentName: "",
             uploading: false,
+            loadingSheet: "",
             error: "",
         };
     },
     computed: {
+        act() {
+            return this.request.acceptanceAct || null;
+        },
         canAccept() {
             return this.request.permissions?.canAcceptVehicle === true;
         },
+        available() {
+            return this.request.stage >= STAGE_WAITING_VEHICLE || Boolean(this.act);
+        },
+        files() {
+            return (this.request.attachments || []).filter(
+                (file) => file.purpose === PURPOSE && !file.linked,
+            );
+        },
         canSubmit() {
-            if (this.busy || this.uploading || !this.mileage) {
-                return false;
-            }
-
-            return this.mode === "uploaded"
-                ? Boolean(this.attachmentId)
-                : Boolean(this.fuelLevel && this.condition.trim());
+            return !this.busy && !this.uploading && Boolean(this.attachmentId) && this.mileage !== "" && Number(this.mileage) >= 0;
+        },
+    },
+    watch: {
+        files: {
+            immediate: true,
+            handler(files) {
+                if (files.length && !files.some((file) => file.id === this.attachmentId)) {
+                    this.attachmentId = files[files.length - 1].id;
+                }
+            },
         },
     },
     methods: {
-        person(snapshot) {
-            if (!snapshot) {
-                return "—";
+        formatDateTime,
+        async sheet(mode) {
+            this.error = "";
+            this.loadingSheet = mode;
+            try {
+                await handoverSheet(this.request, "in", mode);
+            } catch (error) {
+                this.error = error.message;
+            } finally {
+                this.loadingSheet = "";
             }
-
-            return [snapshot.fullName, snapshot.phone].filter(Boolean).join(" · ") || "—";
-        },
-        defectLabel(code) {
-            return this.defects.find(([key]) => key === code)?.[1] || code;
-        },
-        zoneLabel(code) {
-            return this.zones.find(([key]) => key === code)?.[1] || code;
-        },
-        vehicleLabel(vehicle) {
-            if (!vehicle) {
-                return "—";
-            }
-
-            return [
-                [vehicle.make, vehicle.model].filter(Boolean).join(" "),
-                vehicle.vin ? `VIN ${vehicle.vin}` : "",
-                vehicle.plate || "",
-            ].filter(Boolean).join(" · ") || "—";
-        },
-        fuelLabel(code) {
-            return {
-                empty: "Пустой бак",
-                quarter: "1/4",
-                half: "1/2",
-                three_quarters: "3/4",
-                full: "Полный бак",
-            }[code] || "—";
-        },
-        toggleZone(zone) {
-            const index = this.diagramMarks.findIndex((mark) => mark.zone === zone);
-
-            if (index >= 0) {
-                this.diagramMarks.splice(index, 1);
-            } else {
-                this.diagramMarks.push({ zone, type: "scratch", comment: "" });
-            }
-        },
-        mark(zone) {
-            return this.diagramMarks.find((item) => item.zone === zone);
-        },
-        escape(value) {
-            return String(value || "")
-                .replaceAll("&", "&amp;")
-                .replaceAll("<", "&lt;")
-                .replaceAll(">", "&gt;")
-                .replaceAll('"', "&quot;");
-        },
-        printBlankAct() {
-            const title = `Акт приёма APP-${this.escape(String(this.request.number || "").replace(/^ZR-/, ""))}`;
-            const vehicle = this.escape(
-                `${this.request.vehicle} · VIN ${this.request.vin} · ${this.request.plate || "—"}`,
-            );
-            const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${title}</title><style>body{font:14px Arial;margin:32px;color:#10291d}h1{font-size:20px}.line{border-bottom:1px solid #10291d;min-height:28px;margin:10px 0}.car{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:24px 0}.zone{border:1px solid #10291d;height:90px;padding:8px}small{color:#486858}</style></head><body><h1>${title}</h1><p><strong>ТС:</strong> ${vehicle}</p><p><strong>Контактное лицо:</strong> ${this.escape(this.person(this.request.contactDetails))}</p><p><strong>Водитель:</strong> ${this.escape(this.person(this.request.driverDetails))}</p><p>Пробег:</p><div class="line"></div><p>Уровень топлива:</p><div class="line"></div><p>Состояние и комплектность:</p><div class="line"></div><div class="line"></div><h2>Внешние дефекты и развёртка</h2><div class="car">${this.zones.map(([, zone]) => `<div class="zone">${this.escape(zone)}</div>`).join("")}</div><p>Передал ТС:</p><div class="line"></div><p>Принял ТС:</p><div class="line"></div><small>После подписания загрузите скан или фотографию в заявку.</small></body></html>`;
-            const preview = window.open("", "_blank", "width=1000,height=800");
-
-            if (!preview) {
-                this.error = "Браузер заблокировал окно печати. Разрешите всплывающие окна.";
-                return;
-            }
-
-            preview.opener = null;
-            preview.document.open();
-            preview.document.write(html);
-            preview.document.close();
-            preview.focus();
-            window.setTimeout(() => preview.print(), 100);
         },
         async upload(event) {
             const file = event.target.files?.[0];
-
+            event.target.value = "";
             if (!file) {
                 return;
             }
 
             this.error = "";
             this.uploading = true;
-
             try {
-                const updated = await this.perform("upload", file, "acceptance_act");
-                const attachment = [...(updated.attachments || [])]
-                    .reverse()
-                    .find((item) => item.purpose === "acceptance_act" && !item.linked);
-
-                if (!attachment) {
-                    throw new Error("Загруженный акт не найден в заявке");
-                }
-
-                this.attachmentId = attachment.id;
-                this.attachmentName = attachment.name;
+                await this.perform("upload", file, PURPOSE);
             } catch (error) {
                 this.error = error.message;
             } finally {
                 this.uploading = false;
-                event.target.value = "";
             }
         },
         async submit() {
@@ -173,19 +91,11 @@ export default {
             }
 
             this.error = "";
-
             try {
                 await this.perform("acceptVehicle", {
-                    mode: this.mode,
+                    mode: "uploaded",
                     mileage: Number(this.mileage),
-                    ...(this.mode === "uploaded"
-                        ? { attachmentId: this.attachmentId }
-                        : {
-                            fuelLevel: this.fuelLevel,
-                            condition: this.condition,
-                            defectTypes: this.defectTypes,
-                            diagramMarks: this.diagramMarks,
-                        }),
+                    attachmentId: this.attachmentId,
                 });
             } catch (error) {
                 this.error = error.message;
@@ -196,138 +106,71 @@ export default {
 </script>
 
 <template>
-    <section v-if="canAccept || request.acceptanceAct" class="feature-card acceptance-card">
-        <div class="section-title">
+    <section class="feature-card handover-block">
+        <div class="handover-head">
             <div>
-                <h3>Приём и ремонт ТС</h3>
-                <p>Акт после сохранения становится неизменяемой частью заявки.</p>
+                <h3>Приём ТС от Заказчика на СТО</h3>
+                <small>Лист приёма-передачи ТС {{ act?.number || '' }}</small>
             </div>
+            <span v-if="act" class="handover-state done">Подписанный лист загружен</span>
+            <span v-else-if="available" class="handover-state">Ожидает подписанного листа</span>
+            <span v-else class="handover-state muted-state">Этап «Ожидание ТС на СТО»</span>
         </div>
 
-        <div v-if="request.acceptanceAct" class="acceptance-summary">
-            <strong>Акт приёма {{ request.acceptanceAct.number }}</strong>
-            <dl>
-                <div><dt>ТС</dt><dd>{{ vehicleLabel(request.acceptanceAct.vehicle) }}</dd></div>
-                <div><dt>Контактное лицо</dt><dd>{{ person(request.acceptanceAct.contact) }}</dd></div>
-                <div><dt>Водитель</dt><dd>{{ person(request.acceptanceAct.driver) }}</dd></div>
-                <div><dt>Формат</dt><dd>{{ request.acceptanceAct.mode === "uploaded" ? "Загруженный" : "Электронный" }}</dd></div>
-                <div><dt>Пробег</dt><dd>{{ request.acceptanceAct.mileage }} км</dd></div>
-                <div><dt>Уровень топлива</dt><dd>{{ fuelLabel(request.acceptanceAct.fuelLevel) }}</dd></div>
-                <div><dt>Состояние</dt><dd>{{ request.acceptanceAct.condition || "См. вложенный акт" }}</dd></div>
+        <p v-if="!available" class="muted handover-note">
+            Лист станет доступен, когда ЗР перейдёт на этап «Ожидание ТС на СТО».
+        </p>
+
+        <template v-else>
+            <div class="handover-actions">
+                <button type="button" class="ghost-btn" :disabled="busy || Boolean(loadingSheet)" @click="sheet('pdf')">
+                    {{ loadingSheet === 'pdf' ? 'Формируем…' : 'Выгрузить в PDF' }}
+                </button>
+                <button type="button" class="ghost-btn" :disabled="busy || Boolean(loadingSheet)" @click="sheet('print')">
+                    {{ loadingSheet === 'print' ? 'Формируем…' : 'Распечатать' }}
+                </button>
+                <small class="muted">
+                    Заказчик, водитель, ТС и СТО заполняются автоматически; пробег, топливо, отметки и подписи — от руки.
+                </small>
+            </div>
+
+            <dl v-if="act" class="handover-facts">
+                <div><dt>Подписанный лист</dt><dd>{{ act.attachmentName || act.number }}<small v-if="act.lockedAt">{{ formatDateTime(act.lockedAt) }}</small></dd></div>
+                <div><dt>Пробег при приёме</dt><dd>{{ act.mileage }} км</dd></div>
+                <div><dt>Водитель</dt><dd>{{ act.driver?.fullName || '—' }}</dd></div>
             </dl>
-            <p v-if="request.acceptanceAct.defectTypes?.length">
-                Дефекты: {{ request.acceptanceAct.defectTypes.map(defectLabel).join(", ") }}
-            </p>
-            <ul v-if="request.acceptanceAct.diagramMarks?.length" class="acceptance-marks">
-                <li v-for="markItem in request.acceptanceAct.diagramMarks" :key="`${markItem.zone}-${markItem.type}`">
-                    {{ zoneLabel(markItem.zone) }} — {{ defectLabel(markItem.type) }}<template v-if="markItem.comment">: {{ markItem.comment }}</template>
-                </li>
-            </ul>
-            <small>Документ зафиксирован и недоступен для корректировки.</small>
-        </div>
 
-        <div v-else-if="!formOpen" class="acceptance-start">
-            <p>
-                После прибытия автомобиля оформите электронный акт либо
-                загрузите подписанный бумажный экземпляр.
-            </p>
-            <button
-                type="button"
-                class="primary-btn"
-                :disabled="busy"
-                @click="formOpen = true"
-            >
-                Приём ТС
-            </button>
-        </div>
-
-        <form v-else @submit.prevent="submit">
-            <div class="acceptance-context">
-                <div><span>ТС</span><strong>{{ request.vehicle }} · VIN {{ request.vin }} · {{ request.plate || "—" }}</strong></div>
-                <div><span>Контактное лицо</span><strong>{{ person(request.contactDetails) }}</strong></div>
-                <div><span>Водитель</span><strong>{{ person(request.driverDetails) }}</strong></div>
-            </div>
-
-            <div class="acceptance-mode">
-                <label><input v-model="mode" type="radio" value="electronic" /> Заполнить электронно</label>
-                <label><input v-model="mode" type="radio" value="uploaded" /> Загрузить заполненный акт</label>
-                <button type="button" class="ghost-btn" @click="printBlankAct">
-                    Распечатать пустой акт
-                </button>
-            </div>
-
-            <label>
-                Пробег при приёме, км
-                <input v-model="mileage" type="number" min="0" step="1" required />
-            </label>
-
-            <template v-if="mode === 'electronic'">
-                <label>
-                    Уровень топлива
-                    <select v-model="fuelLevel" required>
-                        <option value="">Выберите уровень</option>
-                        <option value="empty">Пустой бак</option>
-                        <option value="quarter">1/4</option>
-                        <option value="half">1/2</option>
-                        <option value="three_quarters">3/4</option>
-                        <option value="full">Полный бак</option>
+            <form v-else-if="canAccept" class="handover-form" @submit.prevent="submit">
+                <p class="muted handover-note">
+                    Распечатайте лист, заполните его при осмотре ТС вместе с водителем,
+                    подпишите и загрузите скан или фото подписанного листа.
+                </p>
+                <div class="handover-row">
+                    <button type="button" class="ghost-btn" :disabled="uploading || busy" @click="$refs.file.click()">
+                        {{ uploading ? 'Загружаем…' : 'Загрузить подписанный лист' }}
+                    </button>
+                    <input ref="file" type="file" hidden accept="application/pdf,image/jpeg,image/png,image/webp" @change="upload" />
+                    <select v-if="files.length" v-model="attachmentId" :disabled="busy" aria-label="Подписанный лист приёма-передачи">
+                        <option v-for="file in files" :key="file.id" :value="file.id">{{ file.name }}</option>
                     </select>
+                    <span v-else class="muted">Лист ещё не загружен</span>
+                </div>
+                <label class="handover-mileage">
+                    Пробег при приёме, км
+                    <input v-model="mileage" type="number" min="0" step="1" required :disabled="busy" />
                 </label>
+                <div class="handover-actions">
+                    <button class="primary-btn" :disabled="!canSubmit">Прикрепить лист к ЗР</button>
+                </div>
+            </form>
 
-                <label>
-                    Общее состояние ТС
-                    <textarea v-model="condition" required placeholder="Комплектность, состояние салона и кузова" />
-                </label>
+            <p v-else class="muted handover-note">Подписанный лист загружает СТО при приёме ТС.</p>
 
-                <fieldset>
-                    <legend>Наличие внешних дефектов</legend>
-                    <label v-for="[code, title] in defects" :key="code" class="check-label">
-                        <input v-model="defectTypes" type="checkbox" :value="code" /> {{ title }}
-                    </label>
-                </fieldset>
+            <p v-if="act && request.stage === 4 && request.permissions?.canAdvance" class="info-banner">
+                Лист прикреплён. Нажмите «Далее по маршруту» — ЗР перейдёт на этап «В работе».
+            </p>
+        </template>
 
-                <fieldset>
-                    <legend>Развёртка автомобиля</legend>
-                    <div class="vehicle-diagram">
-                        <button
-                            v-for="[zone, title] in zones"
-                            :key="zone"
-                            type="button"
-                            :class="{ selected: mark(zone) }"
-                            @click="toggleZone(zone)"
-                        >
-                            {{ title }}
-                        </button>
-                    </div>
-                    <div v-for="item in diagramMarks" :key="item.zone" class="diagram-mark-row">
-                        <strong>{{ zones.find(([zone]) => zone === item.zone)?.[1] }}</strong>
-                        <select v-model="item.type">
-                            <option v-for="[code, title] in defects" :key="code" :value="code">{{ title }}</option>
-                        </select>
-                        <input v-model="item.comment" placeholder="Комментарий" />
-                    </div>
-                </fieldset>
-            </template>
-
-            <label v-else class="upload-label">
-                {{ uploading ? "Загружаем…" : attachmentName || "Выбрать PDF или изображение акта" }}
-                <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" :disabled="uploading || busy" @change="upload" />
-            </label>
-
-            <p v-if="error" class="error-message">{{ error }}</p>
-            <div class="action-buttons">
-                <button
-                    type="button"
-                    class="ghost-btn"
-                    :disabled="busy || uploading"
-                    @click="formOpen = false"
-                >
-                    Отмена
-                </button>
-                <button class="primary-btn" :disabled="!canSubmit">
-                    Сохранить акт и начать работы
-                </button>
-            </div>
-        </form>
+        <p v-if="error" class="error-message">{{ error }}</p>
     </section>
 </template>

@@ -543,6 +543,8 @@ export function createRequestStore(api) {
                 );
 
                 this.accept(request);
+                // Успешное действие снимает прежнюю ошибку (например, отказ «Далее»).
+                this.saveError = "";
 
                 return request;
             } catch (e) {

@@ -438,8 +438,8 @@ test("Options API component rendering and interactive methods", async (context) 
                     "Норма времени, ч",
                     "Стоимость нормо/часа, ₽",
                     "Кратность",
-                    "Стоимость, ₽",
                     "Агентская скидка, ₽",
+                    "Стоимость, ₽",
                 ]);
                 assert.doesNotMatch(head, /Комментарий/);
                 const foot = html.match(/<tfoot>([\s\S]*?)<\/tfoot>/)[1];
@@ -656,12 +656,14 @@ test("Options API component rendering and interactive methods", async (context) 
                     }),
                 );
 
-                assert.match(html, /Приём и ремонт ТС/);
-                assert.match(
-                    html,
-                    /После прибытия автомобиля оформите электронный акт/,
-                );
-                assert.match(html, /> Приём ТС </);
+                // Вкладка «Акты приёма-передачи»: два блока.
+                assert.match(html, /Приём ТС от Заказчика на СТО/);
+                assert.match(html, /Приём ТС от СТО на Заказчика/);
+                assert.match(html, /Выгрузить в PDF/);
+                assert.match(html, /Распечатать/);
+                assert.match(html, /Загрузить подписанный лист/);
+                assert.match(html, /Прикрепить лист к ЗР/);
+                assert.doesNotMatch(html, /Заполнить электронно/);
             },
         );
 
@@ -1848,8 +1850,9 @@ test("Options API component rendering and interactive methods", async (context) 
                 );
                 assert.match(station, /APP-000005\/2/);
                 assert.match(station, /DV-000005/);
-                assert.match(station, /Загрузить скан акта/);
-                assert.match(station, /Подтвердить выдачу ТС/);
+                assert.match(station, /Загрузить подписанный лист/);
+                assert.match(station, /Лицо, которому передаётся ТС, сверено с действующей доверенностью/);
+                assert.match(station, /Прикрепить лист к ЗР/);
 
                 const doc = (type, side, label, amount) => ({
                     id: type, type, side, label, number: `X-${type}`,
@@ -1876,11 +1879,12 @@ test("Options API component rendering and interactive methods", async (context) 
                         perform: async () => {},
                     }),
                 );
-                assert.equal((manager.match(/>PDF</g) || []).length, 8);
+                assert.equal((manager.match(/>PDF</g) || []).length, 7);
+                assert.match(manager, /Выгрузить в PDF/);
                 assert.match(manager, /СТО → УК/);
                 assert.match(manager, /Отчёт агента/);
                 assert.match(manager, /Оплата Заказчика по счёту X-customer_invoice/);
-                assert.doesNotMatch(manager, /Загрузить скан акта/);
+                assert.doesNotMatch(manager, /Загрузить подписанный лист/);
             },
         );
 
