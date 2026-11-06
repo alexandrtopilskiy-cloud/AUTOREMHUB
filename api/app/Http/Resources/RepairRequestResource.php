@@ -7,6 +7,7 @@ namespace App\Http\Resources;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Services\RepairRequestCalculator;
+use App\Services\RepairRequestService;
 use App\Services\Workflow;
 use App\Services\WorkChangeService;
 use App\Support\AgentDiscount;
@@ -91,6 +92,7 @@ final class RepairRequestResource extends JsonResource
             'ownerLabel'             => Workflow::ownerLabel($this->resource),
             'workChange'             => app(WorkChangeService::class)->present($this->resource, $dto),
             'reviewBaselineVersion'  => $this->review_baseline_version,
+            'estimateChangedSinceReview' => app(RepairRequestService::class)->estimateChangedSinceReview($this->resource),
 
             // Vehicle
             'vehicleId'              => $vehicle?->uuid ?? '',

@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\WorkOrder;
 use App\Models\WorkType;
 use App\Services\RepairRequestCalculator;
+use App\Services\RepairRequestService;
 use App\Services\Workflow;
 use App\Services\WorkChangeService;
 use App\Services\ClosingDocumentService;
@@ -139,6 +140,7 @@ final class ApiPresenter
             'ownerLabel' => Workflow::ownerLabel($request),
             'workChange' => app(WorkChangeService::class)->present($request, $dto),
             'reviewBaselineVersion'  => $request->review_baseline_version,
+            'estimateChangedSinceReview' => app(RepairRequestService::class)->estimateChangedSinceReview($request),
             'vehicleId'              => $vehicle?->uuid ?? '',
             'vehicle'                => $vehicle?->name ?? '',
             'make'                   => $vehicle?->make ?? '',

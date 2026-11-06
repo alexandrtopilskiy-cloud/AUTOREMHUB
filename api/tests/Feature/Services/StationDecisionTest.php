@@ -167,6 +167,71 @@ final class StationDecisionTest extends TestCase
         $this->assertNotificationExists($request['systemId'], 'manager_review_required', 1); // хотя бы 1
     }
 
+    public function test_lines_added_and_moved_to_recommendations_keep_route_to_customer(): void
+    {
+        $request = $this->requestAtStationResponse();
+
+        $this->actingAs($this->station);
+        $works = array_map(static function (array $work): array {
+            unset($work['normApplicabilityLabel']);
+
+            return $work;
+        }, $request['works']);
+        $added = $works[0];
+        unset($added['id']);
+        $added['name'] = 'Доп. диагностика';
+        $request = $this->patchJson("/api/requests/{$request['id']}", [
+            'revision' => $request['revision'],
+            'works'    => [...$works, $added],
+        ])->assertOk()->json('request');
+        $this->assertTrue($request['estimateChangedSinceReview']);
+
+        $newId = collect($request['works'])->firstWhere('name', 'Доп. диагностика')['id'];
+        $request = $this->postJson("/api/requests/{$request['id']}/recommendations", [
+            'revision' => $request['revision'],
+            'workIds'  => [$newId],
+            'partIds'  => [],
+        ])->assertOk()->json('request');
+        // Итоговый состав работ не изменился.
+        $this->assertFalse($request['estimateChangedSinceReview']);
+
+        $response = $this->postJson("/api/requests/{$request['id']}/station-decision", [
+            'revision'    => $request['revision'],
+            'decision'    => ApprovalDecision::Confirmed->value,
+            'comment'     => '',
+            'stationSlot' => $request['slot'],
+        ])->assertOk();
+
+        $this->assertSame(RepairStage::CustomerApproval->value, $response->json('request.stage'));
+    }
+
+    public function test_changed_estimate_goes_back_to_manager(): void
+    {
+        $request = $this->requestAtStationResponse();
+
+        $this->actingAs($this->station);
+        $works = array_map(static function (array $work): array {
+            unset($work['normApplicabilityLabel']);
+
+            return $work;
+        }, $request['works']);
+        $works[0]['qty'] = 2;
+        $request = $this->patchJson("/api/requests/{$request['id']}", [
+            'revision' => $request['revision'],
+            'works'    => $works,
+        ])->assertOk()->json('request');
+        $this->assertTrue($request['estimateChangedSinceReview']);
+
+        $response = $this->postJson("/api/requests/{$request['id']}/station-decision", [
+            'revision'    => $request['revision'],
+            'decision'    => ApprovalDecision::Confirmed->value,
+            'comment'     => '',
+            'stationSlot' => $request['slot'],
+        ])->assertOk();
+
+        $this->assertSame(RepairStage::ManagerRouting->value, $response->json('request.stage'));
+    }
+
     /* ─────────────────── Граничные случаи ─────────────────── */
 
     public function test_empty_comment_is_allowed_for_confirmed(): void

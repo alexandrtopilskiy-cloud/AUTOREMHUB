@@ -1175,7 +1175,7 @@ final class RepairRequestService
         }
 
         $changes = $this->estimateChanges($request);
-        $estimateChanged = $request->estimate_version !== $request->review_baseline_version;
+        $estimateChanged = $this->estimateChangedSinceReview($request);
 
         if ($dto->decision !== ApprovalDecision::Declined && !$estimateChanged) {
             $this->validateManagerReviewStage($request);
@@ -1852,6 +1852,60 @@ final class RepairRequestService
         $request->review_context = $context;
         $request->review_baseline_version = $request->estimate_version;
         $request->review_baseline_snapshot = $this->estimateSnapshot($request);
+    }
+
+    /**
+     * Изменилась ли смета относительно снимка, зафиксированного при передаче
+     * на согласование. Сравнивается итоговый состав работ и запчастей, а не
+     * история правок: если СТО добавила позиции и перенесла их в
+     * Рекомендации, смета не изменилась и повторное согласование не нужно.
+     */
+    public function estimateChangedSinceReview(RepairRequest $request): bool
+    {
+        if ($request->estimate_version === $request->review_baseline_version) {
+            return false;
+        }
+
+        $baseline = $request->review_baseline_snapshot;
+
+        if (!is_array($baseline) || !in_array($request->stage, [RepairStage::ManagerRouting, RepairStage::StationApproval], true)) {
+            return true;
+        }
+
+        $current = $this->estimateSnapshot($request);
+
+        return self::normalizedSnapshot($baseline) !== self::normalizedSnapshot($current);
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     *
+     * @return array<string, array<string, array<string, string|null>>>
+     */
+    private static function normalizedSnapshot(array $snapshot): array
+    {
+        $normalized = [];
+
+        foreach (['works', 'parts'] as $kind) {
+            $lines = [];
+            foreach ($snapshot[$kind] ?? [] as $index => $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+                $values = [];
+                foreach ($line as $field => $value) {
+                    $values[$field] = is_numeric($value)
+                        ? rtrim(rtrim(number_format((float) $value, 3, '.', ''), '0'), '.')
+                        : ($value === null || $value === '' ? null : (string) $value);
+                }
+                ksort($values);
+                $lines[(string) ($line['id'] ?? "#$index")] = $values;
+            }
+            ksort($lines);
+            $normalized[$kind] = $lines;
+        }
+
+        return $normalized;
     }
 
     /**

@@ -121,6 +121,9 @@ final class RecommendationService
             // переносу уже выбранных позиций (они проверяются по id).
             WorkChangeService::recordDeferred($request, $deferredLineIds, $deferredItemIds, (string) $doc->number);
             $this->requests->recommendationEstimateChanged($request, $user, false);
+            // Перенесены только позиции, добавленные в ходе ремонта: смета
+            // совпадает с согласованной, согласование работ / з/ч не нужно.
+            app(WorkChangeService::class)->clearIfUnchanged($request);
 
             return [
                 'comment' => 'Позиции добавлены в рекомендации ' . $doc->number,
