@@ -231,6 +231,33 @@ final class ClosingDocumentService
         return $document;
     }
 
+    /**
+     * Удалить записи, сформированные при «Принять оплату».
+     *
+     * @return array{0: RequestDocument, 1: string, 2: string} счёт, прежняя дата (d.m.Y) и сумма оплаты
+     */
+    public function deletePayment(RepairRequest $request, RequestDocumentType $type): array
+    {
+        $document = $request->document($type);
+
+        if ($document === null || !$document->isPaid()) {
+            Input::fail('Оплата по счёту не принята — удалять нечего');
+        }
+
+        $paidAt = (string) $document->paid_at?->format('d.m.Y');
+        $paidAmount = (string) $document->paid_amount;
+
+        $document->forceFill([
+            'paid_at'        => null,
+            'paid_amount'    => null,
+            'paid_comment'   => null,
+            'paid_marked_at' => null,
+            'paid_marked_by' => null,
+        ])->save();
+
+        return [$document, $paidAt, $paidAmount];
+    }
+
     public function isPaid(RepairRequest $request, RequestDocumentType $type): bool
     {
         return $request->document($type)?->isPaid() ?? false;

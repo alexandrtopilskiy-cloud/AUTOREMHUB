@@ -200,6 +200,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::get('/handover-sheet/{direction}', [ClosingDocumentController::class, 'handoverSheet'])->whereIn('direction', ['in', 'out'])->name('handover-sheet');
         Route::post('/payments/customer', [ClosingDocumentController::class, 'customerPayment'])->name('payments.customer');
         Route::post('/payments/station', [ClosingDocumentController::class, 'stationPayment'])->name('payments.station');
+        Route::delete('/payments/customer', [ClosingDocumentController::class, 'deleteCustomerPayment'])->name('payments.customer.delete');
+        Route::delete('/payments/station', [ClosingDocumentController::class, 'deleteStationPayment'])->name('payments.station.delete');
     });
 
     /* ─── ЭДО ─── */

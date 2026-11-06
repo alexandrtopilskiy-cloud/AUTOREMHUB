@@ -106,6 +106,18 @@ final class ClosingDocumentController
         return $this->markPayment($request, $id, 'canMarkStationPayment', RequestDocumentType::StationInvoice, 'Оплата в пользу СТО');
     }
 
+    /** УК: удалить принятую оплату Заказчика — только на этапе «Подтверждение оплаты Заказчика». */
+    public function deleteCustomerPayment(Request $request, string $id): JsonResponse
+    {
+        return $this->deletePayment($request, $id, 'canMarkCustomerPayment', RequestDocumentType::CustomerInvoice, 'Оплата Заказчика');
+    }
+
+    /** УК: удалить принятую оплату в пользу СТО — только на этапе «Оплата в СТО». */
+    public function deleteStationPayment(Request $request, string $id): JsonResponse
+    {
+        return $this->deletePayment($request, $id, 'canMarkStationPayment', RequestDocumentType::StationInvoice, 'Оплата в пользу СТО');
+    }
+
     public function pdf(Request $request, string $documentId): StreamedResponse
     {
         $user = $request->user();
@@ -163,6 +175,30 @@ final class ClosingDocumentController
                 return [
                     'comment' => $label . ' по счёту ' . $invoice->number . ' от ' . $invoice->paid_at?->format('d.m.Y')
                         . ': ' . number_format((float) $invoice->paid_amount, 2, ',', ' ') . ' ₽',
+                ];
+            },
+        );
+
+        return $this->respond($repairRequest, $user);
+    }
+
+    private function deletePayment(Request $request, string $id, string $flag, RequestDocumentType $type, string $label): JsonResponse
+    {
+        ApiInput::only($request, ['revision']);
+        $user = $request->user();
+
+        $repairRequest = $this->service->mutate(
+            $user,
+            $id,
+            ApiInput::revision($request),
+            $type === RequestDocumentType::CustomerInvoice ? 'customer_payment_deleted' : 'station_payment_deleted',
+            function (RepairRequest $repairRequest) use ($user, $flag, $type, $label): array {
+                $this->service->flag($repairRequest, $user, $flag);
+                [$invoice, $paidAt, $paidAmount] = $this->documents->deletePayment($repairRequest, $type);
+
+                return [
+                    'comment' => $label . ' по счёту ' . $invoice->number . ' удалена (была принята '
+                        . $paidAt . ': ' . number_format((float) $paidAmount, 2, ',', ' ') . ' ₽)',
                 ];
             },
         );
