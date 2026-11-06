@@ -1730,8 +1730,8 @@ test("Options API component rendering and interactive methods", async (context) 
                     { id: "wrong-vin", number: "ZR-2", vehicleId: "v2", vin: "VIN2", permissions: { canRestoreRecommendations: true } },
                     { id: "closed", number: "ZR-3", vehicleId: "v1", vin: "VIN1", permissions: { canRestoreRecommendations: false } },
                 ];
-                const block = (requestId, pending = {}) => {
-                    const ctx = { vehicleId: "v1", requests, requestId, pending, document: { vin: "VIN1" } };
+                const block = (requestId, pending = {}, saveRequest = null) => {
+                    const ctx = { vehicleId: "v1", requests, requestId, pending, saveRequest, document: { vin: "VIN1" } };
                     ctx.sourceRequest = Panel.computed.sourceRequest.call(ctx);
                     return Panel.computed.transferBlock.call(ctx);
                 };
@@ -1739,6 +1739,15 @@ test("Options API component rendering and interactive methods", async (context) 
                 assert.match(block("wrong-vin"), /не совпадает/);
                 assert.match(block("closed"), /«Черновик» по «В работе»/);
                 assert.match(block("allowed", { allowed: true }), /сохраните/);
+                // Из ЗР несохранённые правки сохраняются перед переносом.
+                assert.equal(block("allowed", { allowed: true }, async () => {}), "");
+                const memory = await server.ssrLoadModule(
+                    "/src/features/requests/zrTabMemory.js",
+                );
+                assert.equal(memory.rememberedZrTab("zr-1", "vehicle"), "vehicle");
+                memory.rememberZrTab("zr-1", "works");
+                assert.equal(memory.rememberedZrTab("zr-1", "vehicle"), "works");
+                assert.equal(memory.rememberedZrTab("zr-2", "vehicle"), "vehicle");
                 assert.equal(block(""), "");
                 assert.equal(Panel.computed.canCreateRequest.call({ userRole: "customer" }), true);
                 assert.equal(Panel.computed.canCreateRequest.call({ userRole: "manager" }), false);

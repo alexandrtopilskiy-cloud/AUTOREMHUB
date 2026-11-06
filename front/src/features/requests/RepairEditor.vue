@@ -22,6 +22,7 @@ import { workflow, statusClass } from '../../data/workflow.js';
 import { money, total, formatDateTime, duration , agentDiscountPercent, agentDiscountAmount,
 } from '../../data/permissions.js';
 import { calculatePlannedCompletion } from '../../utils/plannedCompletion.js';
+import { rememberZrTab, rememberedZrTab } from './zrTabMemory.js';
 
 /* ─── Константы ─── */
 
@@ -363,7 +364,10 @@ const customerDraftWorks = computed(
   () => isCustomer.value && props.request.stage === 0,
 );
 
-/** Вкладки внутри ЗР; компонент пересоздаётся на каждую ЗР, поэтому открывается первая. */
+/**
+ * Вкладки внутри ЗР. Компонент пересоздаётся на каждую ЗР: открывается
+ * вкладка, на которой ЗР оставили в этом сеансе (иначе первая).
+ */
 const ZR_TABS = [
   { key: 'vehicle', label: 'Автомобиль и причина обращения' },
   { key: 'works', label: 'Работы и ЗЧ' },
@@ -373,13 +377,14 @@ const ZR_TABS = [
   { key: 'payments', label: 'Взаиморасчёты' },
   { key: 'history', label: 'История ТО и работ' },
 ];
-const activeTab = ref(ZR_TABS[0].key);
+const activeTab = ref(rememberedZrTab(props.request.id, ZR_TABS[0].key));
+watch(activeTab, (key) => rememberZrTab(props.request.id, key));
 /** Историю ТС загружаем только после первого открытия вкладки. */
-const historyVisited = ref(false);
+const historyVisited = ref(activeTab.value === 'history');
 const panelRoot = ref(null);
-watch(() => props.request.id, () => {
-  activeTab.value = ZR_TABS[0].key;
-  historyVisited.value = false;
+watch(() => props.request.id, (id) => {
+  activeTab.value = rememberedZrTab(id, ZR_TABS[0].key);
+  historyVisited.value = activeTab.value === 'history';
 });
 
 /** Ближайший прокручиваемый контейнер рабочей области (или окно). */
