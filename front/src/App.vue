@@ -387,6 +387,43 @@ export default {
         catalogNamesValue(key) {
             return catalogNames[key];
         },
+        requestColumnValue(item, key) {
+            if (key === "document") {
+                return [item.number, formatDateTime(item.createdAt)]
+                    .filter(Boolean)
+                    .join(" ");
+            }
+
+            if (key === "vehicle") {
+                return [
+                    item.vehicle || "Автомобиль не выбран",
+                    item.plate || "Пустой черновик",
+                    this.user?.role === "station" ? "" : item.company,
+                ]
+                    .filter(Boolean)
+                    .join(" ");
+            }
+
+            if (key === "status") {
+                const stage = workflow[item.stage] || {};
+
+                return [
+                    item.statusLabel || stage.status,
+                    stage.owner,
+                    item.overdueSeconds ? "Превышен плановый срок" : "",
+                ]
+                    .filter(Boolean)
+                    .join(" ");
+            }
+
+            if (key === "amount") {
+                const amount = total(item);
+
+                return `${amount} ${money(amount)}`;
+            }
+
+            return "";
+        },
         filterCell(item, key) {
             return this.isRequestList
                 ? this.requestColumnValue(item, key)
