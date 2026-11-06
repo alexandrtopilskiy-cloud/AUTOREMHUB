@@ -45,6 +45,28 @@ final class Station extends Entity
         return $this->belongsTo(Organization::class);
     }
 
+    /**
+     * Справочная информация о СТО для карточки ЗР (все роли):
+     * фактический адрес и контакты, без коммерческих условий.
+     *
+     * @return array{name: string, address: string, contact: string, phone: string, email: string, workday: string}
+     */
+    public function referenceDetails(): array
+    {
+        $organization = $this->organization;
+        $start = substr((string) ($this->workday_start ?? ''), 0, 5);
+        $end = substr((string) ($this->workday_end ?? ''), 0, 5);
+
+        return [
+            'name'    => (string) $this->name,
+            'address' => (string) (($organization?->actual_address ?? '') ?: $this->address),
+            'contact' => (string) $this->contact,
+            'phone'   => (string) ($organization?->phone ?? ''),
+            'email'   => (string) ($organization?->email ?? ''),
+            'workday' => $start !== '' && $end !== '' ? $start . '–' . $end : '',
+        ];
+    }
+
     public function workOrders(): HasMany
     {
         return $this->hasMany(WorkOrder::class);

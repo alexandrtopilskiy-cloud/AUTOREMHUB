@@ -33,7 +33,7 @@ final class RepairRequestResource extends JsonResource
             'vehicleRecord.modelReference',
             'contactRecord',
             'driverRecord',
-            'stationRecord',
+            'stationRecord.organization',
             'reasonRecord',
             'reasonSubtype',
             // Без этих связей WorkResource не отдаёт workTypeId/timeNormId,
@@ -128,6 +128,7 @@ final class RepairRequestResource extends JsonResource
             // Station & Reason
             'stationId'              => $station?->uuid ?? '',
             'station'                => $this->formatStation($station),
+            'stationDetails'         => $station?->referenceDetails(),
             'reasonId'               => $this->reasonRecord?->uuid ?? '',
             'reasonSubtypeId'        => $this->reasonSubtype?->uuid ?? '',
             'reason'                 => $this->reasonRecord?->name ?? '',

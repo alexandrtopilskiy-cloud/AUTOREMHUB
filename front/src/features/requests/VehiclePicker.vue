@@ -23,7 +23,7 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(["select", "history"]);
+const emit = defineEmits(["select"]);
 
 const query = ref("");
 const results = ref([]);
@@ -99,10 +99,6 @@ function chooseAnother() {
     sequence++;
 }
 
-function openHistory() {
-    emit("history", props.vehicleId);
-}
-
 watch(
     () => props.vehicleId,
     (vehicleId) => {
@@ -172,13 +168,5 @@ onBeforeUnmount(() => {
             Нет подходящих автомобилей.
         </p>
 
-        <button
-            v-if="vehicleId"
-            type="button"
-            class="ghost-btn vehicle-history-button"
-            @click="openHistory"
-        >
-            История ТО и работ
-        </button>
     </div>
 </template>
