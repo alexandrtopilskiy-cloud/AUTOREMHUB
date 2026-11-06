@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { marketplaceApi } from '../../api/marketplace.js';
 import { formatDateTime, money } from '../../data/permissions.js';
+import { printBlob } from './handoverSheet.js';
 
 /*
  * Закрытие ЗР:
@@ -22,6 +23,7 @@ const props = defineProps({
 });
 
 const error = ref('');
+const fileInput = ref(null);
 const signedFileId = ref('');
 const driverVerified = ref(false);
 const payment = ref({ paidAt: today(), amount: '', comment: '' });
@@ -122,6 +124,15 @@ function markPaid() {
   return run(method, { ...payment.value });
 }
 
+async function printDoc(doc) {
+  error.value = '';
+  try {
+    printBlob(await marketplaceApi.requestDocumentPdf(doc.id));
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
 async function download(doc) {
   error.value = '';
   try {
@@ -139,20 +150,25 @@ async function download(doc) {
 </script>
 
 <template>
-  <section v-if="visible" class="feature-card closing-panel">
+  <section v-if="visible" class="feature-card closing-panel" :class="{ 'closing-panel-act': part === 'act' }">
     <h3 v-if="part === 'all'">Выдача ТС и закрывающие документы</h3>
 
-    <!-- Акт передачи ТС -->
+    <!-- Приём ТС от СТО на Заказчика: лист приёма-передачи ТС (APP-…/2) -->
     <div v-if="showAct" class="closing-block">
       <div class="closing-head">
         <div>
-          <strong>Акт передачи ТС {{ act.number }}</strong>
-          <small>от {{ formatDate(act.date) }}</small>
+          <h3 v-if="part === 'act'">Приём ТС от СТО на Заказчика</h3>
+          <strong v-else>Лист приёма-передачи ТС {{ act.number }}</strong>
+          <small>Лист приёма-передачи ТС {{ act.number }} от {{ formatDate(act.date) }}</small>
         </div>
         <span class="closing-state" :class="{ done: act.driverDocumentsVerified }">
-          {{ act.driverDocumentsVerified ? 'Подписан водителем, документы сверены' : 'Ожидает подписи водителя' }}
+          {{ act.driverDocumentsVerified ? 'Подписанный лист загружен, доверенность сверена' : 'Ожидает подписанного листа' }}
         </span>
-        <button type="button" class="ghost-btn" :disabled="busy" @click="download(act)">PDF</button>
+      </div>
+      <div class="closing-actions">
+        <button type="button" class="ghost-btn" :disabled="busy" @click="download(act)">Выгрузить в PDF</button>
+        <button type="button" class="ghost-btn" :disabled="busy" @click="printDoc(act)">Распечатать</button>
+        <small class="muted">Стороны, водитель, ТС и доверенность заполняются автоматически; пробег, отметки и подписи — от руки.</small>
       </div>
 
       <dl class="closing-facts">
@@ -163,27 +179,28 @@ async function download(doc) {
 
       <form v-if="permissions.canSignTransferAct" class="closing-sign" @submit.prevent="sign">
         <p class="muted">
-          Распечатайте акт, передайте ТС водителю и загрузите скан акта с его
-          подписью. Перед выдачей сверьте паспорт и водительское удостоверение
+          Распечатайте лист, передайте ТС водителю и загрузите скан листа с
+          подписями. Перед выдачей сверьте паспорт и водительское удостоверение
           водителя с доверенностью {{ act.powerOfAttorney?.number }}.
         </p>
         <div class="closing-sign-row">
-          <label class="ghost-btn closing-upload">
-            Загрузить скан акта
-            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" :disabled="busy" @change="upload" />
-          </label>
-          <select v-if="signedFiles.length" v-model="signedFileId" :disabled="busy" aria-label="Скан подписанного акта">
+          <button type="button" class="ghost-btn" :disabled="busy" @click="fileInput?.click()">
+            Загрузить подписанный лист
+          </button>
+          <input ref="fileInput" type="file" hidden accept="application/pdf,image/jpeg,image/png,image/webp" @change="upload" />
+          <select v-if="signedFiles.length" v-model="signedFileId" :disabled="busy" aria-label="Подписанный лист приёма-передачи">
             <option v-for="file in signedFiles" :key="file.id" :value="file.id">{{ file.name }}</option>
           </select>
-          <span v-else class="muted">Скан ещё не загружен</span>
+          <span v-else class="muted">Лист ещё не загружен</span>
         </div>
         <label class="closing-check">
           <input v-model="driverVerified" type="checkbox" :disabled="busy" />
-          Документы водителя {{ act.driver?.fullName }} сверены с доверенностью {{ act.powerOfAttorney?.number }}
+          Лицо, которому передаётся ТС, сверено с действующей доверенностью
+          <template v-if="act.powerOfAttorney?.number">{{ act.powerOfAttorney.number }}<template v-if="act.driver?.fullName"> ({{ act.driver.fullName }})</template></template>
         </label>
         <div class="closing-actions">
           <button class="primary-btn" :disabled="busy || !signedFileId || !driverVerified">
-            Подтвердить выдачу ТС
+            Прикрепить лист к ЗР
           </button>
           <button
             v-if="permissions.canGenerateDocuments"
@@ -192,11 +209,11 @@ async function download(doc) {
             :disabled="busy"
             @click="run('generateDocuments')"
           >
-            Переформировать акт
+            Переформировать лист
           </button>
         </div>
         <p v-if="act.driverDocumentsVerified" class="info-banner">
-          Выдача подтверждена. Нажмите «Далее по маршруту» — ЗР перейдёт в УК
+          Лист прикреплён. Нажмите «Далее по маршруту» — ЗР перейдёт в УК
           на этап «Выдан. Подготовка документов».
         </p>
       </form>
@@ -310,7 +327,10 @@ async function download(doc) {
 .closing-facts dt { font-size: 12px; color: var(--muted); }
 .closing-facts dd { margin: 2px 0 0; font-weight: 600; }
 .closing-sign { display: grid; gap: 10px; }
-.closing-sign p { margin: 0; }
+.closing-sign p { margin: 0; font-size: 13px; }
+.closing-panel-act { padding: 0; border: 0; background: none; }
+.closing-panel-act .closing-block { padding: 20px; border: 1px solid #c0d5f0; border-radius: 12px; background: #fff; }
+.closing-head h3 { margin: 0; }
 .closing-sign-row, .closing-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .closing-upload { position: relative; cursor: pointer; }
 .closing-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

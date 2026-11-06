@@ -197,6 +197,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::prefix('requests/{id}')->name('closing.')->group(function (): void {
         Route::post('/documents/generate', [ClosingDocumentController::class, 'generate'])->name('documents.generate');
         Route::post('/transfer-act/signed', [ClosingDocumentController::class, 'signTransferAct'])->name('transfer-act.signed');
+        Route::get('/handover-sheet/{direction}', [ClosingDocumentController::class, 'handoverSheet'])->whereIn('direction', ['in', 'out'])->name('handover-sheet');
         Route::post('/payments/customer', [ClosingDocumentController::class, 'customerPayment'])->name('payments.customer');
         Route::post('/payments/station', [ClosingDocumentController::class, 'stationPayment'])->name('payments.station');
     });

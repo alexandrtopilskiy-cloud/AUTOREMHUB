@@ -195,7 +195,6 @@ final class Workflow
                 && !$advanceBlockedByWorkChange
                 && !$isStationDecision
                 && !$isCustomerSlotDecision
-                && !$isVehicleAcceptance
                 && $stage !== RepairStage::Closed,
             // ТС уже выдано (7) и оплата СТО (9) — возврат не предусмотрен.
             // «Ожидание ТС на СТО» (4): СТО может вернуть ЗР Заказчику на

@@ -1362,28 +1362,25 @@ final class RepairRequestService
             throw new ApiException(409, 'ACCEPTANCE_ACT_LOCKED', 'Акт приёма уже сохранён и недоступен для изменения');
         }
 
-        $attachment = null;
-        if ($dto->mode === 'uploaded') {
-            if ($dto->attachmentId === null) {
-                Input::fail('Прикрепите заполненный акт приёма', 'attachmentId');
-            }
-            $attachment = $this->attachmentIds(
-                $request,
-                [$dto->attachmentId],
-                AttachmentPurpose::AcceptanceAct,
-                true,
-            )[0];
-        } elseif (trim((string) $dto->condition) === '' || empty($dto->fuelLevel)) {
-            Input::fail('Для электронного акта укажите уровень топлива и состояние ТС');
+        // Приём ТС от Заказчика на СТО фиксируется только подписанным
+        // сторонами листом приёма-передачи ТС (скан или фото).
+        if ($dto->mode !== 'uploaded' || $dto->attachmentId === null) {
+            Input::fail('Загрузите подписанный лист приёма-передачи ТС', 'attachmentId');
         }
+        $attachment = $this->attachmentIds(
+            $request,
+            [$dto->attachmentId],
+            AttachmentPurpose::AcceptanceAct,
+            true,
+        )[0];
 
         $act = VehicleAcceptanceAct::query()->create([
             'repair_request_id' => $request->id,
             'station_id'        => $request->assigned_station_id,
             'created_by'        => $user->id,
             'attachment_id'     => $attachment?->id,
-            'number'            => $request->numberWithPrefix('APP'),
-            'mode'              => $dto->mode,
+            'number'            => $request->numberWithPrefix('APP') . '/1',
+            'mode'              => 'uploaded',
             'vehicle_snapshot'  => [
                 'make'  => $request->vehicleRecord?->make,
                 'model' => $request->vehicleRecord?->model,
@@ -1400,25 +1397,15 @@ final class RepairRequestService
             'locked_at'         => now(),
         ]);
 
-        $from = $request->stage;
-        $this->moveToStage($request, $user, RepairStage::RepairInProgress);
-
+        // Этап не меняется: СТО переводит ЗР «В работу» кнопкой
+        // «Далее по маршруту» после загрузки листа приёма-передачи.
         return [
-            'comment' => 'Сохранён акт приёма ТС ' . $act->number . '. Заявка передана в работу',
+            'comment' => 'Загружен подписанный лист приёма-передачи ТС ' . $act->number . ' (приём ТС от Заказчика на СТО)',
             'details' => [
-                'from'            => $from->value,
-                'to'              => RepairStage::RepairInProgress->value,
                 'acceptanceActId' => $act->uuid,
             ],
-            'after' => function (RequestEvent $event) use ($request, $attachment, $act): void {
-                if ($attachment !== null) {
-                    $attachment->update(['request_event_id' => $event->id]);
-                }
-                $this->notifyWorkStarted($request, $event->id);
-
-                DB::afterCommit(function () use ($request, $act): void {
-                    VehicleAccepted::dispatch($request, $act);
-                });
+            'after' => function (RequestEvent $event) use ($attachment): void {
+                $attachment->update(['request_event_id' => $event->id]);
             },
         ];
     }
@@ -1529,8 +1516,9 @@ final class RepairRequestService
         $isManagerDecision = $user->role === UserRole::Manager;
 
         // Выдача ТС (6 → 7) подтверждается подписанным актом передачи ТС.
+        // Приём ТС на СТО (4 → 5) подтверждается подписанным листом приёма-передачи.
         $isVehicleHandover = $transition === TransitionAction::Next
-            && $request->stage === RepairStage::Ready;
+            && in_array($request->stage, [RepairStage::WaitingVehicle, RepairStage::Ready], true);
 
         $requiresComment = (!$isInitialSubmission && !$isManagerDecision && !$isVehicleHandover) || ($isManagerDecision && $request->review_context === ReviewContext::StationChanges && $transition === TransitionAction::Return);
 
@@ -1747,6 +1735,20 @@ final class RepairRequestService
                 && $request->stage === RepairStage::CustomerApproval
             ) {
                 $this->notifyCustomerReturnedFromWaitingVehicle($request, $event->id, $context->comment);
+            }
+
+            if (
+                $context->action === TransitionAction::Next
+                && $context->from === RepairStage::WaitingVehicle
+                && $request->stage === RepairStage::RepairInProgress
+            ) {
+                $this->notifyWorkStarted($request, $event->id);
+                $act = $request->acceptanceAct()->first();
+                if ($act !== null) {
+                    DB::afterCommit(function () use ($request, $act): void {
+                        VehicleAccepted::dispatch($request, $act);
+                    });
+                }
             }
 
             if ($context->isReadyForIssue) {
@@ -2220,6 +2222,10 @@ final class RepairRequestService
             $this->validateManagerReviewStage($request);
         }
 
+        if ($stage === RepairStage::WaitingVehicle && !$request->acceptanceAct()->exists()) {
+            Input::fail('Загрузите подписанный лист приёма-передачи ТС в блок «Приём ТС от Заказчика на СТО»');
+        }
+
         if ($stage === RepairStage::RepairInProgress) {
             if (app(WorkChangeService::class)->hasPendingChanges($request)) {
                 Input::fail('Изменения работ и запчастей не согласованы. Отправьте их на согласование или отмените.');
@@ -2241,7 +2247,7 @@ final class RepairRequestService
         }
 
         if ($stage === RepairStage::Ready && !$this->closingDocuments->isTransferActSigned($request)) {
-            Input::fail('Загрузите подписанный водителем акт передачи ТС и подтвердите сверку документов водителя с доверенностью');
+            Input::fail('Загрузите подписанный лист приёма-передачи ТС в блок «Приём ТС от СТО на Заказчика» и подтвердите, что лицо, которому передаётся ТС, сверено с действующей доверенностью');
         }
 
         if ($stage === RepairStage::Issued && !$this->closingDocuments->hasClosingDocuments($request)) {

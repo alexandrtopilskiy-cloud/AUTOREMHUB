@@ -1193,6 +1193,26 @@ export const marketplaceApi = {
     },
 
     /**
+     * Предзаполненный «Лист приёма-передачи ТС» (PDF для печати и подписи).
+     *
+     * @param {string} key ЗР
+     * @param {"in"|"out"} direction in — приём ТС на СТО, out — передача ТС Заказчику
+     * @returns {Promise<Blob>}
+     */
+    async handoverSheetPdf(key, direction) {
+        const response = await fetch(
+            `${apiConfig.baseUrl}/requests/${encodeId(key)}/handover-sheet/${encodeId(direction)}`,
+            { headers: { Authorization: `Bearer ${http.getToken()}` } },
+        );
+
+        if (!response.ok) {
+            throw new ApiError("Не удалось сформировать лист приёма-передачи ТС", response.status);
+        }
+
+        return response.blob();
+    },
+
+    /**
      * PDF документа по заявке.
      *
      * @param {string} documentId

@@ -419,13 +419,6 @@ async function selectTab(key) {
   window.scrollTo?.(0, 0);
 }
 const closingDocuments = computed(() => props.request.closing?.documents || []);
-const hasActs = computed(() =>
-  Boolean(
-    props.request.acceptanceAct ||
-      props.request.permissions?.canAcceptVehicle ||
-      props.request.closing?.transferAct,
-  ),
-);
 const hasClosingDocuments = computed(() =>
   closingDocuments.value.length > 0 ||
   (props.request.permissions?.canGenerateDocuments === true && props.request.stage === 7),
@@ -1651,7 +1644,6 @@ onMounted(() => {
                 <th v-if="!customerDraftWorks" class="num-column">Норма времени, ч</th>
                 <th v-if="!customerDraftWorks" class="num-column">Стоимость нормо/часа, ₽</th>
                 <th class="num-column work-qty-column">Кратность</th>
-                <th v-if="!customerDraftWorks" class="num-column">Стоимость, ₽</th>
                 <th
                   v-if="showAgentDiscount && !customerDraftWorks"
                   class="num-column agent-discount-column"
@@ -1659,6 +1651,7 @@ onMounted(() => {
                 >
                   Агентская скидка, ₽
                 </th>
+                <th v-if="!customerDraftWorks" class="num-column">Стоимость, ₽</th>
                 <th class="row-command-column" />
               </tr>
             </thead>
@@ -1737,16 +1730,16 @@ onMounted(() => {
                   <span v-else>{{ work.qty == null || work.qty === '' ? '—' : formatHours(work.qty) }}</span>
                 </td>
 
-                <td v-if="!customerDraftWorks" class="num-cell">
-                  {{ workAmount(work) == null ? '—' : money(workAmount(work)) }}
-                </td>
-
                 <td
                   v-if="showAgentDiscount && !customerDraftWorks"
                   class="num-cell agent-discount-cell"
                   :title="lineAgentPercent(work) == null ? '' : `${lineAgentPercent(work)}% из реквизитов СТО`"
                 >
                   {{ workAgentDiscount(work) == null ? '—' : money(workAgentDiscount(work)) }}
+                </td>
+
+                <td v-if="!customerDraftWorks" class="num-cell">
+                  {{ workAmount(work) == null ? '—' : money(workAmount(work)) }}
                 </td>
 
                 <td class="row-command-column">
@@ -1770,8 +1763,8 @@ onMounted(() => {
                 <td class="num-cell">{{ formatHours(worksTotals.hours) }}</td>
                 <td />
                 <td />
-                <td class="num-cell">{{ money(worksTotals.amount) }}</td>
                 <td v-if="showAgentDiscount" class="num-cell">{{ money(worksTotals.discount) }}</td>
+                <td class="num-cell">{{ money(worksTotals.amount) }}</td>
                 <td />
               </tr>
             </tfoot>
@@ -1873,22 +1866,34 @@ onMounted(() => {
     </div>
 
     <div v-show="activeTab === 'acts'" id="zr-tab-acts" class="zr-tab-panel" role="tabpanel">
-      <!-- Приём ТС -->
+      <!-- Приём ТС от Заказчика на СТО (APP-…/1) -->
       <AcceptanceActPanel
         :request="request"
         :busy="busy"
         :perform="perform"
       />
 
+      <!-- Приём ТС от СТО на Заказчика (APP-…/2) -->
       <ClosingPanel
+        v-if="request.closing?.transferAct"
         :request="request"
         :busy="busy"
         :perform="perform"
         part="act"
       />
-      <p v-if="!hasActs" class="muted zr-tab-empty">
-        Акты появятся после приёма ТС на СТО.
-      </p>
+      <section v-else class="feature-card handover-block">
+        <div class="handover-head">
+          <div>
+            <h3>Приём ТС от СТО на Заказчика</h3>
+            <small>Лист приёма-передачи ТС</small>
+          </div>
+          <span class="handover-state muted-state">Этап «ТС готово к выдаче Заказчику»</span>
+        </div>
+        <p class="muted handover-note">
+          Лист сформируется автоматически, когда СТО завершит работы и ЗР перейдёт
+          на этап «ТС готово к выдаче Заказчику».
+        </p>
+      </section>
     </div>
 
     <div v-show="activeTab === 'documents'" id="zr-tab-documents" class="zr-tab-panel" role="tabpanel">
@@ -2023,10 +2028,11 @@ onMounted(() => {
           При согласии заявка перейдёт в «Ожидание ТС на СТО»; иное время вернётся в УК
         </small>
         <small v-else-if="isStation && request.stage === 4 && request.permissions.canReturn">
-          Оформите приём ТС или верните заявку Заказчику на согласование (комментарий обязателен)
+          Загрузите подписанный лист приёма-передачи на вкладке «Акты приёма-передачи» и нажмите «Далее по маршруту»
+          или верните заявку Заказчику на согласование (комментарий обязателен)
         </small>
         <small v-else-if="isStation && request.stage === 6">
-          Сначала подтвердите выдачу ТС подписанным актом передачи
+          Загрузите подписанный лист в блок «Приём ТС от СТО на Заказчика» и подтвердите сверку с доверенностью
         </small>
         <small v-else-if="isStation">
           Комментарий обязателен; фото и видео можно приложить отдельно
@@ -2160,6 +2166,7 @@ onMounted(() => {
       :optional-decision="
         (isCustomer && request.stage === 0) ||
         (isStation && request.stage === 6) ||
+        (isStation && request.stage === 4 && transitionAction !== TRANSITION_RETURN) ||
         (isManager &&
           !(
             managerReviewingStationChanges &&

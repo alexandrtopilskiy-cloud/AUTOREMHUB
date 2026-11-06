@@ -62,6 +62,7 @@ final class ClosingDocumentService
             'repairCompletedAt' => $request->repair_completed_at?->toISOString(),
             'acceptanceAct' => $request->acceptanceAct?->number,
             'workOrder' => $request->workOrder?->number,
+            'sheet'    => $this->handoverSheet($request, 'out'),
         ];
 
         $document = $this->store($request, $user, RequestDocumentType::TransferAct, $station, $customer, '0', '0', $payload);
@@ -81,11 +82,11 @@ final class ClosingDocumentService
         $document = $request->document(RequestDocumentType::TransferAct);
 
         if ($document === null) {
-            Input::fail('Акт передачи ТС ещё не сформирован');
+            Input::fail('Лист приёма-передачи ТС (выдача) ещё не сформирован');
         }
 
         if (!$verified) {
-            Input::fail('Подтвердите, что документы водителя сверены с доверенностью', 'driverDocumentsVerified');
+            Input::fail('Подтвердите, что лицо, которому передаётся ТС, сверено с действующей доверенностью', 'driverDocumentsVerified');
         }
 
         $document->forceFill([
@@ -453,6 +454,59 @@ final class ClosingDocumentService
     }
 
     /**
+     * Данные для предзаполнения «Листа приёма-передачи ТС».
+     * in — приём ТС от Заказчика на СТО (APP-…/1), out — передача ТС от СТО Заказчику (APP-…/2).
+     *
+     * @return array<string, mixed>
+     */
+    public function handoverSheet(RepairRequest $request, string $direction): array
+    {
+        $request->loadMissing(['vehicleRecord', 'driverRecord', 'stationRecord.organization', 'customerOrganization', 'acceptanceAct', 'workOrder']);
+        $vehicle = $request->vehicleRecord;
+        $stationRecord = $request->stationRecord;
+        $in = $direction === 'in';
+
+        return [
+            'direction'     => $in ? 'in' : 'out',
+            'number'        => $in
+                ? ($request->acceptanceAct?->number ?? $request->numberWithPrefix('APP') . '/1')
+                : $request->numberWithPrefix(RequestDocumentType::TransferAct->prefix()) . RequestDocumentType::TransferAct->suffix(),
+            'date'          => $in ? $request->acceptanceAct?->created_at?->toDateString() : now()->toDateString(),
+            'requestNumber' => $request->number,
+            'workOrder'     => $request->workOrder?->number,
+            'acceptanceNumber' => $request->acceptanceAct?->number,
+            'customer'      => $this->party($request->customerOrganization),
+            'station'       => [
+                ...$this->party($stationRecord?->organization, $stationRecord?->name),
+                'address' => (string) (($stationRecord?->organization?->actual_address ?? '') ?: ($stationRecord?->address ?? '')),
+            ],
+            'driver'        => $this->driver($request),
+            'stationRepresentative' => [
+                'fullName' => (string) ($stationRecord?->contact ?? ''),
+                'phone'    => (string) ($stationRecord?->organization?->phone ?? ''),
+            ],
+            // В лист попадает только реально оформленная доверенность; иначе
+            // № и дата заполняются от руки.
+            'powerOfAttorney' => $this->issuedPowerOfAttorney($request),
+            'vehicle'       => [
+                'name'  => trim(($vehicle?->make ?? '') . ' ' . ($vehicle?->model ?? '')),
+                'plate' => (string) ($vehicle?->plate ?? ''),
+                'vin'   => (string) ($vehicle?->vin ?? ''),
+                'year'  => $vehicle?->year,
+            ],
+        ];
+    }
+
+    /** PDF предзаполненного листа приёма-передачи ТС (для печати и подписи). */
+    public function handoverSheetPdf(RepairRequest $request, string $direction): string
+    {
+        return Pdf::loadView('pdf.handover_sheet', ['sheet' => $this->handoverSheet($request, $direction)])
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans')
+            ->output();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function party(?Organization $org, ?string $fallbackName = null): array
@@ -499,6 +553,21 @@ final class ClosingDocumentService
             'number' => $edo?->number ?? $request->numberWithPrefix('DV'),
             'date'   => $edo?->document_date?->toDateString(),
             'driver' => $this->driver($request)['fullName'],
+        ];
+    }
+
+    /**
+     * Действующая доверенность Заказчика на водителя, если она оформлена в системе.
+     *
+     * @return array{number: string, date: ?string}
+     */
+    private function issuedPowerOfAttorney(RepairRequest $request): array
+    {
+        $edo = $request->edoDocument(EdoDocumentType::PowerOfAttorney);
+
+        return [
+            'number' => (string) ($edo?->number ?? ''),
+            'date'   => $edo?->document_date?->toDateString(),
         ];
     }
 

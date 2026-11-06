@@ -25,7 +25,7 @@ enum RequestDocumentType: string
     public function label(): string
     {
         return match ($this) {
-            self::TransferAct => 'Акт передачи ТС',
+            self::TransferAct => 'Лист приёма-передачи ТС (выдача)',
             self::StationWorkOrder, self::CustomerWorkOrder => 'Заказ-наряд',
             self::StationUpd, self::CustomerUpd => 'УПД',
             self::StationInvoice, self::CustomerInvoice => 'Счёт на оплату',

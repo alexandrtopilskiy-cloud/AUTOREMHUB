@@ -19,6 +19,7 @@ use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -51,7 +52,7 @@ final class ClosingDocumentController
                 if ($repairRequest->stage === RepairStage::Ready) {
                     $act = $this->documents->generateTransferAct($repairRequest, $user);
 
-                    return ['comment' => 'Сформирован акт передачи ТС ' . $act->number];
+                    return ['comment' => 'Сформирован лист приёма-передачи ТС (выдача) ' . $act->number];
                 }
 
                 $this->documents->generateClosingDocuments($repairRequest, $user);
@@ -71,7 +72,7 @@ final class ClosingDocumentController
         $verified = filter_var($request->input('driverDocumentsVerified'), FILTER_VALIDATE_BOOLEAN);
 
         if ($attachmentId === '') {
-            Input::fail('Загрузите скан подписанного акта передачи ТС', 'attachmentId');
+            Input::fail('Загрузите подписанный лист приёма-передачи ТС', 'attachmentId');
         }
 
         $repairRequest = $this->service->mutate(
@@ -85,8 +86,8 @@ final class ClosingDocumentController
                 $act = $this->documents->signTransferAct($repairRequest, $user, $file, $verified);
 
                 return [
-                    'comment' => 'Загружен подписанный акт передачи ТС ' . $act->number
-                        . '; документы водителя сверены с доверенностью',
+                    'comment' => 'Загружен подписанный лист приёма-передачи ТС ' . $act->number
+                        . ' (приём ТС от СТО на Заказчика); лицо, которому передаётся ТС, сверено с действующей доверенностью',
                     'after' => fn ($event) => $file->update(['request_event_id' => $event->id]),
                 ];
             },
@@ -123,6 +124,23 @@ final class ClosingDocumentController
         }
 
         return $this->media->download($document->attachment);
+    }
+
+    /**
+     * Предзаполненный «Лист приёма-передачи ТС» для печати:
+     * in — приём ТС от Заказчика на СТО, out — передача ТС от СТО Заказчику.
+     */
+    public function handoverSheet(Request $request, string $id, string $direction): Response
+    {
+        $repairRequest = RepairRequest::resolveFor(UserDto::fromUserModel($request->user()), $id);
+        $sheet = $this->documents->handoverSheet($repairRequest, $direction);
+        $pdf = $this->documents->handoverSheetPdf($repairRequest, $direction);
+        $name = str_replace('/', '-', (string) $sheet['number']) . ' Лист приёма-передачи ТС.pdf';
+
+        return response($pdf, 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => "inline; filename=\"handover.pdf\"; filename*=UTF-8''" . rawurlencode($name),
+        ]);
     }
 
     private function markPayment(Request $request, string $id, string $flag, RequestDocumentType $type, string $label): JsonResponse

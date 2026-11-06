@@ -94,7 +94,8 @@ final class WorkflowPermissionsTest extends TestCase
                 UserRole::Station,
             )['canReturn'],
         );
-        $this->assertFalse(
+        // «Далее по маршруту» доступна: переход проверяет лист приёма-передачи.
+        $this->assertTrue(
             $this->permissions(
                 RepairStage::WaitingVehicle->value,
                 UserRole::Station,
@@ -141,6 +142,19 @@ final class WorkflowPermissionsTest extends TestCase
         $this->assertTrue($permissions['canManageParts']);
         $this->assertTrue($permissions['canAdvance']);
         $this->assertFalse($permissions['canReturn']);
+    }
+
+    public function test_station_moves_waiting_vehicle_to_work_by_next(): void
+    {
+        $permissions = $this->permissions(
+            RepairStage::WaitingVehicle->value,
+            UserRole::Station,
+        );
+
+        // Лист приёма-передачи прикрепляется отдельно, этап меняет «Далее по маршруту».
+        $this->assertTrue($permissions['canAcceptVehicle']);
+        $this->assertTrue($permissions['canAdvance']);
+        $this->assertTrue($permissions['canReturn']);
     }
 
     public function test_closed_request_has_no_route_action(): void
