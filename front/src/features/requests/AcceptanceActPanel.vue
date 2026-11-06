@@ -137,7 +137,7 @@ export default {
             <dl v-if="act" class="handover-facts">
                 <div><dt>Подписанный лист</dt><dd>{{ act.attachmentName || act.number }}<small v-if="act.lockedAt">{{ formatDateTime(act.lockedAt) }}</small></dd></div>
                 <div><dt>Пробег при приёме</dt><dd>{{ act.mileage }} км</dd></div>
-                <div><dt>Водитель</dt><dd>{{ act.driver?.fullName || '—' }}</dd></div>
+                <div><dt>Водитель Заказчика</dt><dd>{{ act.driver?.fullName || '—' }}</dd></div>
             </dl>
 
             <form v-else-if="canAccept" class="handover-form" @submit.prevent="submit">
