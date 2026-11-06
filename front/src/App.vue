@@ -1076,7 +1076,8 @@ export default {
 
             this.releaseTabLock(id);
             this.tabs.splice(i, 1);
-            if (!this.tabs.length) this.openList();
+            // Все вкладки закрыты — показываем заставку с логотипом.
+            if (!this.tabs.length) this.activeId = "";
             else if (this.activeId === id)
                 this.activate(this.tabs[Math.max(0, i - 1)].id);
         },
@@ -1208,7 +1209,7 @@ export default {
                     if (this.tabs.length) {
                         await this.activate(this.tabs[0].id);
                     } else {
-                        await this.openList();
+                        this.activeId = "";
                     }
                 }
 
@@ -2256,6 +2257,14 @@ export default {
                             :user="user"
                             @open="openReportRow"
                         />
+                        <div v-else-if="!active" class="workspace-splash">
+                            <img
+                                src="/autoremhub-logo-3d.gif"
+                                alt="AutoRemHub"
+                                width="1080"
+                                height="620"
+                            />
+                        </div>
                     </div>
                 </template>
 
