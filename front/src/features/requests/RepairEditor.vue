@@ -1772,7 +1772,7 @@ onMounted(() => {
           </table>
         </div>
 
-        <div class="table-actions">
+        <div v-if="canWork" class="table-actions">
           <button
             v-if="canWork"
             type="button"
@@ -1785,14 +1785,6 @@ onMounted(() => {
             ＋
           </button>
 
-          <div v-if="!customerDraftWorks" class="total">
-            <span>Работы и запчасти</span>
-            <strong>{{ money(total(request)) }} ₽</strong>
-            <small v-if="showAgentDiscount" class="agent-discount-total">
-              в т.ч. агентская скидка СТО {{ money(agentDiscountTotals.discount) }} ₽ ·
-              к оплате СТО {{ money(agentDiscountTotals.station) }} ₽
-            </small>
-          </div>
         </div>
 
         <PartsPanel
@@ -1815,6 +1807,17 @@ onMounted(() => {
           v-model:selected-ids="selectedPartIds"
           @touch="touch"
         />
+        <!-- Итого по ЗР: работы и запчасти -->
+        <div v-if="!customerDraftWorks" class="table-actions repair-grand-total">
+          <div class="total">
+            <span>Итого работы и запчасти</span>
+            <strong>{{ money(total(request)) }} ₽</strong>
+            <small v-if="showAgentDiscount" class="agent-discount-total">
+              в т.ч. агентская скидка СТО {{ money(agentDiscountTotals.discount) }} ₽ ·
+              к оплате СТО {{ money(agentDiscountTotals.station) }} ₽
+            </small>
+          </div>
+        </div>
         <div class="recommendation-actions">
           <button v-if="canDefer" class="ghost-btn" :disabled="busy || dirty || !selectedPartIds.length"
             @click="deferSelected('part')"

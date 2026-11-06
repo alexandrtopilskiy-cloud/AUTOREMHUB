@@ -4169,3 +4169,6 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .vehicle-history-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 16px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid #afc9ec; border-radius: 8px; background: #f0f5fc; }
 .vehicle-history-summary dt { color: var(--muted); font-size: 12px; }
 .vehicle-history-summary dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+/* Итог ЗР (работы + запчасти) под таблицей запчастей, справа */
+.repair-grand-total { justify-content: flex-end; margin-top: 12px; padding-top: 10px; border-top: 2px solid var(--brand-navy); }
+.repair-grand-total .total { text-align: right; }
