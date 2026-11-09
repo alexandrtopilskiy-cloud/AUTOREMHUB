@@ -56,7 +56,7 @@ final class DiadocProvider implements
     public function createStructuredDocument(EdoStructuredRequest $request): EdoDocumentDto
     {
         $fileName = $request->meta['file_name'] ?? 'document.xml';
-        if (!str_ends_with($fileName, '.xml')) {
+        if (!str_ends_with($fileName, '.xml') && !str_ends_with($fileName, '.pdf')) {
             throw EdoException::remoteError(EdoProviderEnum::Diadoc->value, 'NOT_XML', 'Ожидается XML-файл');
         }
 
@@ -74,21 +74,70 @@ final class DiadocProvider implements
         ]);
 
         $fileContent = base64_decode($request->meta['file_content']);
-        $objectKey = "edo/{$document->uuid}.xml";
-        Storage::disk('local')->put($objectKey, $fileContent);
 
-        $requestPeriodId = null;
-        if (!empty($request->meta['repair_request_id'])) {
-            $repairRequest = RepairRequest::find($request->meta['repair_request_id']);
-            $requestPeriodId = $repairRequest->periods()->whereNull('exited_at')->first()?->id;
+        // 👇 В мок-режиме генерируем PDF и ставим Sended
+        if (config('edo.mock')) {
+            // 1. Сохраняем XML
+            $xmlKey = "edo/{$document->uuid}.xml";
+            Storage::disk('local')->put($xmlKey, $fileContent);
+
+            // 2. Генерируем PDF (из meta или из XML)
+            if (!empty($request->meta['pdf_content'])) {
+                $pdfContent = base64_decode($request->meta['pdf_content']);
+            } else {
+                $pdfContent = $this->convertXmlToPdf($fileContent, $document->number);
+            }
+
+            $pdfKey = "edo/{$document->uuid}.pdf";
+            Storage::disk('local')->put($pdfKey, $pdfContent);
+
+            // 3. Создаем Attachment
+            $requestPeriodId = $this->resolveRequestPeriodId($request->meta['repair_request_id'] ?? null);
+
+            $attachment = Attachment::create([
+                'uuid'                     => Str::uuid(),
+                'repair_request_id'        => $request->meta['repair_request_id'] ?? null,
+                'uploaded_by'              => auth()->id() ?? 1,
+                'request_status_period_id' => $requestPeriodId,
+                'disk'                     => 'local',
+                'object_key'               => $pdfKey,
+                'original_name'            => str_replace('.xml', '.pdf', $fileName),
+                'mime_type'                => 'application/pdf',
+                'size'                     => strlen($pdfContent),
+                'sha256'                   => hash('sha256', $pdfContent),
+                'purpose'                  => AttachmentPurpose::EdoPayload,
+            ]);
+
+            // 4. Обновляем документ
+            $document->update([
+                'status' => EdoDocumentStatus::Sended,
+                'sent_at' => now(),
+                'payload_attachment_id' => $attachment->id,
+                'meta' => array_merge($document->meta ?? [], [
+                    'local_file' => $pdfKey,
+                    'xml_content' => base64_encode($fileContent),
+                ]),
+            ]);
+
+            return new EdoDocumentDto(
+                externalId: $document->uuid,
+                externalUuid: 'mock-' . Str::uuid(),
+                type: $request->type,
+                status: EdoDocumentStatus::Sended,
+                number: $document->number,
+                date: new \DateTimeImmutable($document->document_date->format('Y-m-d')),
+                senderName: null,
+                receiverName: null,
+                content: null,
+                raw: [],
+            );
         }
 
-        // Если периода нет (например, заявка закрыта), берем последний
-        if (!$requestPeriodId && !empty($request->meta['repair_request_id'])) {
-            $requestPeriodId = RequestStatusPeriod::where('repair_request_id', $request->meta['repair_request_id'])
-                ->orderByDesc('id')
-                ->first()?->id;
-        }
+        // 🚀 РЕАЛЬНЫЙ РЕЖИМ (XML)
+        $xmlKey = "edo/{$document->uuid}.xml";
+        Storage::disk('local')->put($xmlKey, $fileContent);
+
+        $requestPeriodId = $this->resolveRequestPeriodId($request->meta['repair_request_id'] ?? null);
 
         $attachment = Attachment::create([
             'uuid'                     => Str::uuid(),
@@ -96,7 +145,7 @@ final class DiadocProvider implements
             'uploaded_by'              => auth()->id() ?? 1,
             'request_status_period_id' => $requestPeriodId,
             'disk'                     => 'local',
-            'object_key'               => $objectKey,
+            'object_key'               => $xmlKey,
             'original_name'            => $fileName,
             'mime_type'                => 'application/xml',
             'size'                     => strlen($fileContent),
@@ -106,7 +155,7 @@ final class DiadocProvider implements
 
         $document->update([
             'payload_attachment_id' => $attachment->id,
-            'meta' => array_merge($document->meta ?? [], ['local_file' => $objectKey]),
+            'meta' => array_merge($document->meta ?? [], ['local_file' => $xmlKey]),
         ]);
 
         return new EdoDocumentDto(
@@ -121,6 +170,24 @@ final class DiadocProvider implements
             content: null,
             raw: [],
         );
+    }
+
+    private function resolveRequestPeriodId(?int $repairRequestId): ?int
+    {
+        if (!$repairRequestId) {
+            return null;
+        }
+
+        $repairRequest = RepairRequest::find($repairRequestId);
+        $periodId = $repairRequest?->periods()->whereNull('exited_at')->first()?->id;
+
+        if (!$periodId) {
+            $periodId = RequestStatusPeriod::where('repair_request_id', $repairRequestId)
+            ->orderByDesc('id')
+                ->first()?->id;
+        }
+
+        return $periodId;
     }
 
     public function addAttachment(string $externalId, EdoFile $file): void
@@ -158,6 +225,9 @@ final class DiadocProvider implements
         $toBoxId = $document->counterparty?->edo_client_id;
 
         if (!$fromBoxId || !$toBoxId) {
+            Log::channel('edo')->error('BOX_ID_MISSING', [
+                'body' => 'Не заполнен edo_client_id (BoxId) у отправителя или получателя'
+            ]);
             throw EdoException::remoteError(
                 provider: EdoProviderEnum::Diadoc->value,
                 code: 'BOX_ID_MISSING',
@@ -192,7 +262,22 @@ final class DiadocProvider implements
         ];
 
         // 5. Отправляем
+        Log::channel('edo')->info('Sending to Diadoc', [
+            'url' => config('edo.providers.diadoc.base_url') . '/V3/PostMessage', // 👈 Проверяем URL
+            'fromBoxId' => $fromBoxId,
+            'toBoxId' => $toBoxId,
+            'typeNamedId' => $typeNamedId,
+            'function' => $function,
+            'version' => $version,
+            'payload' => json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+        ]);
+
         $response = $this->client->post('/V3/PostMessage', $payload, $accessToken);
+
+        Log::channel('edo')->info('Diadoc response', [
+            'status' => $response['status'] ?? 'unknown', // если decode вернул массив
+            'messageId' => $response['MessageId'] ?? null,
+        ]);
 
         $messageId = $response['MessageId'] ?? null;
         if (!$messageId) {
@@ -301,5 +386,10 @@ final class DiadocProvider implements
             fn (array $row) => $this->mapper->toDocument($row),
             $documents,
         );
+    }
+
+    public function getClient(): DiadocClient
+    {
+        return $this->client;
     }
 }

@@ -8,6 +8,7 @@ use App\DTO\UserDto;
 use App\Enums\Edo\EdoDocumentType;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
+use App\Enums\RequestDocumentType;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -310,7 +311,7 @@ final class RepairRequest extends Entity
         return $this->hasMany(RequestDocument::class);
     }
 
-    public function document(\App\Enums\RequestDocumentType $type): ?RequestDocument
+    public function document(RequestDocumentType $type): ?RequestDocument
     {
         if ($this->relationLoaded('documents')) {
             return $this->documents->first(fn (RequestDocument $doc): bool => $doc->type === $type);
@@ -345,5 +346,57 @@ final class RepairRequest extends Entity
     public function numberWithPrefix(string $prefix): string
     {
         return self::documentNumber($prefix, (int) $this->id);
+    }
+
+    /**
+     * Итоговая сумма для Заказчика (без скидки).
+     */
+    public function totalForCustomer(): string
+    {
+        $sum = '0.00';
+
+        foreach ($this->workLines()->get() as $work) {
+            $sum = bcadd($sum, (string) ($work->line_amount ?? '0.00'), 2);
+        }
+
+        foreach ($this->parts()->get() as $part) {
+            $remaining = bcsub((string) $part->quantity, (string) $part->returned_quantity, 3);
+            $sum = bcadd($sum, bcmul($remaining, (string) $part->price, 2), 2);
+        }
+
+        return $sum;
+    }
+
+    /**
+     * Итоговая сумма для СТО (с учётом агентской скидки по каждой строке).
+     */
+    public function totalForStation(): string
+    {
+        $sum = '0.00';
+
+        foreach ($this->workLines()->get() as $work) {
+            $discount = (string) ($work->agent_discount_percent ?? '0');
+            $lineTotal = (string) ($work->line_amount ?? '0.00');
+            $discountAmount = bcdiv(bcmul($lineTotal, $discount, 4), '100', 2);
+            $sum = bcadd($sum, bcsub($lineTotal, $discountAmount, 2), 2);
+        }
+
+        foreach ($this->parts()->get() as $part) {
+            $remaining = bcsub((string) $part->quantity, (string) $part->returned_quantity, 3);
+            $lineTotal = bcmul($remaining, (string) $part->price, 2);
+            $discount = (string) ($part->agent_discount_percent ?? '0');
+            $discountAmount = bcdiv(bcmul($lineTotal, $discount, 4), '100', 2);
+            $sum = bcadd($sum, bcsub($lineTotal, $discountAmount, 2), 2);
+        }
+
+        return $sum;
+    }
+
+    /**
+     * Сумма агентского вознаграждения (разница между полной и суммой для СТО).
+     */
+    public function agentFee(): string
+    {
+        return bcsub($this->totalForCustomer(), $this->totalForStation(), 2);
     }
 }

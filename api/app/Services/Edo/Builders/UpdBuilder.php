@@ -16,13 +16,15 @@ use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\WorkOrder;
+use App\Services\DocumentGeneratorService;
 use App\Services\Edo\Xml\Upd503Builder;
 use DateTimeImmutable;
 
-final class WorkOrderActBuilder
+final class UpdBuilder
 {
     public function __construct(
         private readonly Upd503Builder $xmlBuilder,
+        private readonly DocumentGeneratorService $generator, // 👈 Добавили
     ) {}
 
     public function build(
@@ -31,29 +33,40 @@ final class WorkOrderActBuilder
         EdoDocument $document,
         Organization $sender,
         Organization $receiver,
+        bool $isStationToManager = false, // 👈 Добавили флаг
     ): EdoStructuredRequest {
+        // 1. Сумма для контекста
+        $totalSum = $isStationToManager
+            ? $request->totalForStation()
+            : $request->totalForCustomer();
 
-        // 1. Собираем строки таблицы (EdoInvoiceRow)
+        // 2. Собираем строки таблицы (EdoInvoiceRow)
         $rows = [];
         foreach ($workOrder->items as $item) {
-            $totalSum = bcmul((string)$item->quantity, (string)$item->price, 2);
-            // Вычисляем НДС (20% включен в стоимость)
-            $vatSum = bcdiv(bcmul($totalSum, '20', 2), '120', 2);
-            $netSum = bcsub($totalSum, $vatSum, 2);
+            $lineTotal = bcmul((string)$item->quantity, (string)$item->price, 2);
+
+            // Если СТО -> УК, применяем скидку (берем из RequestWork/RequestPart, для простоты берем 10%)
+            if ($isStationToManager) {
+                $discount = '10'; // TODO: Брать реальную скидку
+                $lineTotal = bcsub($lineTotal, bcdiv(bcmul($lineTotal, $discount, 4), '100', 2), 2);
+            }
+
+            $vatSum = bcdiv(bcmul($lineTotal, '20', 2), '120', 2);
+            $netSum = bcsub($lineTotal, $vatSum, 2);
 
             $rows[] = new EdoInvoiceRow(
                 name: $item->name,
-                unit: '796', // 796 = шт. (ОКЕИ)
+                unit: '796',
                 amount: (string) $item->quantity,
                 price: (string) $item->price,
                 netSum: $netSum,
                 vatSum: $vatSum,
-                totalSum: $totalSum,
+                totalSum: $lineTotal,
                 vatType: '20%',
             );
         }
 
-        // 2. Собираем данные сторон (EdoPartyInfo)
+        // 3. Собираем данные сторон (EdoPartyInfo)
         $seller = new EdoPartyInfo(
             name: $sender->name,
             inn: $sender->inn,
@@ -68,22 +81,22 @@ final class WorkOrderActBuilder
             ediCode: $receiver->edo_edi_code,
         );
 
-        // 3. Формируем payload
+        // 4. Формируем payload
         $payload = new EdoInvoicePayload(
             seller: $seller,
             buyer: $buyer,
             rows: $rows,
         );
 
-        // 4. Формируем подписанта (берем директора СТО)
+        // 5. Формируем подписанта
         $signer = new EdoSignerDto(
-            lastName: 'Иванов', // 👈 Замените на реальные данные из Organization (director_name)
+            lastName: 'Иванов',
             firstName: 'Иван',
             middleName: 'Иванович',
             title: 'Директор',
         );
 
-        // 5. Генерируем XML
+        // 6. Генерируем XML
         $xmlContent = $this->xmlBuilder->build(
             payload: $payload,
             function: UpdFunction::SfDop,
@@ -94,6 +107,26 @@ final class WorkOrderActBuilder
 
         $idFile = $this->xmlBuilder->getLastGeneratedIdFile();
         $fileName = $idFile . '.xml';
+
+        // 7. Готовим данные для PDF (только для мок-режима)
+        $pdfContent = null;
+        if (config('edo.mock')) {
+            $pdfContent = $this->generator->generateUpd([
+                'title' => 'УПД',
+                'doc' => $document,
+                'payload' => [
+                    'request' => ['number' => $request->number],
+                ],
+                'number' => $document->number,
+                'date' => $document->document_date->format('d.m.Y'),
+                'seller' => $sender,
+                'buyer' => $receiver,
+                'rows' => $rows,
+                'totalSum' => $totalSum,
+                'vatSum' => bcdiv(bcmul($totalSum, '20', 2), '120', 2),
+                'basis' => 'Заказ-наряд № ' . $workOrder->number,
+            ]);
+        }
 
         return new EdoStructuredRequest(
             type: EdoDocumentType::UpdSfDop,
@@ -112,8 +145,8 @@ final class WorkOrderActBuilder
                 kpp: $receiver->kpp ?? '',
             ),
             items: $rows,
-            totalSum: (string) $workOrder->total,
-            vatSum: bcdiv(bcmul((string)$workOrder->total, '20', 2), '120', 2),
+            totalSum: $totalSum,
+            vatSum: bcdiv(bcmul($totalSum, '20', 2), '120', 2),
             vatIncluded: true,
             meta: [
                 'file_name'         => $fileName,
@@ -128,6 +161,7 @@ final class WorkOrderActBuilder
                 'work_order_number' => $workOrder->number,
                 'mileage'           => $workOrder->mileage,
                 'vehicle_info'      => $request->vehicleRecord?->toArray(),
+                'pdf_content'       => $pdfContent ? base64_encode($pdfContent) : null,
             ],
         );
     }

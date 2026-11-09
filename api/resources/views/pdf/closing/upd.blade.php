@@ -1,10 +1,38 @@
 @extends('pdf.closing._layout')
+
 @section('content')
-    <p class="muted">Статус 1 — счёт-фактура и передаточный документ (акт). Основание передачи: {{ $payload['basis'] ?? '' }}.</p>
-    @include('pdf.closing._parties', ['sellerLabel' => 'Продавец (исполнитель)', 'buyerLabel' => 'Покупатель (заказчик)'])
-    @include('pdf.closing._rows')
-    <table class="sign"><tr>
-        <td>Работы (услуги) сдал, товар передал:<br><br>____________ / {{ $payload['seller']['director'] ?? '' }}</td>
-        <td>Работы (услуги) принял, товар получил:<br><br>____________ / {{ $payload['buyer']['director'] ?? '' }}</td>
-    </tr></table>
+    <h1>Универсальный передаточный документ № {{ $number }} от {{ $date }}</h1>
+
+    <div class="parties">
+        <p><strong>Продавец:</strong> {{ $seller->name }} (ИНН: {{ $seller->inn }})</p>
+        <p><strong>Покупатель:</strong> {{ $buyer->name }} (ИНН: {{ $buyer->inn }})</p>
+    </div>
+
+    <table class="rows">
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Наименование</th>
+                <th>Кол-во</th>
+                <th>Цена</th>
+                <th>Сумма</th>
+                <th>НДС</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($rows as $index => $row)
+                <tr>
+                    <td>{{ $index + 1 }}</td>
+                    <td>{{ $row->name }}</td>
+                    <td>{{ $row->amount }}</td>
+                    <td>{{ $row->price }}</td>
+                    <td>{{ $row->totalSum }}</td>
+                    <td>{{ $row->vatSum }}</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+
+    <p><strong>Итого:</strong> {{ $totalSum }} ₽ (в т.ч. НДС: {{ $vatSum }} ₽)</p>
+    <p><strong>Основание:</strong> {{ $basis }}</p>
 @endsection

@@ -17,44 +17,29 @@ final class DocumentGeneratorService
     private const PDF_OPTION_FONT_VALUE = 'DejaVu Sans';
     private const PDF_PAPER_NAME = 'a4';
     private const PDF_PAPER_ORIENTATION = 'portrait';
+
     /**
      * Генерирует PDF счёта.
      * Возвращает бинарное содержимое файла (string).
      */
-    public function generateInvoice(RepairRequest $request, Invoice $invoice): string
+    public function generateInvoice(array $data): string
     {
-        $data = [
-            'request' => $request,
-            'invoice' => $invoice,
-            'workOrder' => $request->workOrder,
-            'customer' => $request->customerOrganization,
-            'uk' => $request->ukOrganization ?? $request->tenant, // Или как вы получаете УК
-            'date' => now()->format('d.m.Y'),
-        ];
-
-
-        $pdf = Pdf::loadView('pdf.invoice', $data)
-            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+        $pdf = Pdf::loadView('pdf.closing.invoice', $data)
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PAPER_ORIENTATION)
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
     }
 
     /**
-     * Генерирует PDF Акта выполненных работ (УПД).
+     * Генерирует PDF УПД (Универсальный передаточный документ).
+     *
+     * @param array<string, mixed> $data
      */
-    public function generateAct(RepairRequest $request, WorkOrder $workOrder): string
+    public function generateUpd(array $data): string
     {
-        $data = [
-            'request' => $request,
-            'workOrder' => $workOrder,
-            'customer' => $request->customerOrganization,
-            'station' => $request->stationRecord?->organization,
-            'date' => now()->format('d.m.Y'),
-        ];
-
-        $pdf = Pdf::loadView('pdf.act', $data)
-            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+        $pdf = Pdf::loadView('pdf.closing.upd', $data)
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PAPER_ORIENTATION)
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
@@ -140,18 +125,10 @@ final class DocumentGeneratorService
     /**
      * Отчет агента - УК -> Заказчик
      */
-    public function generateAgentReport(RepairRequest $request): string
+    public function generateAgentReport(array $data): string
     {
-        $data = [
-            'request' => $request,
-            'customer' => $request->customerOrganization,
-            'uk' => $request->ukOrganization ?? $request->tenant,
-            'workOrder' => $request->workOrder,
-            'date' => now()->format('d.m.Y'),
-        ];
-
-        $pdf = Pdf::loadView('pdf.agent_report', $data)
-            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PAPER_ORIENTATION)
+        $pdf = Pdf::loadView('pdf.closing.agent_report', $data)
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PAPER_ORIENTATION)
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();

@@ -6,6 +6,7 @@ namespace App\Services\Edo\Drivers\Diadoc;
 
 use App\Enums\Edo\EdoProvider;
 use App\Models\Organization;
+use Illuminate\Support\Facades\Log;
 
 final class DiadocClientFactory
 {
@@ -17,6 +18,7 @@ final class DiadocClientFactory
 
         $config = config('edo.providers.diadoc');
 
+        Log::info(json_encode($config));
         return new DiadocClient(
             baseUrl: $config['base_url'] ?? 'https://diadoc-api.kontur.ru',
             clientId: $config['client_id'],

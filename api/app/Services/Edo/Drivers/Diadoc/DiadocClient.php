@@ -164,6 +164,7 @@ final class DiadocClient
         }
 
         $uri = $this->baseUrl . $path;
+        Log::channel('edo')->info('SENT', ['url' => $uri]);
         $response = $this->http($token)->post($uri, $body);
 
         return $this->decode($response);
@@ -205,23 +206,23 @@ final class DiadocClient
     private function decode(Response $response): array
     {
         $body = $response->body();
-        $payload = json_decode($body, true);
-
-        if (!is_array($payload)) {
-            throw EdoException::remoteError(
-                provider: EdoProvider::Diadoc->value,
-                code: 'BAD_JSON',
-                message: "Невалидный JSON в ответе (HTTP {$response->status()})",
-            );
-        }
 
         if ($response->status() !== 200) {
             $body = $response->body();
             $payload = json_decode($body, true);
-            $message = $payload['Message'] ?? $payload['message'] ?? $body;
+            if (is_array($payload)) {
+                $message = $payload['Message'] ?? $payload['message'] ?? $body;
+            } else {
+                $message = $body;
+            }
 
             // Обрезаем, чтобы не засорять лог, но показываем начало
             $preview = substr($message, 0, 500);
+
+            Log::channel('edo')->debug('Diadoc response', [
+                'status' => $response->status(),
+                'body' => substr($body, 0, 2000), // обрезаем, чтобы не раздувать лог
+            ]);
 
             throw EdoException::remoteError(
                 provider: EdoProvider::Diadoc->value,
@@ -246,5 +247,11 @@ final class DiadocClient
                 ],
             ],
         ];
+    }
+
+    public function canPostMessage(array $payload, string $accessToken): array
+    {
+        $response = $this->post('/CanPostMessage', $payload, $accessToken);
+        return $response;
     }
 }

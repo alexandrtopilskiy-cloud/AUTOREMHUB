@@ -1,16 +1,27 @@
 @extends('pdf.closing._layout')
+
 @section('content')
-    <div class="box">
-        <span class="label">Получатель:</span> {{ $payload['seller']['name'] ?? '' }}, ИНН {{ $payload['seller']['inn'] ?? '' }}<br>
-        <span class="label">Банк:</span> {{ $payload['seller']['bank'] ?: '—' }}, БИК {{ $payload['seller']['bik'] ?: '—' }}<br>
-        <span class="label">Р/с:</span> {{ $payload['seller']['account'] ?: '—' }} · <span class="label">К/с:</span> {{ $payload['seller']['corrAccount'] ?: '—' }}
+    <h1>Счёт № {{ $number }} от {{ $date }}</h1>
+
+    <div class="parties">
+        <p><strong>От:</strong> {{ $sender->name }} (ИНН: {{ $sender->inn }})</p>
+        <p><strong>Кому:</strong> {{ $receiver->name }} (ИНН: {{ $receiver->inn }})</p>
     </div>
-    @include('pdf.closing._parties', ['sellerLabel' => 'Поставщик (исполнитель)', 'buyerLabel' => 'Покупатель (заказчик)'])
-    <p>Основание: {{ $payload['basis'] ?? '' }}</p>
-    @include('pdf.closing._rows')
-    <p><b>Всего к оплате: {{ number_format((float) ($payload['totals']['amount'] ?? 0), 2, ',', ' ') }} ₽</b></p>
-    <table class="sign"><tr>
-        <td>Руководитель: ____________ / {{ $payload['seller']['director'] ?? '' }}</td>
-        <td></td>
-    </tr></table>
+
+    <p>
+        {{ $isStationToManager
+            ? 'Оплата услуг СТО по заявке ' . $requestNumber
+            : 'Агентское вознаграждение по заявке ' . $requestNumber }}
+    </p>
+
+    <table class="total">
+        <tr>
+            <td><strong>Итого:</strong></td>
+            <td>{{ $amount }} ₽</td>
+        </tr>
+        <tr>
+            <td>В том числе НДС:</td>
+            <td>{{ $vatAmount }} ₽</td>
+        </tr>
+    </table>
 @endsection

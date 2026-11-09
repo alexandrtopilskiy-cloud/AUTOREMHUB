@@ -7,7 +7,6 @@ namespace App\Console\Commands;
 use App\Models\RepairRequest;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 final class PurgeRepairRequests extends Command
 {

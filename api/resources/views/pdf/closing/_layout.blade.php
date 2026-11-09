@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>{{ $title }} № {{ $doc->number }}</title>
+    <title>{{ $title ?? 'Документ' }} № {{ $doc->number }}</title>
     <style>
         body { font-family: 'DejaVu Sans', sans-serif; font-size: 10.5px; color: #111; }
         h1 { font-size: 15px; text-align: center; margin: 0 0 4px; }
@@ -20,8 +20,11 @@
     </style>
 </head>
 <body>
-    <h1>{{ $title }} № {{ $doc->number }}</h1>
-    <div class="sub">от {{ $doc->document_date->format('d.m.Y') }} · по заявке на ремонт {{ $payload['request']['number'] ?? '' }}</div>
+    <h1>{{ $title ?? 'Документ' }} № {{ $doc->number ?? '' }}</h1>
+    <div class="sub">
+        от {{ $doc->document_date?->format('d.m.Y') ?? '' }}
+        · по заявке на ремонт {{ $payload['request']['number'] ?? '' }}
+    </div>
     @yield('content')
 </body>
 </html>

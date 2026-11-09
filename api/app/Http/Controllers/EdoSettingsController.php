@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Services\Edo\Drivers\EdoRu\EdoRuClient;
-use App\Services\Edo\EdoActService;
 use App\Services\Edo\EdoDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +13,6 @@ final class EdoSettingsController
 {
     public function __construct(
         private readonly EdoRuClient $client,
-        private readonly EdoActService $actService,
         private readonly EdoDispatcher $dispatcher,
     ) {}
 
