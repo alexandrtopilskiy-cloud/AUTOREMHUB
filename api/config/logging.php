@@ -26,5 +26,11 @@ return [
             'driver' => 'monolog',
             'handler' => Monolog\Handler\NullHandler::class
         ],
+        'edo' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/edo.log'),
+            'level' => 'debug', // или info
+            'days' => 30,
+        ],
     ],
 ];

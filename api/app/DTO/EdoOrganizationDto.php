@@ -14,8 +14,7 @@ final readonly class EdoOrganizationDto
         public ?string $ogrn = '',
         public ?string $ediCode = null,
         public ?string $operatorCode = null,
-    ) {
-    }
+    ) {}
 
     public function hasEdiCode(): bool
     {

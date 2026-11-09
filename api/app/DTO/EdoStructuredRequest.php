@@ -22,6 +22,5 @@ final class EdoStructuredRequest
         public readonly string $vatSum,
         public readonly bool $vatIncluded,
         public readonly array $meta = [],
-    ) {
-    }
+    ) {}
 }
