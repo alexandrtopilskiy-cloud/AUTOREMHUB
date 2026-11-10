@@ -34,6 +34,8 @@ export default {
             vehicles: [],
             managers: [],
             currentManagerId: "",
+            payment: { paidOn: today(), amount: null, method: "bank", comment: "" },
+            paymentError: "",
         };
     },
     computed: {
@@ -70,6 +72,19 @@ export default {
                 qty: rows.reduce((sum, row) => sum + Number(row.qty || 0), 0),
                 amount: rows.reduce((sum, row) => sum + this.amount(row), 0),
             };
+        },
+        paymentMethods() {
+            return this.draft?.paymentMethods || [
+                { value: "bank", label: "Безналичный расчёт" },
+                { value: "cash", label: "Наличные" },
+                { value: "card", label: "Банковская карта" },
+            ];
+        },
+        paymentStatusClass() {
+            return { paid: "green", partial: "amber", unpaid: "red" }[this.draft?.paymentStatus] || "red";
+        },
+        canPay() {
+            return Boolean(this.draft?.id) && !this.tab.dirty && Number(this.draft.debt || 0) > 0;
         },
         hasMissing() {
             return !this.isReceipt && (this.draft?.items || []).some((row) => row.sufficient === false);
@@ -123,6 +138,7 @@ export default {
                 items: doc.items.map((row) => ({ ...row, _clientId: `row-${++sequence}` })),
             };
             this.tab.dirty = false;
+            this.payment.amount = Number(doc.debt || 0) || null;
         },
         emptyRow() {
             return {
@@ -237,6 +253,45 @@ export default {
                 this.busy = false;
             }
         },
+        async addPayment() {
+            if (this.busy) return;
+            this.busy = true;
+            this.paymentError = "";
+            try {
+                const { document } = await marketplaceApi.addStockDocumentPayment(this.draft.id, {
+                    paidOn: this.payment.paidOn,
+                    amount: this.payment.amount === "" || this.payment.amount === null ? null : Number(this.payment.amount),
+                    method: this.payment.method,
+                    comment: this.payment.comment || "",
+                });
+                this.accept(document);
+                this.payment.comment = "";
+                this.$emit("saved", document);
+                this.$emit("notify", "Оплата внесена");
+            } catch (error) {
+                this.paymentError = error.message;
+            } finally {
+                this.busy = false;
+            }
+        },
+        async removePayment(row) {
+            if (!window.confirm(`Удалить оплату ${this.money(row.amount)} ₽ от ${this.formatDate(row.paidOn)}?`)) return;
+            this.busy = true;
+            this.paymentError = "";
+            try {
+                const { document } = await marketplaceApi.deleteStockDocumentPayment(this.draft.id, row.id);
+                this.accept(document);
+                this.$emit("saved", document);
+                this.$emit("notify", "Оплата удалена");
+            } catch (error) {
+                this.paymentError = error.message;
+            } finally {
+                this.busy = false;
+            }
+        },
+        formatDate(value) {
+            return String(value || "").split("-").reverse().join(".");
+        },
         async command(action, message) {
             this.busy = true;
             this.error = "";
@@ -275,6 +330,7 @@ export default {
                 <h2>
                     {{ title }}
                     <span v-if="draft" class="status" :class="posted ? 'green' : 'amber'">{{ posted ? "Проведен" : "Создан" }}</span>
+                    <span v-if="draft?.id" class="status" :class="paymentStatusClass">{{ draft.paymentStatusLabel || "Не оплачен" }}</span>
                 </h2>
             </div>
         </div>
@@ -434,6 +490,64 @@ export default {
                 <span>Комментарий</span>
                 <textarea v-model="draft.comment" :disabled="!editable" rows="2" maxlength="2000" @input="touch" />
             </label>
+            <section v-if="draft.id" class="stock-payments">
+                <h3>{{ isReceipt ? "Оплата поставщику" : "Оплата от Заказчика" }}</h3>
+                <div class="stock-payment-summary">
+                    <span>Сумма документа <strong>{{ money(draft.amount || 0) }} ₽</strong></span>
+                    <span>Оплачено <strong>{{ money(draft.paid || 0) }} ₽</strong></span>
+                    <span>К оплате <strong :class="{ 'error-text': Number(draft.debt || 0) > 0 }">{{ money(draft.debt || 0) }} ₽</strong></span>
+                </div>
+                <div v-if="draft.payments?.length" class="table-wrap">
+                    <table class="stock-payment-table">
+                        <thead>
+                            <tr>
+                                <th>Дата оплаты</th>
+                                <th>Сумма, ₽</th>
+                                <th>Способ</th>
+                                <th>Комментарий</th>
+                                <th>Внёс</th>
+                                <th class="row-command-column" />
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in draft.payments" :key="row.id">
+                                <td>{{ formatDate(row.paidOn) }}</td>
+                                <td>{{ money(row.amount) }}</td>
+                                <td>{{ row.methodLabel }}</td>
+                                <td :title="row.comment">{{ row.comment || "—" }}</td>
+                                <td>{{ row.author || "—" }}</td>
+                                <td>
+                                    <button type="button" class="delete-row" title="Удалить оплату" :disabled="busy" @click="removePayment(row)">×</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p v-else class="muted">Оплат пока нет.</p>
+                <p v-if="tab.dirty && Number(draft.debt || 0) > 0" class="muted">Сохраните документ, чтобы внести оплату.</p>
+                <form v-if="canPay" class="stock-payment-form" @submit.prevent="addPayment">
+                    <label>
+                        <span>Дата оплаты</span>
+                        <input v-model="payment.paidOn" type="date" required />
+                    </label>
+                    <label>
+                        <span>Сумма, ₽</span>
+                        <input v-model.number="payment.amount" type="number" min="0.01" step="0.01" :max="draft.debt" required />
+                    </label>
+                    <label>
+                        <span>Способ оплаты</span>
+                        <select v-model="payment.method">
+                            <option v-for="item in paymentMethods" :key="item.value" :value="item.value">{{ item.label }}</option>
+                        </select>
+                    </label>
+                    <label class="stock-payment-comment">
+                        <span>Комментарий</span>
+                        <input v-model="payment.comment" maxlength="1000" placeholder="Номер платёжки, чека…" />
+                    </label>
+                    <button class="primary-btn" :disabled="busy">{{ isReceipt ? "Оплатить" : "Принять оплату" }}</button>
+                </form>
+                <p v-if="paymentError" class="error-message">{{ paymentError }}</p>
+            </section>
             <p v-if="error" class="error-message">{{ error }}</p>
             <div class="catalog-actions">
                 <template v-if="!posted">
@@ -511,6 +625,46 @@ export default {
 .table-wrap td > span.stock-badge.missing {
     background: #f9c9c4;
     color: #8f1f17;
+}
+.stock-payments {
+    margin-top: 18px;
+    display: grid;
+    gap: 10px;
+}
+.stock-payments h3 {
+    margin: 0;
+}
+.stock-payments .muted {
+    margin: 0;
+}
+.stock-payment-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--soft);
+    font-size: 14px;
+}
+.stock-payment-summary strong {
+    margin-left: 4px;
+}
+.stock-payment-table {
+    min-width: 0;
+}
+.stock-payment-form {
+    display: grid;
+    grid-template-columns: 170px 150px 200px minmax(200px, 1fr) auto;
+    gap: 10px;
+    align-items: end;
+}
+@media (max-width: 900px) {
+    .stock-payment-form {
+        grid-template-columns: 1fr 1fr;
+    }
+    .stock-payment-comment {
+        grid-column: 1 / -1;
+    }
 }
 .stock-comment {
     display: block;

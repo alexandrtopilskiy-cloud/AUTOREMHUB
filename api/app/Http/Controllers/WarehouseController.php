@@ -82,6 +82,16 @@ final class WarehouseController
         return response()->json(['document' => $this->documents->unpost($request->user(), $id)]);
     }
 
+    public function storePayment(Request $request, string $id): JsonResponse
+    {
+        return response()->json(['document' => $this->documents->addPayment($request->user(), $id, $request->all())], 201);
+    }
+
+    public function destroyPayment(Request $request, string $id, string $paymentId): JsonResponse
+    {
+        return response()->json(['document' => $this->documents->deletePayment($request->user(), $id, $paymentId)]);
+    }
+
     public function destroy(Request $request, string $id): JsonResponse
     {
         $this->documents->delete($request->user(), $id);

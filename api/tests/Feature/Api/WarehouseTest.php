@@ -225,6 +225,66 @@ final class WarehouseTest extends TestCase
         $this->assertSame(0, StockMovement::query()->count());
     }
 
+    public function test_receipt_and_sale_accept_partial_payments(): void
+    {
+        $user = $this->users['station'];
+        $warehouse = $this->warehouseId($user);
+        $receipt = $this->documents()->save($user, null, [
+            'type' => 'receipt', 'documentDate' => now()->format('Y-m-d'), 'warehouseId' => $warehouse,
+            'supplierId' => $this->supplier->uuid,
+            'items' => [['catalogPartId' => $this->catalog->uuid, 'qty' => 4, 'purchasePrice' => 250, 'salePrice' => 300]],
+        ]);
+        $this->assertSame('unpaid', $receipt['paymentStatus']);
+        $this->assertSame(1000.0, $receipt['debt']);
+
+        $paid = $this->documents()->addPayment($user, $receipt['id'], ['paidOn' => now()->format('Y-m-d'), 'amount' => 400, 'method' => 'bank', 'comment' => 'п/п 15']);
+        $this->assertSame('partial', $paid['paymentStatus']);
+        $this->assertSame('Оплачен частично', $paid['paymentStatusLabel']);
+        $this->assertSame(600.0, $paid['debt']);
+        $this->assertSame('Безналичный расчёт', $paid['payments'][0]['methodLabel']);
+
+        try {
+            $this->documents()->addPayment($user, $receipt['id'], ['paidOn' => now()->format('Y-m-d'), 'amount' => 700, 'method' => 'cash']);
+            $this->fail('Оплата больше остатка не принимается');
+        } catch (ApiException $error) {
+            $this->assertStringContainsString('больше остатка', $error->getMessage());
+        }
+        try {
+            $this->documents()->delete($user, $receipt['id']);
+            $this->fail('Документ с оплатами не удаляется');
+        } catch (ApiException $error) {
+            $this->assertStringContainsString('есть оплаты', $error->getMessage());
+        }
+        try {
+            $this->documents()->save($user, $receipt['id'], [
+                'documentDate' => now()->format('Y-m-d'), 'warehouseId' => $warehouse, 'supplierId' => $this->supplier->uuid,
+                'items' => [['catalogPartId' => $this->catalog->uuid, 'qty' => 1, 'purchasePrice' => 250, 'salePrice' => 300]],
+            ]);
+            $this->fail('Сумма документа не может стать меньше оплаченной');
+        } catch (ApiException $error) {
+            $this->assertStringContainsString('меньше уже оплаченной', $error->getMessage());
+        }
+
+        $full = $this->documents()->addPayment($user, $receipt['id'], ['paidOn' => now()->format('Y-m-d'), 'amount' => 600, 'method' => 'cash']);
+        $this->assertSame('paid', $full['paymentStatus']);
+        $this->assertSame(0.0, $full['debt']);
+        $list = $this->documents()->index($user, 'receipt');
+        $this->assertSame(1000.0, $list[0]['paid']);
+        $this->assertSame('Оплачен', $list[0]['paymentStatusLabel']);
+
+        $this->documents()->post($user, $receipt['id']);
+        $sale = $this->documents()->save($user, null, [
+            'type' => 'sale', 'documentDate' => now()->format('Y-m-d'), 'warehouseId' => $warehouse,
+            'customerId' => $this->orgs['customer']->uuid, 'vehicleId' => $this->vehicle->uuid,
+            'items' => [['catalogPartId' => $this->catalog->uuid, 'qty' => 1, 'salePrice' => null]],
+        ]);
+        $sale = $this->documents()->addPayment($user, $sale['id'], ['paidOn' => now()->format('Y-m-d'), 'amount' => 300, 'method' => 'card']);
+        $this->assertSame('paid', $sale['paymentStatus']);
+        $afterDelete = $this->documents()->deletePayment($user, $sale['id'], $sale['payments'][0]['id']);
+        $this->assertSame('unpaid', $afterDelete['paymentStatus']);
+        $this->assertSame([], $afterDelete['payments']);
+    }
+
     public function test_sale_reserves_and_highlights_missing_parts(): void
     {
         $user = $this->users['station'];

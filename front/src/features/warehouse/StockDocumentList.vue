@@ -12,6 +12,8 @@ const COLUMNS = {
         supplier: "Поставщик",
         positions: "Позиций",
         amount: "Сумма закупа, ₽",
+        paid: "Оплачено, ₽",
+        paymentStatusLabel: "Оплата",
         author: "Создал",
     },
     sale: {
@@ -23,6 +25,8 @@ const COLUMNS = {
         vehicle: "ТС",
         positions: "Позиций",
         amount: "Сумма реализации, ₽",
+        paid: "Оплачено, ₽",
+        paymentStatusLabel: "Оплата",
         author: "Создал",
     },
 };
@@ -74,7 +78,7 @@ export default {
         },
         cell(row, key) {
             if (key === "documentDate") return row.documentDate.split("-").reverse().join(".");
-            if (key === "amount") return money(row.amount);
+            if (key === "amount" || key === "paid") return money(row[key] || 0);
             return row[key] ?? "—";
         },
     },
@@ -127,6 +131,11 @@ export default {
                                 class="status"
                                 :class="row.status === 'posted' ? 'green' : 'amber'"
                             >{{ row.statusLabel }}</span>
+                            <span
+                                v-else-if="key === 'paymentStatusLabel'"
+                                class="status"
+                                :class="{ paid: 'green', partial: 'amber', unpaid: 'red' }[row.paymentStatus] || 'red'"
+                            >{{ row.paymentStatusLabel || "Не оплачен" }}</span>
                             <strong v-else-if="key === 'number'">{{ row.number }}</strong>
                             <template v-else>{{ cell(row, key) }}</template>
                         </td>

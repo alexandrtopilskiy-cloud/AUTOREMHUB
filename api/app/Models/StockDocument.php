@@ -56,6 +56,12 @@ final class StockDocument extends Entity
         return $this->hasMany(StockDocumentItem::class)->orderBy('line_no');
     }
 
+    /** @return HasMany<StockDocumentPayment, $this> */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(StockDocumentPayment::class)->orderBy('paid_on')->orderBy('id');
+    }
+
     /** @return BelongsTo<Warehouse, $this> */
     public function warehouse(): BelongsTo
     {

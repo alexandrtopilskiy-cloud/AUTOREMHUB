@@ -226,6 +226,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::delete('/documents/{id}', [WarehouseController::class, 'destroy'])->whereUuid('id')->name('documents.destroy');
         Route::post('/documents/{id}/post', [WarehouseController::class, 'post'])->whereUuid('id')->name('documents.post');
         Route::post('/documents/{id}/unpost', [WarehouseController::class, 'unpost'])->whereUuid('id')->name('documents.unpost');
+        Route::post('/documents/{id}/payments', [WarehouseController::class, 'storePayment'])->whereUuid('id')->name('documents.payments.store');
+        Route::delete('/documents/{id}/payments/{paymentId}', [WarehouseController::class, 'destroyPayment'])->whereUuid('id')->whereUuid('paymentId')->name('documents.payments.destroy');
     });
     Route::get('/requests/{id}/stock', [WarehouseController::class, 'requestStock'])->name('requests.stock');
 

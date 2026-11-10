@@ -12,6 +12,7 @@ use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\StockDocument;
 use App\Models\StockDocumentItem;
+use App\Models\StockDocumentPayment;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
@@ -45,6 +46,7 @@ final class StockDocumentService
             ->where('organization_id', $user->organization_id)
             ->where('type', $type)
             ->with(['warehouse', 'supplier', 'customer', 'vehicle', 'author', 'items'])
+            ->withSum('payments as paid_sum', 'amount')
             ->orderByDesc('document_date')
             ->orderByDesc('sequence')
             ->get()
@@ -123,6 +125,12 @@ final class StockDocumentService
                 $doc->customer_organization_id = $customer->id;
                 $doc->vehicle_id = $vehicle->id;
             }
+            $paid = $doc->exists ? $this->paidAmount($doc) : 0.0;
+            if ($paid > 0 && $doc->isDirty(['supplier_id', 'customer_organization_id'])) {
+                Input::fail($type === StockDocument::RECEIPT
+                    ? 'По документу есть оплаты — сменить поставщика нельзя. Сначала удалите оплаты.'
+                    : 'По документу есть оплаты — сменить Заказчика нельзя. Сначала удалите оплаты.');
+            }
             if (!$doc->exists) {
                 $this->assignNumber($doc);
             } else {
@@ -130,6 +138,9 @@ final class StockDocumentService
             }
             $doc->save();
             $this->replaceItems($user, $doc, $payload['items']);
+            if ($paid > 0 && $this->documentAmount($doc->fresh('items')) + 0.004 < $paid) {
+                Input::fail('Сумма документа меньше уже оплаченной (' . number_format($paid, 2, ',', ' ') . ' ₽). Сначала удалите лишние оплаты.');
+            }
 
             return $this->present($doc->fresh());
         });
@@ -221,7 +232,70 @@ final class StockDocumentService
             if ($doc->isPosted()) {
                 Input::fail('Проведённый документ удалить нельзя. Сначала отмените проведение.');
             }
+            if ($doc->payments()->exists()) {
+                Input::fail('По документу есть оплаты — удалить его нельзя. Сначала удалите оплаты.');
+            }
             $doc->delete();
+        });
+    }
+
+    /**
+     * Оплата по документу: Приход — Поставщику, Реализация — от Заказчика.
+     * Можно частями, но не больше остатка к оплате.
+     *
+     * @return array<string, mixed>
+     */
+    public function addPayment(User $user, string $id, array $payload): array
+    {
+        WarehouseService::assertAccess($user);
+
+        return DB::transaction(function () use ($user, $id, $payload): array {
+            $doc = $this->find($user, $id, true);
+            Input::validate($payload, [
+                'paidOn' => ['required', 'date_format:Y-m-d'],
+                'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000000', Input::numeric(2)],
+                'method' => ['required', 'in:' . implode(',', array_keys(StockDocumentPayment::METHODS))],
+                'comment' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            ], [], [
+                'paidOn' => 'дата оплаты',
+                'amount' => 'сумма оплаты',
+                'method' => 'способ оплаты',
+            ]);
+            $doc->load('items');
+            $debt = round($this->documentAmount($doc) - $this->paidAmount($doc), 2);
+            if ($debt <= 0) {
+                Input::fail('Документ уже оплачен полностью', 'amount');
+            }
+            $amount = round((float) $payload['amount'], 2);
+            if ($amount > $debt + 0.004) {
+                Input::fail('Сумма оплаты больше остатка к оплате (' . number_format($debt, 2, ',', ' ') . ' ₽)', 'amount');
+            }
+            $doc->payments()->create([
+                'paid_on' => $payload['paidOn'],
+                'amount' => $amount,
+                'method' => $payload['method'],
+                'comment' => trim((string) ($payload['comment'] ?? '')) ?: null,
+                'created_by' => $user->id,
+            ]);
+
+            return $this->present($doc->fresh());
+        });
+    }
+
+    /** @return array<string, mixed> */
+    public function deletePayment(User $user, string $id, string $paymentId): array
+    {
+        WarehouseService::assertAccess($user);
+
+        return DB::transaction(function () use ($user, $id, $paymentId): array {
+            $doc = $this->find($user, $id, true);
+            $payment = $doc->payments()->where('uuid', $paymentId)->first();
+            if ($payment === null) {
+                throw new ApiException(404, 'NOT_FOUND', 'Оплата не найдена');
+            }
+            $payment->delete();
+
+            return $this->present($doc->fresh());
         });
     }
 
@@ -400,6 +474,21 @@ final class StockDocumentService
         return $query;
     }
 
+    private function documentAmount(StockDocument $doc): float
+    {
+        return round((float) $doc->items->sum(fn (StockDocumentItem $item): float => (float) $item->quantity * (float) ($doc->type === StockDocument::RECEIPT ? $item->purchase_price : $item->sale_price)), 2);
+    }
+
+    private function paidAmount(StockDocument $doc): float
+    {
+        $sum = $doc->getAttribute('paid_sum');
+        if ($sum === null && !array_key_exists('paid_sum', $doc->getAttributes())) {
+            $sum = $doc->relationLoaded('payments') ? $doc->payments->sum('amount') : $doc->payments()->sum('amount');
+        }
+
+        return round((float) $sum, 2);
+    }
+
     private function find(User $user, string $id, bool $lock = false): StockDocument
     {
         WarehouseService::assertAccess($user);
@@ -435,7 +524,10 @@ final class StockDocumentService
     private function summary(StockDocument $doc): array
     {
         $items = $doc->items;
-        $amount = $items->sum(fn (StockDocumentItem $item): float => (float) $item->quantity * (float) ($doc->type === StockDocument::RECEIPT ? $item->purchase_price : $item->sale_price));
+        $amount = $this->documentAmount($doc);
+        $paid = $this->paidAmount($doc);
+        $debt = max(0.0, round($amount - $paid, 2));
+        $paymentStatus = $paid <= 0 ? 'unpaid' : ($debt > 0 ? 'partial' : 'paid');
 
         return [
             'id' => $doc->uuid,
@@ -455,6 +547,10 @@ final class StockDocumentService
             'positions' => $items->count(),
             'quantity' => round((float) $items->sum(fn ($item) => (float) $item->quantity), 3),
             'amount' => round($amount, 2),
+            'paid' => round($paid, 2),
+            'debt' => $debt,
+            'paymentStatus' => $paymentStatus,
+            'paymentStatusLabel' => ['unpaid' => 'Не оплачен', 'partial' => 'Оплачен частично', 'paid' => 'Оплачен'][$paymentStatus],
             'author' => $doc->author ? ($doc->author->fullName() ?: $doc->author->login) : '',
             'createdAt' => $doc->created_at?->toISOString(),
             'postedAt' => $doc->posted_at?->toISOString(),
@@ -465,7 +561,7 @@ final class StockDocumentService
     /** @return array<string, mixed> */
     private function present(StockDocument $doc): array
     {
-        $doc->load(['warehouse', 'supplier', 'customer', 'vehicle', 'author', 'items.catalogPart', 'items.manager']);
+        $doc->load(['warehouse', 'supplier', 'customer', 'vehicle', 'author', 'items.catalogPart', 'items.manager', 'payments.author']);
         $states = [];
         $warehouseStock = [];
         if ($doc->type === StockDocument::SALE) {
@@ -478,6 +574,17 @@ final class StockDocumentService
         return [
             ...$this->summary($doc),
             'comment' => (string) ($doc->comment ?? ''),
+            'payments' => $doc->payments->map(fn (StockDocumentPayment $payment): array => [
+                'id' => $payment->uuid,
+                'paidOn' => $payment->paid_on->format('Y-m-d'),
+                'amount' => (float) $payment->amount,
+                'method' => $payment->method,
+                'methodLabel' => StockDocumentPayment::METHODS[$payment->method] ?? $payment->method,
+                'comment' => (string) ($payment->comment ?? ''),
+                'author' => $payment->author ? ($payment->author->fullName() ?: $payment->author->login) : '',
+                'createdAt' => $payment->created_at?->toISOString(),
+            ])->all(),
+            'paymentMethods' => collect(StockDocumentPayment::METHODS)->map(fn (string $label, string $value): array => ['value' => $value, 'label' => $label])->values()->all(),
             'items' => $doc->items->map(function (StockDocumentItem $item) use ($doc, $states, $warehouseStock, &$needByPart): array {
                 $part = $item->catalogPart;
                 $row = [

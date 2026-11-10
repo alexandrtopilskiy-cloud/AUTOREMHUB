@@ -1302,6 +1302,12 @@ export const marketplaceApi = {
     unpostStockDocument(id) {
         return http.request(`/warehouse/documents/${encodeId(id)}/unpost`, { method: "POST" });
     },
+    addStockDocumentPayment(id, payment) {
+        return http.request(`/warehouse/documents/${encodeId(id)}/payments`, { method: "POST", body: payment });
+    },
+    deleteStockDocumentPayment(id, paymentId) {
+        return http.request(`/warehouse/documents/${encodeId(id)}/payments/${encodeId(paymentId)}`, { method: "DELETE" });
+    },
     deleteStockDocument(id) {
         return http.request(`/warehouse/documents/${encodeId(id)}`, { method: "DELETE" });
     },
