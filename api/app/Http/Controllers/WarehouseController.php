@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\DTO\UserDto;
+use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\RepairRequest;
+use App\Models\Station;
 use App\Services\StockDocumentService;
 use App\Services\StockService;
 use App\Services\WarehouseService;
@@ -120,9 +122,24 @@ final class WarehouseController
         if ($user->role === UserRole::Customer) {
             throw new ApiException(403, 'FORBIDDEN', 'Складские остатки Заказчику недоступны');
         }
-        $document = RepairRequest::resolveFor(UserDto::fromUserModel($user), $id);
-        $document->loadMissing(['parts', 'stationRecord']);
+        if ($id === 'new') {
+            $document = new RepairRequest();
+            $document->stage = RepairStage::Draft;
+            $document->setRelation('parts', collect());
+        } else {
+            $document = RepairRequest::resolveFor(UserDto::fromUserModel($user), $id);
+            $document->loadMissing(['parts', 'stationRecord']);
+        }
+        if (!$request->has('stationId')) {
+            return response()->json($id === 'new' ? $stock->stockFor($document, null) : $stock->requestStock($document));
+        }
+        // СТО, выбранная в форме, но ещё не сохранённая в ЗР.
+        $stationId = (string) $request->query('stationId', '');
+        $organizationId = $stationId === '' ? null : Station::query()
+            ->where('tenant_id', $user->tenantId())
+            ->where('uuid', $stationId)
+            ->value('organization_id');
 
-        return response()->json($stock->requestStock($document));
+        return response()->json($stock->stockFor($document, $organizationId !== null ? (int) $organizationId : null));
     }
 }

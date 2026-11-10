@@ -60,15 +60,27 @@ const placeholder = ref(emptyPart());
 /* Складской учёт: наличие ЗЧ на складах СТО, назначенной в ЗР (не для Заказчика). */
 const stock = ref(null);
 async function loadStock() {
-    if (props.customerView || !props.request.id) return;
+    if (props.customerView) return;
     try {
-        stock.value = await marketplaceApi.requestStock(props.request.id);
+        // СТО берётся из формы: она может быть выбрана, но ещё не сохранена.
+        stock.value = await marketplaceApi.requestStock(props.request.id, props.request.stationId);
     } catch {
         stock.value = null;
     }
+    fillStockPrices();
+}
+/* Строки, выбранные до загрузки остатков (или до выбора СТО), получают цену склада. */
+function fillStockPrices() {
+    if (!stock.value?.available) return;
+    for (const row of props.request.parts || []) {
+        const info = stock.value.parts[row.catalogPartId];
+        if (!info || !editable(row) || (row.id && !row._stockDirty) || Number(row.price || 0) > 0) continue;
+        if (info.salePrice != null) row.price = info.salePrice;
+        if (!row.supplierId && info.supplierId) row.supplierId = info.supplierId;
+    }
 }
 onMounted(loadStock);
-watch(() => [props.request.revision, props.request.stationId], loadStock);
+watch(() => [props.request.id, props.request.revision, props.request.stationId], loadStock);
 function stockQty(value) {
     return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 }

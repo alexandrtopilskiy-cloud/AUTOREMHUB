@@ -1319,8 +1319,9 @@ export const marketplaceApi = {
         if (warehouseId) query.set("warehouseId", warehouseId);
         return http.request(`/warehouse/balance?${query}`);
     },
-    requestStock(key) {
-        return http.request(`/requests/${encodeId(key)}/stock`);
+    requestStock(key, stationId) {
+        const query = stationId === undefined || stationId === null ? "" : `?stationId=${encodeURIComponent(stationId)}`;
+        return http.request(key ? `/requests/${encodeId(key)}/stock${query}` : `/warehouse/station-stock${query}`);
     },
 
     /* ─── Вложения ─── */

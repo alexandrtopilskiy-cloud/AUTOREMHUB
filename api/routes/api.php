@@ -231,6 +231,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::delete('/documents/{id}/payments/{paymentId}', [WarehouseController::class, 'destroyPayment'])->whereUuid('id')->whereUuid('paymentId')->name('documents.payments.destroy');
     });
     Route::get('/requests/{id}/stock', [WarehouseController::class, 'requestStock'])->name('requests.stock');
+    Route::get('/warehouse/station-stock', [WarehouseController::class, 'requestStock'])->defaults('id', 'new')->name('warehouse.station-stock');
 
     Route::prefix('edo')->name('edo.')->group(function (): void {
         Route::post('/connect', [EdoSettingsController::class, 'connect']);

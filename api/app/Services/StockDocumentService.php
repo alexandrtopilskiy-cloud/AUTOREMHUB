@@ -441,8 +441,9 @@ final class StockDocumentService
 
     private function assignNumber(StockDocument $doc): void
     {
-        DB::select('SELECT pg_advisory_xact_lock(?)', [crc32('stock_documents:' . $doc->tenant_id . ':' . $doc->type)]);
-        $sequence = (int) StockDocument::query()->where('tenant_id', $doc->tenant_id)->where('type', $doc->type)->max('sequence') + 1;
+        // Свой счётчик у каждой организации (УК и каждая СТО ведут свой складской учёт).
+        DB::select('SELECT pg_advisory_xact_lock(?)', [crc32('stock_documents:' . $doc->organization_id . ':' . $doc->type)]);
+        $sequence = (int) StockDocument::query()->where('organization_id', $doc->organization_id)->where('type', $doc->type)->max('sequence') + 1;
         $doc->sequence = $sequence;
         $doc->number = StockDocument::prefix($doc->type) . str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
     }
