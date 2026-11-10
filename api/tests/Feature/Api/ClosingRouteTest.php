@@ -281,6 +281,29 @@ final class ClosingRouteTest extends TestCase
         $this->assertSame(now()->toDateString(), $row['customerPaidAt']);
         $this->assertNotNull($row['stationPaidAt']);
         $this->assertSame(150.0, (float) $row['agentDiscount']);
+
+        // 10. ДДС: оплаты из «Взаиморасчётов» ЗР с точки зрения каждой организации.
+        $this->actingAs($this->users['manager']);
+        $flow = $this->get('/api/reports/cash-flow')->assertOk()->json();
+        $this->assertCount(2, $flow['rows']);
+        $byArticle = array_column($flow['rows'], null, 'article');
+        $this->assertSame('in', $byArticle['customer_payment']['direction']);
+        $this->assertSame(1500.0, (float) $byArticle['customer_payment']['amount']);
+        $this->assertSame('ООО "Альфа"', $byArticle['customer_payment']['counterparty']);
+        $this->assertSame('out', $byArticle['station_payment']['direction']);
+        $this->assertSame(1350.0, (float) $byArticle['station_payment']['amount']);
+        $this->assertSame($request['number'], $byArticle['station_payment']['requestNumber']);
+        $this->assertContains('receipt_payment', array_column($flow['articles'], 'value'));
+
+        $this->actingAs($this->users['station']);
+        $rows = $this->get('/api/reports/cash-flow')->assertOk()->json('rows');
+        $this->assertCount(1, $rows);
+        $this->assertSame(['in', 'station_payment', 1350.0, ''], [$rows[0]['direction'], $rows[0]['article'], (float) $rows[0]['amount'], $rows[0]['customer']]);
+
+        $this->actingAs($this->users['customer']);
+        $rows = $this->get('/api/reports/cash-flow')->assertOk()->json('rows');
+        $this->assertCount(1, $rows);
+        $this->assertSame(['out', 'customer_payment', 1500.0], [$rows[0]['direction'], $rows[0]['article'], (float) $rows[0]['amount']]);
     }
 
     public function test_report_excludes_requests_before_customer_payment(): void

@@ -1979,6 +1979,52 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
+            "side menu: «Отчёты» popup with request report and cash flow (ДДС)",
+            async () => {
+                const { default: SidebarMenu } = await server.ssrLoadModule(
+                    "/src/components/SidebarMenu.vue",
+                );
+                const component = {
+                    ...SidebarMenu,
+                    data() {
+                        return { ...SidebarMenu.data.call(this), openGroup: "reports" };
+                    },
+                };
+                const ctx = {};
+                const html = await renderToString(
+                    createSSRApp(component, {
+                        user: { role: "customer", organization: "Org", label: "User" },
+                        panel: { menu: true },
+                        active: { kind: "cash-flow" },
+                    }),
+                    ctx,
+                );
+                const popup = ctx.teleports?.body || "";
+                assert.match(html, /class="active open nav-item nav-group" data-menu-group="reports"/);
+                assert.match(popup, /Отчёт по заявкам на ремонт/);
+                assert.match(popup, /class="active catalog-popup-item"[^>]*>\s*Движение денежных средств \(ДДС\)/);
+            },
+        );
+
+        await context.test(
+            "cash flow report: saldo summary cards and columns",
+            async () => {
+                const { default: CashFlowReport } = await server.ssrLoadModule(
+                    "/src/features/reports/CashFlowReport.vue",
+                );
+                const html = await renderToString(
+                    createSSRApp(CashFlowReport, { user: { role: "manager" } }),
+                );
+                for (const label of ["Сальдо на начало", "Поступление", "Расход", "Сальдо на конец", "Текущий месяц", "Период с"]) {
+                    assert.match(html, new RegExp(label));
+                }
+                const head = html.slice(html.indexOf("cash-table"));
+                const headers = [...head.slice(0, head.indexOf("</thead>")).matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
+                assert.deepEqual(headers, ["Дата", "Статья", "Документ", "Контрагент", "Способ", "Поступление, ₽", "Расход, ₽", "Остаток, ₽"]);
+            },
+        );
+
+        await context.test(
             "side menu: Заявки, Рекомендации и Ожидают действия inside «Ремонт», EDO not in the top bar",
             async () => {
                 const { default: SidebarMenu } = await server.ssrLoadModule(

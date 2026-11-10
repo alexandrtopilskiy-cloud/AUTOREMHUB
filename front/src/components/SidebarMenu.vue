@@ -142,6 +142,7 @@ export default {
     "open-recommendations",
     "open-edo",
     "open-report",
+    "open-cash-flow",
     "open-notification",
     "open-unread-chat",
     "collapse",
@@ -185,6 +186,29 @@ export default {
         ],
       };
     },
+    /** Группа «Отчёты» — во всех ЛК; набор данных внутри отчётов зависит от ЛК. */
+    reportsGroup() {
+      const active = this.active || {};
+      return {
+        key: "reports",
+        title: "Отчёты",
+        icon: "▦",
+        items: [
+          {
+            key: "reportRequests",
+            label: "Отчёт по заявкам на ремонт",
+            emit: ["open-report"],
+            isActive: active.kind === "report",
+          },
+          {
+            key: "reportCashFlow",
+            label: "Движение денежных средств (ДДС)",
+            emit: ["open-cash-flow"],
+            isActive: active.kind === "cash-flow",
+          },
+        ],
+      };
+    },
     /** Пункты меню сверху вниз; группы, которых нет в ЛК, пропускаются. */
     entries() {
       const group = (key) => this.menuGroups.find((item) => item.key === key);
@@ -193,10 +217,10 @@ export default {
         this.repairGroup,
         group("warehouse"),
         { key: "edo", title: "Документы ЭДО", icon: "⇄", event: "open-edo", isActive: active.kind === "edo" },
-        { key: "report", title: "Отчёты", icon: "▦", event: "open-report", isActive: active.kind === "report" },
+        this.reportsGroup,
         group("catalogs"),
         group("settings"),
-        ...this.menuGroups.filter((item) => !["warehouse", "catalogs", "settings"].includes(item.key)),
+        ...this.menuGroups.filter((item) => !["warehouse", "reports", "catalogs", "settings"].includes(item.key)),
       ].filter(Boolean);
     },
     openedGroup() {

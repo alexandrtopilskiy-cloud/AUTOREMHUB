@@ -68,6 +68,12 @@ final class StockDocument extends Entity
         return $this->belongsTo(Warehouse::class);
     }
 
+    /** @return BelongsTo<Organization, $this> Организация-владелец склада (УК или СТО). */
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+
     /** @return BelongsTo<Supplier, $this> */
     public function supplier(): BelongsTo
     {
