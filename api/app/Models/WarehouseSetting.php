@@ -11,10 +11,18 @@ namespace App\Models;
  * @property string $markup_mode
  * @property string $markup_percent
  * @property array<int, array{from: float|null, to: float|null, percent: float}> $markup_tiers
+ * @property string $cost_method fifo | lifo | average
  */
 final class WarehouseSetting extends Entity
 {
+    public const COST_METHODS = [
+        'fifo' => 'ФИФО — первым пришёл, первым списан',
+        'lifo' => 'ЛИФО — последним пришёл, первым списан',
+        'average' => 'Средневзвешенная цена',
+    ];
+
     protected $attributes = [
+        'cost_method' => 'average',
         'markup_mode' => 'flat',
         'markup_percent' => 0,
         'markup_tiers' => '[]',

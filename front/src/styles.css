@@ -4277,3 +4277,10 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
   color: #0d3a73;
   font-size: 13px;
 }
+/* ─── Карточка ЗЧ (0.42.002) ─── */
+.part-line-dialog__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; grid-column: 1 / -1; }
+.parts-grid td.part-sum-cell { font-weight: 600; }
+.parts-grid .part-draft-row { cursor: default; }
+/* Колонки ЗЧ по ширине содержимого; самая широкая — «Наименование». */
+.parts-panel .parts-grid { min-width: 780px !important; }
+.parts-panel .parts-grid.with-change-notes { min-width: 920px !important; }

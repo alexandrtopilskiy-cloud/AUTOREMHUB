@@ -1270,6 +1270,9 @@ export const marketplaceApi = {
     warehouseSettings() {
         return http.request("/warehouse/settings");
     },
+    saveWarehouseCostMethod(method) {
+        return http.request("/warehouse/settings/cost-method", { method: "PUT", body: { method } });
+    },
     saveWarehouseMarkup(markup) {
         return http.request("/warehouse/settings/markup", { method: "PUT", body: markup });
     },

@@ -182,7 +182,7 @@ final class StockDocumentService
                     Input::fail('Недостаточно ЗЧ на складе: ' . implode('; ', $missing), 'items');
                 }
                 foreach ($items as $item) {
-                    $cost = $this->stock->averageCost($doc->organization_id, $item->catalog_part_id, $doc->warehouse_id);
+                    $cost = $this->stock->issueCost($doc->organization_id, $item->catalog_part_id, $doc->warehouse_id, (float) $item->quantity);
                     $this->stock->move($doc->tenant_id, $doc->organization_id, $doc->warehouse_id, $item->catalog_part_id, -(float) $item->quantity, $cost, $at, StockMovement::SOURCE_SALE, $doc->id, $item->id);
                 }
             }
@@ -344,6 +344,8 @@ final class StockDocumentService
         return [
             'date' => $date,
             'warehouseId' => $warehouse?->uuid ?? '',
+            'costMethod' => WarehouseService::costMethod($user->organization_id),
+            'costMethodLabel' => \App\Models\WarehouseSetting::COST_METHODS[WarehouseService::costMethod($user->organization_id)],
             'rows' => $rows,
             'totals' => [
                 'incoming' => round(array_sum(array_column($rows, 'incoming')), 3),
@@ -386,7 +388,7 @@ final class StockDocumentService
             } else {
                 $purchase = null;
                 if ($sale === null || $sale === '') {
-                    $prices ??= $this->stock->lastReceiptPrices($doc->organization_id, CatalogPart::query()->whereIn('uuid', array_column($rows, 'catalogPartId'))->pluck('id')->all());
+                    $prices ??= $this->stock->nextPrices($doc->organization_id, CatalogPart::query()->whereIn('uuid', array_column($rows, 'catalogPartId'))->pluck('id')->all());
                     $sale = $prices[$part->id]['salePrice'] ?? null;
                 }
                 if ($sale === null) {

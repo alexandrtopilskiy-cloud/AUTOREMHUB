@@ -214,6 +214,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::prefix('warehouse')->name('warehouse.')->group(function (): void {
         Route::get('/settings', [WarehouseController::class, 'settings'])->name('settings');
         Route::put('/settings/markup', [WarehouseController::class, 'saveMarkup'])->name('settings.markup');
+        Route::put('/settings/cost-method', [WarehouseController::class, 'saveCostMethod'])->name('settings.cost-method');
         Route::post('/warehouses', [WarehouseController::class, 'storeWarehouse'])->name('warehouses.store');
         Route::patch('/warehouses/{id}', [WarehouseController::class, 'updateWarehouse'])->whereUuid('id')->name('warehouses.update');
         Route::delete('/warehouses/{id}', [WarehouseController::class, 'destroyWarehouse'])->whereUuid('id')->name('warehouses.destroy');

@@ -2324,8 +2324,8 @@ final class RepairRequestService
         }
 
         foreach ($request->parts()->get() as $part) {
-            if (!$part->supplier_id || trim((string) $part->name) === '' || $part->quantity <= 0) {
-                Input::fail('Укажите поставщика, название и количество каждой запчасти');
+            if (trim((string) $part->name) === '' || $part->quantity <= 0) {
+                Input::fail('Укажите название и количество каждой запчасти');
             }
         }
     }

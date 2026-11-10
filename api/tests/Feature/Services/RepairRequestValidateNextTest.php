@@ -246,10 +246,11 @@ final class RepairRequestValidateNextTest extends TestCase
                 ['acceptance', 'diagnosis', 'planned', 'work_empty_name'],
                 'Заполните названия и положительное количество работ',
             ],
-            'EstimateReview: part без supplier' => [
+            // Поставщик в ЗР не обязателен (берётся из партии склада), имя — обязательно.
+            'EstimateReview: part без названия' => [
                 self::STAGE_ESTIMATE_REVIEW,
-                ['acceptance', 'diagnosis', 'planned', 'work_valid', 'part_no_supplier'],
-                'Укажите поставщика, название и количество каждой запчасти',
+                ['acceptance', 'diagnosis', 'planned', 'work_valid', 'part_no_name'],
+                'Укажите название и количество каждой запчасти',
             ],
             'EstimateReview: ок' => [
                 self::STAGE_ESTIMATE_REVIEW,
@@ -394,7 +395,7 @@ final class RepairRequestValidateNextTest extends TestCase
                 'acceptance'       => $this->createAcceptanceAct($request),
                 'work_valid'       => $this->createWork($request, ['name' => 'Работа', 'quantity' => 1, 'price' => 100]),
                 'work_empty_name'  => $this->createWork($request, ['name' => '', 'quantity' => 1, 'price' => 100]),
-                'part_no_supplier' => $this->createPart($request, ['supplier_id' => null]),
+                'part_no_name'     => $this->createPart($request, ['name' => '']),
                 'part_ok'          => $this->createStockedPart($request),
                 'work_order'       => $this->createWorkOrder($request),
                 'transfer_act'        => $this->createDocument($request, RequestDocumentType::TransferAct),

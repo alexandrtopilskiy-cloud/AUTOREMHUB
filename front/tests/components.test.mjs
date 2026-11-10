@@ -393,7 +393,7 @@ test("Options API component rendering and interactive methods", async (context) 
 
                 assert.match(html, /aria-label="Добавить строку работы"/);
                 assert.match(html, /class="excel-grid works-grid compact-works-grid"/);
-                assert.match(html, /Запчасти и поставщики/);
+                assert.match(html, /<h3>Запчасти<\/h3>/);
                 assert.match(html, /class="excel-grid parts-grid"/);
                 assert.match(html, /Начните вводить запчасть/);
                 assert.match(html, /Комментарий к решению необязателен/);

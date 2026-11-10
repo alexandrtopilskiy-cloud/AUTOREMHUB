@@ -285,6 +285,48 @@ final class WarehouseTest extends TestCase
         $this->assertSame([], $afterDelete['payments']);
     }
 
+    public function test_cost_method_drives_prices_write_off_and_balance(): void
+    {
+        $user = $this->users['station'];
+        $part = CatalogPart::query()->create([
+            'tenant_id' => $this->catalog->tenant_id, 'name' => 'Колодки', 'article' => 'K-1', 'unit' => 'шт.',
+            'manufacturer' => 'Test', 'active' => true,
+        ]);
+        $this->stockPart($user, $part, 2, $this->supplier, 100, 150);
+        $this->stockPart($user, $part, 2, $this->supplier, 200, 300);
+        $stock = app(\App\Services\StockService::class);
+        $org = $this->orgs['station']->id;
+        $warehouses = app(WarehouseService::class);
+
+        $this->assertSame('average', $warehouses->settings($user)['costMethod']);
+        $this->assertSame(['purchasePrice' => 150.0, 'salePrice' => 225.0], array_intersect_key($stock->nextPrices($org, [$part->id])[$part->id], ['purchasePrice' => 1, 'salePrice' => 1]));
+
+        $warehouses->saveCostMethod($user, ['method' => 'fifo']);
+        $this->assertSame(150.0, $stock->nextPrices($org, [$part->id])[$part->id]['salePrice'], 'ФИФО: цена ранней партии');
+        $warehouses->saveCostMethod($user, ['method' => 'lifo']);
+        $this->assertSame(300.0, $stock->nextPrices($org, [$part->id])[$part->id]['salePrice'], 'ЛИФО: цена поздней партии');
+
+        // Реализация 1 шт. по ФИФО: себестоимость 100, следующая цена — снова ранняя партия, затем поздняя.
+        $warehouses->saveCostMethod($user, ['method' => 'fifo']);
+        $warehouse = app(WarehouseService::class)->warehouses($user)[0]['id'];
+        $sale = $this->documents()->save($user, null, [
+            'type' => 'sale', 'documentDate' => now()->format('Y-m-d'), 'warehouseId' => $warehouse,
+            'customerId' => $this->orgs['customer']->uuid, 'vehicleId' => $this->vehicle->uuid,
+            'items' => [['catalogPartId' => $part->uuid, 'qty' => 2, 'salePrice' => null]],
+        ]);
+        $this->assertSame(150.0, $sale['items'][0]['salePrice']);
+        $this->assertSame(300.0, $stock->nextPrices($org, [$part->id])[$part->id]['salePrice'], 'Ранняя партия зарезервирована');
+        $this->documents()->post($user, $sale['id']);
+        $this->assertSame(100.0, (float) StockMovement::query()->where('source_type', StockMovement::SOURCE_SALE)->where('catalog_part_id', $part->id)->value('unit_cost'));
+
+        $balance = collect($this->documents()->balance($user, now(config('sto.service_timezone'))->format('Y-m-d'), null)['rows'])->firstWhere('article', 'K-1');
+        $this->assertSame(2.0, $balance['balance']);
+        $this->assertSame(400.0, $balance['amount'], 'ФИФО: в остатке поздняя партия по 200');
+        $warehouses->saveCostMethod($user, ['method' => 'average']);
+        $balance = collect($this->documents()->balance($user, now(config('sto.service_timezone'))->format('Y-m-d'), null)['rows'])->firstWhere('article', 'K-1');
+        $this->assertSame(300.0, $balance['amount'], 'Средневзвешенная: 2 × 150');
+    }
+
     public function test_sale_reserves_and_highlights_missing_parts(): void
     {
         $user = $this->users['station'];

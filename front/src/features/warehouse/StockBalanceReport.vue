@@ -16,6 +16,8 @@ export default {
     data() {
         return {
             date: today(),
+            costMethod: "average",
+            costMethodLabel: "",
             warehouseId: "",
             warehouses: [],
             rows: [],
@@ -54,6 +56,8 @@ export default {
             try {
                 const data = await marketplaceApi.stockBalance(this.date, this.warehouseId);
                 this.rows = data.rows;
+                this.costMethod = data.costMethod || "average";
+                this.costMethodLabel = data.costMethodLabel || "";
                 this.totals = data.totals;
             } catch (error) {
                 this.error = error.message;
@@ -133,7 +137,12 @@ export default {
             <p>Остатки появляются после проведения документов Приход.</p>
         </div>
         <p class="list-hint">
-            Стоимость остатка — по средней цене закупа проведённых Приходов на дату отчёта.
+            <template v-if="costMethod === 'average'">
+                Стоимость остатка — по средневзвешенной цене закупа проведённых Приходов на дату отчёта.
+            </template>
+            <template v-else>
+                Стоимость остатка — по цене закупа оставшихся партий, метод списания: {{ costMethodLabel }}.
+            </template>
         </p>
     </div>
 </template>

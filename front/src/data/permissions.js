@@ -84,7 +84,7 @@ export function total(request) {
     const partsTotal = (request?.parts || []).reduce(
         (sum, part) =>
             sum +
-            (Number(part.qty) - Number(part.returnedQty)) * Number(part.price),
+            (Number(part.qty || 0) - Number(part.returnedQty || 0)) * Number(part.price || 0),
         0,
     );
 
