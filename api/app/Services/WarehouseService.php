@@ -38,7 +38,26 @@ final class WarehouseService
         return [
             'warehouses' => $this->warehouses($user),
             'markup' => $this->presentMarkup($setting),
+            'costMethod' => $setting->cost_method ?? 'average',
+            'costMethods' => collect(WarehouseSetting::COST_METHODS)->map(fn (string $label, string $value): array => ['value' => $value, 'label' => $label])->values()->all(),
         ];
+    }
+
+    /** Метод списания со склада: ФИФО, ЛИФО или средневзвешенная цена. */
+    public function saveCostMethod(User $user, array $payload): string
+    {
+        self::assertAccess($user);
+        Input::validate($payload, ['method' => ['required', 'in:' . implode(',', array_keys(WarehouseSetting::COST_METHODS))]], [], ['method' => 'метод списания']);
+        $setting = $this->setting($user);
+        $setting->cost_method = $payload['method'];
+        $setting->save();
+
+        return $setting->cost_method;
+    }
+
+    public static function costMethod(int $organizationId): string
+    {
+        return (string) (WarehouseSetting::query()->where('organization_id', $organizationId)->value('cost_method') ?? 'average');
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -194,7 +213,7 @@ final class WarehouseService
     {
         return DB::transaction(fn (): WarehouseSetting => WarehouseSetting::query()->firstOrCreate(
             ['organization_id' => $user->organization_id],
-            ['tenant_id' => $user->tenantId(), 'markup_mode' => 'flat', 'markup_percent' => 0, 'markup_tiers' => []],
+            ['tenant_id' => $user->tenantId(), 'markup_mode' => 'flat', 'markup_percent' => 0, 'markup_tiers' => [], 'cost_method' => 'average'],
         ));
     }
 

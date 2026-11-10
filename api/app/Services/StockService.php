@@ -142,7 +142,7 @@ final class StockService
         }
         $partIds = array_unique([...array_keys($allocation['onHand']), ...$request->parts->pluck('catalog_part_id')->filter()->all()]);
         $catalog = CatalogPart::query()->whereIn('id', $partIds)->get()->keyBy('id');
-        $prices = $this->lastReceiptPrices($organizationId, $partIds);
+        $prices = $this->nextPrices($organizationId, array_values($partIds));
         $parts = [];
         foreach ($partIds as $partId) {
             $model = $catalog->get($partId);
@@ -154,6 +154,7 @@ final class StockService
                 'onHand' => $onHand,
                 'free' => round(max(0, $onHand - ($otherReserved[$partId] ?? 0)), 3),
                 'salePrice' => $prices[$partId]['salePrice'] ?? null,
+                'purchasePrice' => $prices[$partId]['purchasePrice'] ?? null,
                 'supplierId' => $prices[$partId]['supplierId'] ?? '',
             ];
         }
@@ -219,7 +220,6 @@ final class StockService
             if ($need <= 0 || $part->catalog_part_id === null) {
                 continue;
             }
-            $cost = $this->averageCost($organizationId, (int) $part->catalog_part_id);
             $byWarehouse = StockMovement::query()
                 ->where('organization_id', $organizationId)
                 ->where('catalog_part_id', $part->catalog_part_id)
@@ -237,6 +237,7 @@ final class StockService
                 if ($take <= 0) {
                     continue;
                 }
+                $cost = $this->issueCost($organizationId, (int) $part->catalog_part_id, (int) $row->warehouse_id, $take);
                 $this->move($request->tenant_id, $organizationId, (int) $row->warehouse_id, (int) $part->catalog_part_id, -$take, $cost, now()->toImmutable(), StockMovement::SOURCE_REQUEST, $request->id, $part->id);
                 $need = round($need - $take, 3);
             }
@@ -277,6 +278,175 @@ final class StockService
             'source_id' => $sourceId,
             'source_item_id' => $sourceItemId,
         ]);
+    }
+
+    /**
+     * Партии приходов по ЗЧ в порядке оприходования: количество, цена закупа,
+     * цена реализации и поставщик. Основа ФИФО / ЛИФО.
+     *
+     * @return array<int, array<int, array{qty: float, cost: float, sale: float|null, supplierId: int|null, supplierUuid: string}>>
+     */
+    public function lots(int $organizationId, array $partIds = [], ?int $warehouseId = null, ?CarbonImmutable $until = null): array
+    {
+        $rows = DB::table('stock_movements as m')
+            ->leftJoin('stock_document_items as i', 'i.id', '=', 'm.source_item_id')
+            ->leftJoin('stock_documents as d', 'd.id', '=', 'm.source_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'd.supplier_id')
+            ->where('m.organization_id', $organizationId)
+            ->where('m.source_type', StockMovement::SOURCE_RECEIPT)
+            ->where('m.quantity', '>', 0)
+            ->when($partIds !== [], fn ($q) => $q->whereIn('m.catalog_part_id', $partIds))
+            ->when($warehouseId !== null, fn ($q) => $q->where('m.warehouse_id', $warehouseId))
+            ->when($until !== null, fn ($q) => $q->where('m.occurred_at', '<=', $until))
+            ->orderBy('m.occurred_at')
+            ->orderBy('m.id')
+            ->get(['m.catalog_part_id', 'm.quantity', 'm.unit_cost', 'i.sale_price', 's.id as supplier_id', 's.uuid as supplier_uuid']);
+        $lots = [];
+        foreach ($rows as $row) {
+            $lots[(int) $row->catalog_part_id][] = [
+                'qty' => (float) $row->quantity,
+                'cost' => (float) $row->unit_cost,
+                'sale' => $row->sale_price !== null ? (float) $row->sale_price : null,
+                'supplierId' => $row->supplier_id !== null ? (int) $row->supplier_id : null,
+                'supplierUuid' => (string) ($row->supplier_uuid ?? ''),
+            ];
+        }
+
+        return $lots;
+    }
+
+    /** @return array<int, float> catalog_part_id => списано (Реализации и ЗР) */
+    public function issued(int $organizationId, array $partIds = [], ?int $warehouseId = null, ?CarbonImmutable $until = null): array
+    {
+        return StockMovement::query()
+            ->where('organization_id', $organizationId)
+            ->where('quantity', '<', 0)
+            ->when($partIds !== [], fn ($q) => $q->whereIn('catalog_part_id', $partIds))
+            ->when($warehouseId !== null, fn ($q) => $q->where('warehouse_id', $warehouseId))
+            ->when($until !== null, fn ($q) => $q->where('occurred_at', '<=', $until))
+            ->groupBy('catalog_part_id')
+            ->selectRaw('catalog_part_id, -SUM(quantity) AS qty')
+            ->pluck('qty', 'catalog_part_id')
+            ->map(fn ($qty): float => round((float) $qty, 3))
+            ->all();
+    }
+
+    /**
+     * Остаток партий после списания $qty: ФИФО списывает с самых ранних,
+     * ЛИФО — с самых поздних. Порядок партий сохраняется.
+     *
+     * @param array<int, array<string, mixed>> $lots
+     * @return array<int, array<string, mixed>>
+     */
+    public static function remainingLots(array $lots, float $qty, string $method): array
+    {
+        $ordered = $method === 'lifo' ? array_reverse($lots) : $lots;
+        $left = [];
+        foreach ($ordered as $lot) {
+            if ($qty > self::EPS) {
+                $take = min($qty, $lot['qty']);
+                $qty -= $take;
+                $lot['qty'] = round($lot['qty'] - $take, 3);
+            }
+            if ($lot['qty'] > self::EPS) {
+                $left[] = $lot;
+            }
+        }
+
+        return $method === 'lifo' ? array_reverse($left) : $left;
+    }
+
+    /** Средневзвешенная величина поля партий (cost или sale). */
+    private static function weighted(array $lots, string $field): ?float
+    {
+        $qty = 0.0;
+        $amount = 0.0;
+        foreach ($lots as $lot) {
+            if ($lot[$field] === null) {
+                continue;
+            }
+            $qty += $lot['qty'];
+            $amount += $lot['qty'] * $lot[$field];
+        }
+
+        return $qty > 0 ? round($amount / $qty, 2) : null;
+    }
+
+    /**
+     * Себестоимость списания $qty единиц по методу организации: ФИФО —
+     * по самым ранним остаткам, ЛИФО — по самым поздним, иначе средневзвешенная.
+     */
+    public function issueCost(int $organizationId, int $partId, ?int $warehouseId, float $qty): float
+    {
+        $method = WarehouseService::costMethod($organizationId);
+        $lots = $this->lots($organizationId, [$partId], $warehouseId)[$partId] ?? [];
+        if ($method === 'average' || $lots === []) {
+            return $this->averageCost($organizationId, $partId, $warehouseId);
+        }
+        $remaining = self::remainingLots($lots, $this->issued($organizationId, [$partId], $warehouseId)[$partId] ?? 0.0, $method);
+        $taken = [];
+        $need = $qty;
+        foreach ($method === 'lifo' ? array_reverse($remaining) : $remaining as $lot) {
+            if ($need <= self::EPS) {
+                break;
+            }
+            $take = min($need, $lot['qty']);
+            $taken[] = ['qty' => $take, 'cost' => $lot['cost']];
+            $need -= $take;
+        }
+
+        return self::weighted($taken, 'cost') ?? $this->averageCost($organizationId, $partId, $warehouseId);
+    }
+
+    /**
+     * Цены для новой строки ЗР или Реализации с учётом метода списания:
+     * ФИФО — партия, которая будет списана следующей (после списанного и
+     * зарезервированного), ЛИФО — самая поздняя из оставшихся, средневзвешенная —
+     * средние цены закупа и реализации по приходам. Нет остатка — цены
+     * последнего Прихода.
+     *
+     * @return array<int, array{purchasePrice: float|null, salePrice: float|null, supplierId: string, supplierDbId: int|null}>
+     */
+    public function nextPrices(int $organizationId, array $partIds): array
+    {
+        if ($partIds === []) {
+            return [];
+        }
+        $method = WarehouseService::costMethod($organizationId);
+        $lots = $this->lots($organizationId, $partIds);
+        $issued = $this->issued($organizationId, $partIds);
+        $reserved = [];
+        foreach ($this->demands($organizationId, $partIds) as $demand) {
+            $reserved[$demand['partId']] = ($reserved[$demand['partId']] ?? 0) + $demand['qty'];
+        }
+        $last = $this->lastReceiptPrices($organizationId, $partIds);
+        $result = [];
+        foreach ($partIds as $partId) {
+            $partLots = $lots[$partId] ?? [];
+            $fallback = $last[$partId] ?? null;
+            $remaining = self::remainingLots($partLots, ($issued[$partId] ?? 0) + ($reserved[$partId] ?? 0), $method === 'lifo' ? 'lifo' : 'fifo');
+            if ($method === 'average' && $partLots !== []) {
+                $lastLot = $partLots[count($partLots) - 1];
+                $result[$partId] = [
+                    'purchasePrice' => self::weighted($partLots, 'cost'),
+                    'salePrice' => self::weighted($partLots, 'sale') ?? $fallback['salePrice'] ?? null,
+                    'supplierId' => $lastLot['supplierUuid'],
+                    'supplierDbId' => $lastLot['supplierId'],
+                ];
+            } elseif ($remaining !== []) {
+                $lot = $method === 'lifo' ? $remaining[count($remaining) - 1] : $remaining[0];
+                $result[$partId] = [
+                    'purchasePrice' => $lot['cost'],
+                    'salePrice' => $lot['sale'] ?? $fallback['salePrice'] ?? null,
+                    'supplierId' => $lot['supplierUuid'],
+                    'supplierDbId' => $lot['supplierId'],
+                ];
+            } elseif ($fallback !== null) {
+                $result[$partId] = [...$fallback, 'supplierDbId' => Supplier::query()->where('uuid', $fallback['supplierId'])->value('id')];
+            }
+        }
+
+        return $result;
     }
 
     /** Средняя цена закупа по приходам (организация или склад). */
@@ -352,9 +522,17 @@ final class StockService
                 SUM(CASE WHEN m.source_type = ? THEN m.quantity * m.unit_cost ELSE 0 END) AS receipt_amount', [StockMovement::SOURCE_RECEIPT, StockMovement::SOURCE_RECEIPT])
             ->get();
 
-        return $rows->map(function ($row): array {
+        $method = WarehouseService::costMethod($organizationId);
+        $lots = $method === 'average' ? [] : $this->lots($organizationId, $rows->pluck('id')->map(fn ($id) => (int) $id)->all(), $warehouseId, $until);
+
+        return $rows->map(function ($row) use ($method, $lots): array {
             $balance = round((float) $row->balance, 3);
             $cost = (float) $row->receipt_qty > 0 ? (float) $row->receipt_amount / (float) $row->receipt_qty : 0.0;
+            if ($method !== 'average' && $balance > 0) {
+                // ФИФО: в остатке поздние партии, ЛИФО — ранние.
+                $remaining = self::remainingLots($lots[(int) $row->id] ?? [], round((float) $row->outgoing, 3), $method);
+                $cost = self::weighted($remaining, 'cost') ?? $cost;
+            }
 
             return [
                 'catalogPartId' => $row->uuid,

@@ -19,6 +19,10 @@ export default {
             editingName: "",
             newName: "",
             markup: { mode: "flat", percent: 0, tiers: [] },
+            costMethod: "average",
+            savedCostMethod: "average",
+            costMethods: [],
+            costMethodError: "",
             examplePrice: 1000,
             maxTiers: MAX_TIERS,
         };
@@ -34,6 +38,8 @@ export default {
         try {
             const data = await marketplaceApi.warehouseSettings();
             this.warehouses = data.warehouses;
+            this.costMethod = this.savedCostMethod = data.costMethod || "average";
+            this.costMethods = data.costMethods || [];
             this.markup = {
                 ...data.markup,
                 tiers: data.markup.tiers.length ? data.markup.tiers.map((row) => ({ ...row })) : [this.emptyTier(0)],
@@ -106,6 +112,19 @@ export default {
         removeTier(index) {
             this.markup.tiers.splice(index, 1);
             if (!this.markup.tiers.length) this.markup.tiers.push(this.emptyTier(0));
+        },
+        async saveCostMethod() {
+            this.busy = true;
+            this.costMethodError = "";
+            try {
+                const data = await marketplaceApi.saveWarehouseCostMethod(this.costMethod);
+                this.costMethod = this.savedCostMethod = data.costMethod;
+                this.$emit("notify", "Метод списания сохранён");
+            } catch (error) {
+                this.costMethodError = error.message;
+            } finally {
+                this.busy = false;
+            }
         },
         async saveMarkup() {
             this.busy = true;
@@ -199,6 +218,27 @@ export default {
                     <button class="primary-btn" :disabled="busy">＋ Создать склад</button>
                 </form>
                 <p v-if="error" class="error-message">{{ error }}</p>
+            </section>
+
+            <section class="feature-card warehouse-card">
+                <h3>Метод списания со склада</h3>
+                <p class="muted">
+                    Определяет цену ЗЧ, которая подставляется в ЗР и Реализацию, если ЗЧ есть на складе,
+                    себестоимость списания и стоимость остатков в отчёте.
+                </p>
+                <label v-for="item in costMethods" :key="item.value" class="markup-option">
+                    <input v-model="costMethod" type="radio" :value="item.value" />
+                    <span>{{ item.label }}</span>
+                </label>
+                <ul class="cost-method-hints muted">
+                    <li><b>ФИФО</b> — цена самой ранней партии, которая ещё есть на складе и не зарезервирована.</li>
+                    <li><b>ЛИФО</b> — цена самой поздней такой партии.</li>
+                    <li><b>Средневзвешенная</b> — средние цены закупа и реализации по всем проведённым Приходам.</li>
+                </ul>
+                <p v-if="costMethodError" class="error-message">{{ costMethodError }}</p>
+                <div class="action-buttons">
+                    <button class="primary-btn" :disabled="busy || costMethod === savedCostMethod" @click="saveCostMethod">Сохранить метод списания</button>
+                </div>
             </section>
 
             <section class="feature-card warehouse-card">
@@ -360,5 +400,11 @@ export default {
 }
 .error-text {
     color: var(--red-error);
+}
+.cost-method-hints {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 13px;
+    line-height: 1.5;
 }
 </style>

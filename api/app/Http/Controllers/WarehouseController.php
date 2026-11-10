@@ -32,6 +32,11 @@ final class WarehouseController
         return response()->json(['markup' => $this->warehouses->saveMarkup($request->user(), $request->all())]);
     }
 
+    public function saveCostMethod(Request $request): JsonResponse
+    {
+        return response()->json(['costMethod' => $this->warehouses->saveCostMethod($request->user(), $request->all())]);
+    }
+
     public function storeWarehouse(Request $request): JsonResponse
     {
         return response()->json(['warehouses' => $this->warehouses->saveWarehouse($request->user(), null, $request->all())], 201);
