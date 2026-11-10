@@ -13,57 +13,30 @@
 
     <div v-if="panel.menu" class="area-scroll menu-scroll">
       <span class="nav-caption">Документы</span>
-      <button
-        class="nav-item"
-        :class="{ active: active?.key === 'requests' }"
-        @click="$emit('open-list', 'requests')"
-      >
-        ▤ Заявки на ремонт <b>{{ requests.length }}</b>
-      </button>
-      <button
-        class="nav-item"
-        :class="{
-          active: active?.kind === 'recommendations' && !active.vehicleId,
-        }"
-        @click="$emit('open-recommendations')"
-      >
-        ☰ Рекомендации
-      </button>
-      <button
-        class="nav-item"
-        :class="{ active: active?.kind === 'edo' }"
-        @click="$emit('open-edo')"
-      >
-        ⇄ Документы ЭДО
-      </button>
-      <button
-        class="nav-item"
-        :class="{ active: active?.key === 'action' }"
-        @click="$emit('open-list', 'action')"
-      >
-        ◷ Ожидают действия <b>{{ awaiting }}</b>
-      </button>
-      <button
-        class="nav-item"
-        :class="{ active: active?.kind === 'report' }"
-        @click="$emit('open-report')"
-      >
-        ▦ Отчёт
-      </button>
-
-      <!-- Склад, Справочники, Настройки: по клику — всплывающий список, набор зависит от ЛК -->
-      <template v-for="group in menuGroups" :key="group.key">
+      <!-- Сверху вниз: Ремонт, Склад, Документы ЭДО, Отчёты, Справочники, Настройки.
+           Группы открываются по клику всплывающим списком, набор зависит от ЛК. -->
+      <template v-for="entry in entries" :key="entry.key">
         <button
-          :ref="(el) => setGroupButton(group.key, el)"
+          v-if="entry.items"
+          :ref="(el) => setGroupButton(entry.key, el)"
           class="nav-item nav-group"
-          :class="{ active: groupActive(group), open: openGroup === group.key }"
-          :data-menu-group="group.key"
+          :class="{ active: groupActive(entry), open: openGroup === entry.key }"
+          :data-menu-group="entry.key"
           aria-haspopup="menu"
-          :aria-expanded="openGroup === group.key"
-          @click="toggleGroup(group.key)"
+          :aria-expanded="openGroup === entry.key"
+          @click="toggleGroup(entry.key)"
         >
-          {{ group.icon }} {{ group.title }}
+          {{ entry.icon }} {{ entry.title }}
+          <b v-if="entry.badge" class="nav-group-badge">{{ entry.badge }}</b>
           <span class="nav-chevron" aria-hidden="true">▸</span>
+        </button>
+        <button
+          v-else
+          class="nav-item"
+          :class="{ active: entry.isActive }"
+          @click="$emit(entry.event)"
+        >
+          {{ entry.icon }} {{ entry.title }}
         </button>
       </template>
       <Teleport to="body">
@@ -81,11 +54,12 @@
             <span v-if="item.caption" class="catalog-popup-subcaption">{{ item.caption }}</span>
             <button
               class="catalog-popup-item"
-              :class="{ active: itemActive(item.key) }"
+              :class="{ active: itemActive(item) }"
               role="menuitem"
-              @click="selectCatalog(item.key)"
+              @click="selectCatalog(item)"
             >
               {{ item.label }}
+              <b v-if="item.count !== undefined" class="catalog-popup-count">{{ item.count }}</b>
             </button>
           </template>
         </div>
@@ -179,8 +153,54 @@ export default {
     };
   },
   computed: {
+    /** Группа «Ремонт» — во всех ЛК. */
+    repairGroup() {
+      const active = this.active || {};
+      return {
+        key: "repair",
+        title: "Ремонт",
+        icon: "▤",
+        badge: this.awaiting || 0,
+        items: [
+          {
+            key: "requests",
+            label: "Заявки на ремонт",
+            count: this.requests.length,
+            emit: ["open-list", "requests"],
+            isActive: active.key === "requests",
+          },
+          {
+            key: "recommendations",
+            label: "Рекомендации",
+            emit: ["open-recommendations"],
+            isActive: active.kind === "recommendations" && !active.vehicleId,
+          },
+          {
+            key: "action",
+            label: "Ожидают действия",
+            count: this.awaiting,
+            emit: ["open-list", "action"],
+            isActive: active.key === "action",
+          },
+        ],
+      };
+    },
+    /** Пункты меню сверху вниз; группы, которых нет в ЛК, пропускаются. */
+    entries() {
+      const group = (key) => this.menuGroups.find((item) => item.key === key);
+      const active = this.active || {};
+      return [
+        this.repairGroup,
+        group("warehouse"),
+        { key: "edo", title: "Документы ЭДО", icon: "⇄", event: "open-edo", isActive: active.kind === "edo" },
+        { key: "report", title: "Отчёты", icon: "▦", event: "open-report", isActive: active.kind === "report" },
+        group("catalogs"),
+        group("settings"),
+        ...this.menuGroups.filter((item) => !["warehouse", "catalogs", "settings"].includes(item.key)),
+      ].filter(Boolean);
+    },
     openedGroup() {
-      return this.menuGroups.find((group) => group.key === this.openGroup) || null;
+      return this.entries.find((entry) => entry.items && entry.key === this.openGroup) || null;
     },
     activeKey() {
       return this.active?.menuKey || this.active?.key || "";
@@ -204,10 +224,11 @@ export default {
       else delete this.groupButtons[key];
     },
     groupActive(group) {
-      return group.items.some((item) => item.key === this.activeKey);
+      return group.items.some((item) => this.itemActive(item));
     },
-    itemActive(key) {
-      return this.activeKey === key;
+    itemActive(item) {
+      if (item.isActive !== undefined) return item.isActive;
+      return this.activeKey === item.key;
     },
     toggleGroup(key) {
       if (this.openGroup === key) this.closeCatalogs();
@@ -230,9 +251,10 @@ export default {
       this.unbindPopupListeners();
       if (returnFocus) button?.focus();
     },
-    selectCatalog(key) {
+    selectCatalog(item) {
       this.closeCatalogs();
-      this.$emit("open-menu-item", key);
+      if (item.emit) this.$emit(...item.emit);
+      else this.$emit("open-menu-item", item.key);
     },
     /* Справа от пункта меню; если места справа нет (мобильный вид) — под пунктом. */
     placePopup() {
@@ -301,6 +323,25 @@ export default {
   margin-left: auto;
   font-size: 12px;
   color: var(--muted);
+}
+
+.nav-group-badge + .nav-chevron {
+  margin-left: 4px;
+}
+
+.catalog-popup-item {
+  display: flex;
+  align-items: center;
+}
+
+.catalog-popup-count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 650;
+  background: var(--brand-orange-soft);
+  color: var(--brand-orange-dark);
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 
 .nav-group.open {
