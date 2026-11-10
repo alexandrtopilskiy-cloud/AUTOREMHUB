@@ -83,14 +83,14 @@ final class OrganizationPersonControllerTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('record.lastName', 'Иванов')
             ->assertJsonPath('record.firstName', 'Иван')
-            ->assertJsonPath('record.phoneRaw', '+79161112233')
+            ->assertJsonPath('record.phoneRaw', '+7 916 111 22 33')
             ->assertJsonPath('record.kind', 'contactPersons')
             ->assertJsonPath('record.personKind', 'contact');
 
         $this->assertDatabaseHas('organization_people', [
             'organization_id' => $this->customerOrg->id,
             'kind'            => 'contact',
-            'phone'           => '+79161112233',
+            'phone'           => '+7 916 111 22 33',
             'active'          => true,
         ]);
     }
@@ -103,7 +103,7 @@ final class OrganizationPersonControllerTest extends TestCase
                 'kind'      => 'driver',
                 'lastName'  => 'Петров',
                 'firstName' => 'Пётр',
-                'phone'     => '+79161112244',
+                'phone'     => '+7 916 111 22 44',
             ],
         ])
             ->assertCreated()
@@ -124,7 +124,7 @@ final class OrganizationPersonControllerTest extends TestCase
         ])->assertCreated();
 
         $this->assertDatabaseHas('organization_people', [
-            'phone' => '+79165556677',
+            'phone' => '+7 916 555 66 77',
         ]);
     }
 
@@ -164,7 +164,7 @@ final class OrganizationPersonControllerTest extends TestCase
                 'kind'      => 'contact',
                 'lastName'  => 'Иванов',
                 'firstName' => 'Иван',
-                'phone'     => '+79161112233',
+                'phone'     => '+7 916 111 22 33',
             ],
             'extra' => 'nope',
         ])->assertUnprocessable();
@@ -172,7 +172,7 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_store_rejects_duplicate_phone_with_422(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->postJson('/api/catalogs/people', [
@@ -180,7 +180,7 @@ final class OrganizationPersonControllerTest extends TestCase
                 'kind'      => 'contact',
                 'lastName'  => 'Другой',
                 'firstName' => 'Человек',
-                'phone'     => '+79161112233',
+                'phone'     => '+7 916 111 22 33',
             ],
         ])->assertUnprocessable();
     }
@@ -192,7 +192,7 @@ final class OrganizationPersonControllerTest extends TestCase
             'contact',
             'Старое',
             'Имя',
-            '+79161112233',
+            '+7 916 111 22 33',
             active: false,
         );
 
@@ -202,7 +202,7 @@ final class OrganizationPersonControllerTest extends TestCase
                 'kind'      => 'contact',
                 'lastName'  => 'Новое',
                 'firstName' => 'Имя',
-                'phone'     => '+79161112233',
+                'phone'     => '+7 916 111 22 33',
             ],
         ])
             ->assertCreated()
@@ -220,7 +220,7 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_update_changes_fields(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/catalogs/people/' . $person->uuid, [
@@ -236,31 +236,31 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_update_syncs_vehicle_contact(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
         $vehicle = $this->makeVehicle($this->customerOrg);
-        $contact = $this->makeVehicleContact($vehicle, $person, 'contact', '+79161112233');
+        $contact = $this->makeVehicleContact($vehicle, $person, 'contact', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/catalogs/people/' . $person->uuid, [
             'patch' => [
                 'lastName' => 'Смирнов',
-                'phone'    => '+79165556677',
+                'phone'    => '+7 916 555 66 77',
             ],
         ])->assertOk();
 
         $contact->refresh();
         $this->assertSame('Смирнов', $contact->last_name);
-        $this->assertSame('+79165556677', $contact->phone);
+        $this->assertSame('+7 916 555 66 77', $contact->phone);
     }
 
     public function test_update_rejects_duplicate_phone_with_422(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
-        $target = $this->makePerson($this->customerOrg, 'contact', 'Петров', 'Пётр', '+79165556677');
+        $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
+        $target = $this->makePerson($this->customerOrg, 'contact', 'Петров', 'Пётр', '+7 916 555 66 77');
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/catalogs/people/' . $target->uuid, [
-            'patch' => ['phone' => '+79161112233'],
+            'patch' => ['phone' => '+7 916 111 22 33'],
         ])->assertUnprocessable();
     }
 
@@ -274,7 +274,7 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_update_rejects_extra_fields_in_body(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/catalogs/people/' . $person->uuid, [
@@ -285,7 +285,7 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_update_rejects_invalid_phone(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->patchJson('/api/catalogs/people/' . $person->uuid, [
@@ -297,7 +297,7 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_destroy_soft_deletes_person(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->deleteJson('/api/catalogs/people/' . $person->uuid)
@@ -310,9 +310,9 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_destroy_deactivates_vehicle_contacts(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
         $vehicle = $this->makeVehicle($this->customerOrg);
-        $contact = $this->makeVehicleContact($vehicle, $person, 'contact', '+79161112233');
+        $contact = $this->makeVehicleContact($vehicle, $person, 'contact', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->deleteJson('/api/catalogs/people/' . $person->uuid)
@@ -330,7 +330,7 @@ final class OrganizationPersonControllerTest extends TestCase
 
     public function test_destroy_rejects_body_fields_with_422(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->customer);
         $this->deleteJson('/api/catalogs/people/' . $person->uuid, [
@@ -348,14 +348,14 @@ final class OrganizationPersonControllerTest extends TestCase
                 'kind'      => 'contact',
                 'lastName'  => 'Иванов',
                 'firstName' => 'Иван',
-                'phone'     => '+79161112233',
+                'phone'     => '+7 916 111 22 33',
             ],
         ])->assertForbidden();
     }
 
     public function test_update_forbidden_for_station(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79161112233');
+        $person = $this->makePerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
 
         $this->actingAs($this->station);
         $this->patchJson('/api/catalogs/people/' . $person->uuid, [
@@ -370,7 +370,7 @@ final class OrganizationPersonControllerTest extends TestCase
                 'kind'      => 'contact',
                 'lastName'  => 'Иванов',
                 'firstName' => 'Иван',
-                'phone'     => '+79161112233',
+                'phone'     => '+7 916 111 22 33',
             ],
         ])->assertUnauthorized();
     }

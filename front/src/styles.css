@@ -4231,3 +4231,49 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .handover-facts dt { font-size: 12px; color: var(--muted); }
 .handover-facts dd { margin: 2px 0 0; font-weight: 600; }
 .handover-note { margin: 0; font-size: 13px; }
+
+/* ─── Склад (0.42.001) ─── */
+.manufacturer-search {
+  display: block;
+  max-width: 484px;
+  margin: 0 24px 10px;
+}
+.manufacturer-search input {
+  width: 100%;
+}
+.excel-grid tr.part-missing-stock > td {
+  background: #dcebff;
+  color: #0d3a73;
+}
+.part-stock-badge,
+.table-wrap td > span.part-stock-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  background: #dcf1e8;
+  color: #267353;
+  white-space: normal;
+  line-height: 1.25;
+  overflow: visible;
+}
+.part-stock-badge.missing,
+.table-wrap td > span.part-stock-badge.missing {
+  background: #b9d5fb;
+  color: #0d3a73;
+}
+.part-stock-badge.written,
+.table-wrap td > span.part-stock-badge.written {
+  background: #e7ebf1;
+  color: #4b5b70;
+}
+.parts-stock-note {
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid #1f5fae;
+  border-radius: 4px;
+  background: #e8f1fe;
+  color: #0d3a73;
+  font-size: 13px;
+}

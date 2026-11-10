@@ -33,7 +33,7 @@ final class UserFactory extends Factory
             'first_name'        => 'Тест',
             'middle_name'       => 'Тестович',
             'email'             => "user-{$suffix}@example.com",
-            'phone'             => '+7' . $this->digits(10),
+            'phone'             => \App\Support\RussianPhone::normalize('+7' . $this->digits(10)),
             'registered_at'     => now(),
             'access_revoked_at' => null,
             'access_rights'     => [],

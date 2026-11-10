@@ -22,7 +22,6 @@ final class SupplierService
         'shortName',
         'kpp',
         'ogrn',
-        'registrationDate',
         'legalAddress',
         'actualAddress',
         'postalAddress',
@@ -37,7 +36,6 @@ final class SupplierService
         'bik',
         'settlementAccount',
         'correspondentAccount',
-        'treasuryAccount',
         'taxRegime',
         'vatRate',
     ];
@@ -56,13 +54,14 @@ final class SupplierService
                     throw new ApiException(403, 'FORBIDDEN', 'СТО может изменять только созданных своей организацией поставщиков');
                 }
             }
-            $data = array_replace($supplier->requisites ?? [], $supplier === null ? [] : [
+            // «Дата регистрации» и «Казначейский счёт» удалены из справочника (10.11.2026).
+            $data = array_replace(array_diff_key($supplier->requisites ?? [], array_flip(['registrationDate', 'treasuryAccount'])), $supplier === null ? [] : [
                 'name' => $supplier->name,
                 'taxId' => $supplier->tax_id,
                 'legalForm' => $supplier->legal_form,
                 'contacts' => $supplier->contacts ?? [],
                 'active' => $supplier->active,
-            ], $values);
+            ], array_diff_key($values, array_flip(['registrationDate', 'treasuryAccount'])));
             $individual = (bool) config('supplier_legal_forms.' . ($data['legalForm'] ?? '') . '.individual', false);
             $rules = [
                 'legalForm' => ['required', Rule::in(array_keys(config('supplier_legal_forms')))],
@@ -91,12 +90,10 @@ final class SupplierService
             }
             $rules['directorName'] = [$individual ? 'nullable' : 'required', 'string', 'max:255'];
             $rules['legalFormName'] = [($data['legalForm'] ?? '') === 'other' ? 'required' : 'nullable', 'string', 'max:255'];
-            $rules['registrationDate'] = ['required', 'date_format:Y-m-d'];
             $rules['bik'] = ['required', 'string', 'regex:/^\d{9}$/'];
             foreach (['settlementAccount', 'correspondentAccount'] as $field) {
                 $rules[$field] = ['required', 'string', 'regex:/^\d{20}$/'];
             }
-            $rules['treasuryAccount'] = ['nullable', 'regex:/^\d{20}$/'];
             $rules['okpo'] = ['nullable', 'regex:/^(\d{8}|\d{10})$/'];
             $rules['oktmo'] = ['nullable', 'regex:/^(\d{8}|\d{11})$/'];
             $rules['vatRate'] = ['required', 'string', 'max:50'];
@@ -112,7 +109,7 @@ final class SupplierService
             foreach ($data['contacts'] as $index => &$contact) {
                 $contact['phone'] = RussianPhone::normalize($contact['phone']);
                 if ($contact['phone'] === null) {
-                    Input::fail('Введите телефон в формате +7 (999) 123 45 67', 'contacts.' . $index . '.phone');
+                    Input::fail('Введите телефон в формате ' . RussianPhone::HINT, 'contacts.' . $index . '.phone');
                 }
             }
             unset($contact);

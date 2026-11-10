@@ -103,7 +103,7 @@ final class CatalogControllerTest extends TestCase
             ['tenant_id' => $this->tenant->id, 'name' => 'Поставщик теста'],
             ['active' => true],
         );
-        return ['manufacturerId' => $maker->uuid, 'supplierId' => $supplier->uuid];
+        return ['manufacturerId' => $maker->uuid];
     }
 
     /* ─────────────────── index ─────────────────── */
@@ -111,7 +111,7 @@ final class CatalogControllerTest extends TestCase
     public function test_index_returns_all_records_for_manager(): void
     {
         $this->makeVehicle($this->customerOrg, 'Lada Vesta', 'XTA00000000000001');
-        $this->makeOrganizationPerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79990000001');
+        $this->makeOrganizationPerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 999 000 00 01');
 
         $this->actingAs($this->manager);
         $response = $this->getJson('/api/catalogs')
@@ -127,7 +127,7 @@ final class CatalogControllerTest extends TestCase
     public function test_index_returns_only_own_vehicles_and_people_for_customer(): void
     {
         $this->makeVehicle($this->customerOrg, 'Lada Vesta', 'XTA00000000000001');
-        $this->makeOrganizationPerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+79990000001');
+        $this->makeOrganizationPerson($this->customerOrg, 'contact', 'Иванов', 'Иван', '+7 999 000 00 01');
 
         $this->actingAs($this->customer);
         $response = $this->getJson('/api/catalogs')
@@ -385,9 +385,6 @@ final class CatalogControllerTest extends TestCase
                 'unit'           => 'шт.',
                 'active'         => true,
                 'manufacturerId' => $manufacturer->uuid,
-                'supplierId'     => $supplier->uuid,
-                'purchasePrice'  => 100.00,
-                'salePrice'      => 150.00,
             ],
         ])->assertCreated();
 
@@ -484,7 +481,7 @@ final class CatalogControllerTest extends TestCase
 
         $this->actingAs($this->manager);
         $this->patchJson('/api/catalogs/' . $part->uuid, [
-            'patch' => array_merge($this->partReferences(), ['name' => 'Другое', 'purchasePrice' => 100, 'salePrice' => 150]),
+            'patch' => array_merge($this->partReferences(), ['name' => 'Другое']),
         ])->assertOk()->assertJsonPath('record.name', 'Другое');
     }
 
@@ -664,8 +661,8 @@ final class CatalogControllerTest extends TestCase
         $file = UploadedFile::fake()->createWithContent(
             'parts.xlsx',
             $this->xlsx([
-                ['Наименование', 'Артикул', 'Производитель', 'Поставщик', 'Цена закупа', 'Цена реализации', 'Единица измерения', 'Активна'],
-                ['Масляный фильтр', 'OF-100', 'Bosch', 'Поставщик', '100.00', '150.00', 'шт.', 'Да'],
+                ['Наименование', 'Артикул', 'Производитель', 'Единица измерения', 'Активна'],
+                ['Масляный фильтр', 'OF-100', 'Bosch', 'шт.', 'Да'],
             ]),
         );
 
@@ -715,9 +712,9 @@ final class CatalogControllerTest extends TestCase
         $file = UploadedFile::fake()->createWithContent(
             'parts.xlsx',
             $this->xlsx([
-                ['Наименование', 'Артикул', 'Производитель', 'Поставщик', 'Цена закупа', 'Цена реализации', 'Единица измерения', 'Активна'],
-                ['Новая запись', 'NEW-1', 'Bosch', 'Поставщик', '100.00', '150.00', 'шт.', 'Да'],
-                ['Дубликат', 'DUP-1', 'Bosch', 'Поставщик', '100.00', '150.00', 'шт.', 'Да'],
+                ['Наименование', 'Артикул', 'Производитель', 'Единица измерения', 'Активна'],
+                ['Новая запись', 'NEW-1', 'Bosch', 'шт.', 'Да'],
+                ['Дубликат', 'DUP-1', 'Bosch', 'шт.', 'Да'],
             ]),
         );
 
@@ -742,7 +739,7 @@ final class CatalogControllerTest extends TestCase
         $file = UploadedFile::fake()->createWithContent(
             'parts.xlsx',
             $this->xlsx([
-                ['Наименование', 'Артикул', 'Производитель', 'Поставщик', 'Цена закупа', 'Цена реализации', 'Единица измерения', 'Активна'],
+                ['Наименование', 'Артикул', 'Производитель', 'Единица измерения', 'Активна'],
                 ['Фильтр', 'OF-1', 'Тест', 'шт.', 'Да'],
             ]),
         );

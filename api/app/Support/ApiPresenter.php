@@ -260,7 +260,7 @@ final class ApiPresenter
         if (is_array($snapshot)) {
             return implode(' · ', array_filter([
                 $snapshot['fullName'] ?? '',
-                $snapshot['phone'] ?? '',
+                RussianPhone::format($snapshot['phone'] ?? ''),
             ]));
         }
 
@@ -277,7 +277,7 @@ final class ApiPresenter
 
         return implode(' · ', array_filter([
             $snapshot['fullName'] ?? '',
-            $snapshot['phone'] ?? '',
+            RussianPhone::format($snapshot['phone'] ?? ''),
         ]));
     }
 

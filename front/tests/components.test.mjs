@@ -847,7 +847,7 @@ test("Options API component rendering and interactive methods", async (context) 
 
                 assert.match(html, /Новое: водитель/);
                 assert.match(html, /ООО «Тест»/);
-                assert.match(html, /\+7 \(ххх\) ххх хх хх/);
+                assert.match(html, /\+7 ххх ххх хх хх/);
                 assert.match(html, /Сохранить и выйти/);
             },
         );
@@ -1801,26 +1801,40 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
-            "side menu: report item and catalogs as a popup list",
+            "side menu: Склад, Справочники и Настройки as popup lists",
             async () => {
                 const { default: SidebarMenu } = await server.ssrLoadModule(
                     "/src/components/SidebarMenu.vue",
                 );
-                const render = async (role, catalogKeys, active = null, open = false) => {
+                const warehouse = {
+                    key: "warehouse",
+                    title: "Склад",
+                    icon: "▣",
+                    items: [
+                        { key: "stockReceipts", label: "Приход" },
+                        { key: "stockSales", label: "Реализация" },
+                        { key: "stockBalance", label: "Остатки на складе" },
+                        { key: "parts", label: "Справочник запчастей", caption: "Справочники" },
+                        { key: "partManufacturers", label: "Производители" },
+                        { key: "suppliers", label: "Поставщики" },
+                    ],
+                };
+                const settings = { key: "settings", title: "Настройки", icon: "⚙", items: [{ key: "warehouseSettings", label: "Складской учёт" }] };
+                const render = async (menuGroups, active = null, openGroup = "") => {
                     const ctx = {};
-                    const component = open
+                    const component = openGroup
                         ? {
                               ...SidebarMenu,
                               data() {
-                                  return { ...SidebarMenu.data.call(this), catalogsOpen: true };
+                                  return { ...SidebarMenu.data.call(this), openGroup };
                               },
                           }
                         : SidebarMenu;
                     const html = await renderToString(
                         createSSRApp(component, {
-                            user: { role, organization: "Org", label: "User" },
+                            user: { organization: "Org", label: "User" },
                             panel: { menu: true },
-                            catalogKeys,
+                            menuGroups,
                             active,
                         }),
                         ctx,
@@ -1828,37 +1842,34 @@ test("Options API component rendering and interactive methods", async (context) 
                     return { html, popup: ctx.teleports?.body || "" };
                 };
 
-                const closed = await render("station", ["parts", "suppliers"]);
+                const closed = await render([warehouse, settings]);
                 assert.match(closed.html, /Отчёт/);
-                assert.match(closed.html, /Справочники/);
+                assert.match(closed.html, /▣ Склад/);
+                assert.match(closed.html, /⚙ Настройки/);
                 assert.match(closed.html, /aria-haspopup="menu"/);
                 assert.doesNotMatch(closed.html + closed.popup, /Справочник запчастей/);
 
-                // Активный справочник не разворачивает список внутри меню
-                const activeClosed = await render("station", ["parts", "suppliers"], {
-                    kind: "list",
-                    key: "parts",
-                });
+                // Активный пункт подсвечивает группу, но не разворачивает список
+                const activeClosed = await render([warehouse, settings], { kind: "list", key: "parts" });
                 assert.match(activeClosed.html, /class="active nav-item nav-group"/);
                 assert.doesNotMatch(activeClosed.html + activeClosed.popup, /Справочник запчастей/);
 
                 // Открытый список рендерится всплывающим окном вне меню
-                const opened = await render(
-                    "station",
-                    ["parts", "suppliers"],
-                    { kind: "list", key: "parts" },
-                    true,
-                );
-                assert.doesNotMatch(opened.html, /Справочник запчастей/);
+                const opened = await render([warehouse, settings], { kind: "stock-list", menuKey: "stockReceipts" }, "warehouse");
+                assert.doesNotMatch(opened.html, /Остатки на складе/);
                 assert.match(opened.popup, /class="catalog-popup"/);
                 assert.match(opened.popup, /role="menu"/);
-                assert.match(opened.popup, /Справочник запчастей/);
-                assert.match(opened.popup, /Поставщики/);
-                assert.match(opened.popup, /class="[^"]*active[^"]*catalog-popup-item|class="catalog-popup-item active/);
+                assert.match(opened.popup, /Приход/);
+                assert.match(opened.popup, /Остатки на складе/);
+                assert.match(opened.popup, /Производители/);
+                assert.match(opened.popup, /class="active catalog-popup-item"/);
 
-                const customer = await render("customer", []);
+                const settingsOpened = await render([warehouse, settings], null, "settings");
+                assert.match(settingsOpened.popup, /Складской учёт/);
+
+                const customer = await render([]);
                 assert.match(customer.html, /Отчёт/);
-                assert.doesNotMatch(customer.html, /☷ Справочники/);
+                assert.doesNotMatch(customer.html, /▣ Склад|☷ Справочники|⚙ Настройки/);
             },
         );
 

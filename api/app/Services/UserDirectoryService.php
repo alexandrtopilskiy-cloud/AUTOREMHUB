@@ -219,7 +219,7 @@ final class UserDirectoryService
 
             if ($phone === null) {
                 Input::fail(
-                    'Телефон должен быть указан в формате +7 (ххх) ххх хх хх',
+                    'Телефон должен быть указан в формате ' . RussianPhone::HINT,
                     'phone',
                 );
             }
@@ -243,7 +243,7 @@ final class UserDirectoryService
                     Rule::unique('users', 'login')->ignore($target?->id),
                 ],
                 'password'        => [$required, 'string', 'min:12', 'max:72'],
-                'phone'           => [$required, 'required', 'regex:/^\+7[0-9]{10}$/'],
+                'phone'           => [$required, 'required', 'regex:' . RussianPhone::PATTERN],
                 'organizationId'  => [$required, 'required', 'uuid'],
                 'registeredAt'    => ['sometimes', 'nullable', 'date'],
                 'accessRevokedAt' => ['sometimes', 'nullable', 'date'],

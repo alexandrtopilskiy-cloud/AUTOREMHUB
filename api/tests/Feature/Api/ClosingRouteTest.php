@@ -35,6 +35,8 @@ use Tests\TestCase;
  */
 final class ClosingRouteTest extends TestCase
 {
+    use \Tests\Concerns\StocksParts;
+
     use DatabaseTransactions;
     use InteractsWithApi;
 
@@ -80,7 +82,7 @@ final class ClosingRouteTest extends TestCase
         $workType = WorkType::query()->create(['tenant_id' => $tenant->id, 'name' => 'Замена масла', 'group_name' => 'Прочее', 'active' => true]);
         $catalog = CatalogPart::query()->create([
             'tenant_id' => $tenant->id, 'name' => 'Фильтр', 'article' => 'F-1', 'unit' => 'шт.',
-            'manufacturer' => 'Test', 'supplier_id' => $supplier->id, 'sale_price' => 250, 'active' => true,
+            'manufacturer' => 'Test', 'active' => true,
         ]);
 
         $this->request = RepairRequest::query()->create([
@@ -115,6 +117,8 @@ final class ClosingRouteTest extends TestCase
             'article' => 'F-1', 'unit' => 'шт.', 'supplier_id' => $supplier->id, 'quantity' => 2, 'price' => 250,
             'status' => 'received', 'approved_version' => 1, 'agent_discount_percent' => 10,
         ]);
+        // Складской учёт: ЗЧ ЗР списываются со склада СТО при «ТС готово к выдаче».
+        $this->stockPart($this->users['station'], $catalog, 2, $supplier);
         VehicleAcceptanceAct::query()->create([
             'repair_request_id' => $this->request->id, 'station_id' => $station->id,
             'created_by' => $this->users['station']->id, 'number' => $this->request->numberWithPrefix('APP'),

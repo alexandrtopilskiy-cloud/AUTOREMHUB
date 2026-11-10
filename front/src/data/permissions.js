@@ -167,7 +167,7 @@ export const catalogNames = {
     regulations: "Регламенты ТО",
     suppliers: "Поставщики",
     parts: "Справочник запчастей",
-    partManufacturers: "Производитель ЗЧ",
+    partManufacturers: "Производители",
 };
 
 /** @type {Record<string, Record<string, string>>} */
@@ -387,9 +387,6 @@ export const catalogFields = {
         article: "Артикул",
         manufacturer: "Производитель",
         createdByOrganization: "Кто добавил",
-        supplierId: "Поставщик",
-        purchasePrice: "Цена закупа, ₽",
-        salePrice: "Цена реализации, ₽",
         unit: "Единица",
         active: "Активна",
     },

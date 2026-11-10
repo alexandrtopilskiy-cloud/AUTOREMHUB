@@ -19,6 +19,9 @@ final class RequestPartService
     public function replace(RepairRequest $request, array $rows): void
     {
         $existing = $request->parts()->lockForUpdate()->get()->keyBy('uuid');
+        $stock = app(StockService::class);
+        $stockOrganizationId = $stock->requestOrganizationId($request);
+        $stockPrices = [];
         $agentDiscount = RepairRequestService::stationAgentDiscount($request);
         $kept = [];
         foreach ($rows as $index => $row) {
@@ -60,7 +63,12 @@ final class RequestPartService
                 'quantity' => $row['qty'],
                 'price' => $row['price'],
                 'manufacturer_snapshot' => $part->exists && $part->catalog_part_id === $catalog?->id ? $part->manufacturer_snapshot : $catalog?->manufacturer,
-                'purchase_price' => $part->exists && $part->catalog_part_id === $catalog?->id ? $part->purchase_price : $catalog?->purchase_price,
+                // Цена закупа — из последнего проведённого Прихода на склад СТО.
+                'purchase_price' => $part->exists && $part->catalog_part_id === $catalog?->id
+                    ? $part->purchase_price
+                    : ($catalog !== null && $stockOrganizationId !== null
+                        ? (($stockPrices[$catalog->id] ??= $stock->lastReceiptPrices($stockOrganizationId, [$catalog->id])[$catalog->id] ?? [])['purchasePrice'] ?? null)
+                        : null),
             ];
             $part->fill($attributes);
             $lineChanged = $part->isDirty();

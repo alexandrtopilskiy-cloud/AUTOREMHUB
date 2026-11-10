@@ -105,10 +105,15 @@ test("0.37.1 supplier, estimate and recommendation behavior", async (t) => {
         await t.test(
             "station has supplier directory and can create records there",
             () => {
+                // Поставщики перенесены в меню «Склад» (10.11.2026).
+                const station = { user: { role: "station" } };
+                station.catalogKeys = App.computed.catalogKeys.call(station);
+                station.hasWarehouse = App.computed.hasWarehouse.call(station);
                 assert.ok(
-                    App.computed.catalogKeys
-                        .call({ user: { role: "station" } })
-                        .includes("suppliers"),
+                    App.computed.menuGroups
+                        .call(station)
+                        .find((group) => group.key === "warehouse")
+                        .items.some((item) => item.key === "suppliers"),
                 );
                 assert.equal(
                     App.computed.canCreateCatalog.call({

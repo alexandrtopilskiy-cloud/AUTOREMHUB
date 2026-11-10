@@ -6,6 +6,7 @@ import InfoHint from "../../components/InfoHint.vue";
 import FormatHint from "../../components/FormatHint.vue";
 import { requisiteFormatHint, requisiteInputAttrs } from "../../data/requisiteFormats.js";
 import ReferencePicker from "../../components/ReferencePicker.vue";
+import PhoneInput from "../../components/PhoneInput.vue";
 import { startColumnResize } from "../../utils/columnResize.js";
 
 const FIELDS = {
@@ -161,9 +162,6 @@ const FIELDS = {
         name: "Название запчасти",
         article: "Артикул",
         manufacturerId: "Производитель",
-        supplierId: "Поставщик",
-        purchasePrice: "Цена закупа, ₽",
-        salePrice: "Цена реализации, ₽",
         unit: "Единица измерения",
         active: "Активна",
     },
@@ -268,7 +266,7 @@ const WORK_HELP = {
 
 export default {
     name: "CatalogEditor",
-    components: { FormatHint, InfoHint, ReferencePicker , SupplierCreateDialog },
+    components: { FormatHint, InfoHint, PhoneInput, ReferencePicker, SupplierCreateDialog },
     props: {
         record: {
             type: Object,
@@ -582,8 +580,7 @@ export default {
             }
 
             if (this.record.kind === "parts") {
-                for (const key of ["name", "article", "manufacturerId", "unit", "supplierId", "purchasePrice", "salePrice",
-                ]) {
+                for (const key of ["name", "article", "manufacturerId", "unit"]) {
                     if (this.form[key] === "" || this.form[key] == null) { this.error = "Заполните все обязательные поля запчасти"; return; }
                 }
             }
@@ -1258,6 +1255,12 @@ export default {
                     :disabled="!editable || busy"
                 />
 
+                <PhoneInput
+                    v-else-if="key === 'phone'"
+                    v-model="form[key]"
+                    :disabled="!editable || busy"
+                    :required="isRequired(key)"
+                />
                 <input
                     v-else
                     v-model="form[key]"

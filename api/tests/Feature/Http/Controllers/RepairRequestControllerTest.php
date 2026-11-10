@@ -154,7 +154,7 @@ final class RepairRequestControllerTest extends TestCase
 
     public function test_show_returns_station_reference_details_for_customer(): void
     {
-        $this->stationOrg->update(['actual_address' => 'г. Москва, ул. Тестовая, д. 1', 'phone' => '+74950000001']);
+        $this->stationOrg->update(['actual_address' => 'г. Москва, ул. Тестовая, д. 1', 'phone' => '+7 495 000 00 01']);
         $this->stationRecord->update(['contact' => 'Мастер Иванов']);
         $request = $this->makeRequest($this->customer, Workflow::STAGE_CUSTOMER_APPROVAL, $this->stationRecord);
 
@@ -164,7 +164,7 @@ final class RepairRequestControllerTest extends TestCase
             ->assertJsonPath('request.stationDetails.name', 'Тестовая СТО')
             ->assertJsonPath('request.stationDetails.address', 'г. Москва, ул. Тестовая, д. 1')
             ->assertJsonPath('request.stationDetails.contact', 'Мастер Иванов')
-            ->assertJsonPath('request.stationDetails.phone', '+74950000001')
+            ->assertJsonPath('request.stationDetails.phone', '+7 495 000 00 01')
             ->assertJsonMissingPath('request.stationDetails.agentDiscountPercent');
     }
 
@@ -623,7 +623,7 @@ final class RepairRequestControllerTest extends TestCase
             'kind'       => 'contact',
             'last_name'  => 'Иванов',
             'first_name' => 'Иван',
-            'phone'      => '+79990000001',
+            'phone'      => '+7 999 000 00 01',
             'active'     => true,
         ]);
 
@@ -678,7 +678,7 @@ final class RepairRequestControllerTest extends TestCase
             'kind'       => 'contact',
             'last_name'  => 'Иванов',
             'first_name' => 'Иван',
-            'phone'      => '+79990000001',
+            'phone'      => '+7 999 000 00 01',
             'active'     => true,
         ]);
         $reason = ServiceReason::query()

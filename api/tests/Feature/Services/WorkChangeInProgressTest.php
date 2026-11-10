@@ -104,8 +104,6 @@ final class WorkChangeInProgressTest extends TestCase
             'article'      => 'F-1',
             'unit'         => 'шт.',
             'manufacturer' => 'Test',
-            'supplier_id'  => $this->supplier->id,
-            'sale_price'   => 200,
             'active'       => true,
         ]);
         $this->workType = WorkType::query()->create([

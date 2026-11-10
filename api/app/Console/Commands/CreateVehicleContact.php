@@ -85,13 +85,9 @@ final class CreateVehicleContact extends Command
         $digits = preg_replace('/\D+/', '', $phone);
 
         if (strlen($digits) === 10) {
-            return '+7' . $digits;
+            $digits = '7' . $digits;
         }
 
-        if (strlen($digits) === 11 && in_array($digits[0], ['7', '8'], true)) {
-            return '+7' . substr($digits, 1);
-        }
-
-        return null;
+        return \App\Support\RussianPhone::normalize('+' . $digits);
     }
 }

@@ -74,8 +74,8 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_records_customer_sees_only_own_organization(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', '+79991111111');
-        $this->makePerson($this->managerOrg, 'contact', '+79992222222');
+        $this->makePerson($this->customerOrg, 'contact', '+7 999 111 11 11');
+        $this->makePerson($this->managerOrg, 'contact', '+7 999 222 22 22');
 
         $records = $this->service()->records($this->customer);
 
@@ -85,9 +85,9 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_records_manager_sees_all_organizations_in_tenant(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', '+79991111111');
-        $this->makePerson($this->customerOrg, 'driver', '+79992222222');
-        $this->makePerson($this->managerOrg, 'contact', '+79993333333');
+        $this->makePerson($this->customerOrg, 'contact', '+7 999 111 11 11');
+        $this->makePerson($this->customerOrg, 'driver', '+7 999 222 22 22');
+        $this->makePerson($this->managerOrg, 'contact', '+7 999 333 33 33');
 
         $records = $this->service()->records($this->manager);
 
@@ -96,7 +96,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_records_station_sees_nothing(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', '+79991111111');
+        $this->makePerson($this->customerOrg, 'contact', '+7 999 111 11 11');
 
         $this->assertSame([], $this->service()->records($this->station));
     }
@@ -115,8 +115,8 @@ final class OrganizationPersonServiceTest extends TestCase
 
         $this->assertSame('contactPersons', $result['kind']);
         $this->assertSame('Иванов', $result['lastName']);
-        $this->assertSame('+7 (999) 123 45 67', $result['phone']);
-        $this->assertSame('+79991234567', $result['phoneRaw']);
+        $this->assertSame('+7 999 123 45 67', $result['phone']);
+        $this->assertSame('+7 999 123 45 67', $result['phoneRaw']);
         $this->assertTrue($result['active']);
 
         $this->assertSame(1, OrganizationPerson::query()->count());
@@ -128,7 +128,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
-            'phone'     => '+79991234567',
+            'phone'     => '+7 999 123 45 67',
         ]);
 
         $this->assertSame(1, CatalogChangeEvent::query()
@@ -143,7 +143,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'      => 'driver',
             'lastName'  => 'Петров',
             'firstName' => 'Пётр',
-            'phone'     => '+79991234567',
+            'phone'     => '+7 999 123 45 67',
         ]);
 
         $this->assertSame('drivers', $result['kind']);
@@ -151,7 +151,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_create_restores_soft_deleted_person(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
         $person->active = false;
         $person->save();
 
@@ -159,7 +159,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
-            'phone'     => '+79991234567',
+            'phone'     => '+7 999 123 45 67',
         ]);
 
         $this->assertTrue($result['active']);
@@ -173,7 +173,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_create_throws_on_duplicate_active_phone(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
 
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Такой телефон уже есть в справочнике организации');
@@ -182,7 +182,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'      => 'contact',
             'lastName'  => 'Другой',
             'firstName' => 'Человек',
-            'phone'     => '+79991234567',
+            'phone'     => '+7 999 123 45 67',
         ]);
     }
 
@@ -207,7 +207,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
-            'phone'     => '+79991234567',
+            'phone'     => '+7 999 123 45 67',
         ]);
     }
 
@@ -215,7 +215,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_update_changes_fields(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
 
         $result = $this->service()->update($this->customer, $person->uuid, [
             'lastName'  => 'Сидоров',
@@ -228,7 +228,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_update_syncs_vehicle_contacts(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
         $vehicle = $this->makeVehicle($this->customerOrg);
 
         VehicleContact::query()->create([
@@ -238,7 +238,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'                     => 'contact',
             'last_name'                => 'Иванов',
             'first_name'               => 'Иван',
-            'phone'                    => '+79991234567',
+            'phone'                    => '+7 999 123 45 67',
         ]);
 
         $this->service()->update($this->customer, $person->uuid, [
@@ -256,20 +256,20 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_update_throws_on_duplicate_phone(): void
     {
-        $this->makePerson($this->customerOrg, 'contact', '+79991234567');
-        $other = $this->makePerson($this->customerOrg, 'contact', '+79997654321');
+        $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $other = $this->makePerson($this->customerOrg, 'contact', '+7 999 765 43 21');
 
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Такой телефон уже есть в справочнике организации');
 
         $this->service()->update($this->customer, $other->uuid, [
-            'phone' => '+79991234567',
+            'phone' => '+7 999 123 45 67',
         ]);
     }
 
     public function test_update_forbidden_for_station(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
 
         $this->expectException(ApiException::class);
 
@@ -282,7 +282,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_delete_soft_deletes_person(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
 
         $result = $this->service()->delete($this->customer, $person->uuid);
 
@@ -292,7 +292,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_delete_deactivates_vehicle_contacts(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
         $vehicle = $this->makeVehicle($this->customerOrg);
 
         VehicleContact::query()->create([
@@ -302,7 +302,7 @@ final class OrganizationPersonServiceTest extends TestCase
             'kind'                     => 'contact',
             'last_name'                => 'Иванов',
             'first_name'               => 'Иван',
-            'phone'                    => '+79991234567',
+            'phone'                    => '+7 999 123 45 67',
             'active'                   => true,
         ]);
 
@@ -317,7 +317,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_delete_creates_audit_event(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
 
         $this->service()->delete($this->customer, $person->uuid);
 
@@ -328,7 +328,7 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_delete_forbidden_for_station(): void
     {
-        $person = $this->makePerson($this->customerOrg, 'contact', '+79991234567');
+        $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
 
         $this->expectException(ApiException::class);
 

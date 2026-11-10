@@ -81,7 +81,7 @@ final class CreateUser extends Command
         }
 
         if ($phone === null) {
-            $this->error('Укажите --phone в формате +7 (ххх) ххх хх хх.');
+            $this->error('Укажите --phone в формате +7 ххх ххх хх хх.');
 
             return self::FAILURE;
         }
