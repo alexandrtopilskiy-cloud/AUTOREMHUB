@@ -513,11 +513,11 @@ final class ClosingDocumentService
             'stationRepresentative' => $user?->role === UserRole::Station
                 ? [
                     'fullName' => $user->fullName(),
-                    'phone'    => (string) (($user->phone ?? '') ?: ($stationRecord?->organization?->phone ?? '')),
+                    'phone'    => \App\Support\RussianPhone::format((string) (($user->phone ?? '') ?: ($stationRecord?->organization?->phone ?? ''))),
                 ]
                 : [
                     'fullName' => (string) ($stationRecord?->contact ?? ''),
-                    'phone'    => (string) ($stationRecord?->organization?->phone ?? ''),
+                    'phone'    => \App\Support\RussianPhone::format((string) ($stationRecord?->organization?->phone ?? '')),
                 ],
             // В лист попадает только реально оформленная доверенность; иначе
             // № и дата заполняются от руки.
@@ -569,7 +569,7 @@ final class ClosingDocumentService
 
         return [
             'fullName' => (string) ($snapshot['fullName'] ?? ''),
-            'phone'    => (string) ($snapshot['phone'] ?? ''),
+            'phone'    => \App\Support\RussianPhone::format((string) ($snapshot['phone'] ?? '')),
         ];
     }
 

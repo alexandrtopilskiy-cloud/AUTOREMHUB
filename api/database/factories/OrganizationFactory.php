@@ -33,7 +33,7 @@ final class OrganizationFactory extends Factory
             'actual_address'        => 'г. Москва, ул. Тестовая, д. 1',
             'postal_address'        => 'г. Москва, ул. Тестовая, д. 1',
             'director_name'         => 'Иванов Иван Иванович',
-            'phone'                 => '+7' . $this->digits(10),
+            'phone'                 => \App\Support\RussianPhone::normalize('+7' . $this->digits(10)),
             'email'                 => "test-{$suffix}@example.com",
             'bank_name'             => 'Тест-Банк',
             'bik'                   => '04' . $this->digits(7),

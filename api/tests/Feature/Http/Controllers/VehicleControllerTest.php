@@ -296,10 +296,10 @@ final class VehicleControllerTest extends TestCase
     public function test_contacts_returns_active_contacts_sorted(): void
     {
         $vehicle = $this->makeVehicle($this->customerOrg, 'Lada Vesta', 'XTA00000000000001');
-        $this->makeContact($vehicle, 'contact', 'Иванов', 'Иван', '+79161112233');
-        $this->makeContact($vehicle, 'contact', 'Абрамов', 'Пётр', '+79161112244');
-        $this->makeContact($vehicle, 'contact', 'Скрытый', 'Сергей', '+79161112255', active: false);
-        $this->makeContact($vehicle, 'driver', 'Водитель', 'Водитель', '+79161112266');
+        $this->makeContact($vehicle, 'contact', 'Иванов', 'Иван', '+7 916 111 22 33');
+        $this->makeContact($vehicle, 'contact', 'Абрамов', 'Пётр', '+7 916 111 22 44');
+        $this->makeContact($vehicle, 'contact', 'Скрытый', 'Сергей', '+7 916 111 22 55', active: false);
+        $this->makeContact($vehicle, 'driver', 'Водитель', 'Водитель', '+7 916 111 22 66');
 
         $this->actingAs($this->customer);
         $response = $this->getJson('/api/vehicles/' . $vehicle->uuid . '/contacts')
@@ -322,10 +322,10 @@ final class VehicleControllerTest extends TestCase
     public function test_drivers_returns_active_drivers_sorted(): void
     {
         $vehicle = $this->makeVehicle($this->customerOrg, 'Lada Vesta', 'XTA00000000000001');
-        $this->makeContact($vehicle, 'driver', 'Яковлев', 'Ян', '+79161112233');
-        $this->makeContact($vehicle, 'driver', 'Борисов', 'Борис', '+79161112244');
-        $this->makeContact($vehicle, 'driver', 'Скрытый', 'Сергей', '+79161112255', active: false);
-        $this->makeContact($vehicle, 'contact', 'Контакт', 'Контакт', '+79161112266');
+        $this->makeContact($vehicle, 'driver', 'Яковлев', 'Ян', '+7 916 111 22 33');
+        $this->makeContact($vehicle, 'driver', 'Борисов', 'Борис', '+7 916 111 22 44');
+        $this->makeContact($vehicle, 'driver', 'Скрытый', 'Сергей', '+7 916 111 22 55', active: false);
+        $this->makeContact($vehicle, 'contact', 'Контакт', 'Контакт', '+7 916 111 22 66');
 
         $this->actingAs($this->customer);
         $response = $this->getJson('/api/vehicles/' . $vehicle->uuid . '/drivers')

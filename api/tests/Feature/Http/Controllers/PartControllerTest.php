@@ -98,7 +98,7 @@ final class PartControllerTest extends TestCase
             'kind'        => 'contact',
             'last_name'   => 'Иванов',
             'first_name'  => 'Иван',
-            'phone'       => '+79990000000',
+            'phone'       => '+7 999 000 00 00',
         ]);
 
         $this->stationRecord = Station::query()->create([
@@ -127,7 +127,7 @@ final class PartControllerTest extends TestCase
     public function test_store_creates_part_and_audit(): void
     {
         $manufacturer = \App\Models\PartManufacturer::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Bosch', 'normalized_name' => 'bosch']);
-        $catalog = app(\App\Services\CatalogService::class)->create($this->manager, 'parts', ['name' => 'Фильтр', 'article' => 'F-1', 'unit' => 'шт.', 'manufacturerId' => $manufacturer->uuid, 'supplierId' => $this->supplier->uuid, 'purchasePrice' => 100, 'salePrice' => 150]);
+        $catalog = app(\App\Services\CatalogService::class)->create($this->manager, 'parts', ['name' => 'Фильтр', 'article' => 'F-1', 'unit' => 'шт.', 'manufacturerId' => $manufacturer->uuid]);
         $request = $this->requestAtReview();
 
         $this->actingAs($this->manager);

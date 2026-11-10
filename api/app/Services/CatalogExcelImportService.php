@@ -746,18 +746,11 @@ final class CatalogExcelImportService
         }
 
         $manufacturer = \App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->where('status', 'approved')->where('active', true)->where('normalized_name', mb_strtolower(trim($values['manufacturer'])))->first();
-        $supplier = \App\Models\Supplier::query()->where('tenant_id', $user->tenantId())->where('active', true)->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($values['supplier']))])->get();
         if (!$manufacturer) {
             $this->addRowConflict($conflicts, 'parts', $row, 'manufacturer', 'Производитель не найден в согласованном справочнике');
         }
-        if ($supplier->count() !== 1) {
-            $this->addRowConflict($conflicts, 'parts', $row, 'supplier', 'Поставщик не найден или название неоднозначно');
-        }
         return [
             'manufacturerId' => $manufacturer?->uuid ?? '',
-            'supplierId' => $supplier->count() === 1 ? $supplier->first()->uuid : '',
-            'purchasePrice' => $this->decimal($row, 'purchasePrice'),
-            'salePrice' => $this->decimal($row, 'salePrice'),
             'name'         => $values['name'],
             'article'      => $values['article'],
             'manufacturer' => $values['manufacturer'],
@@ -918,7 +911,7 @@ final class CatalogExcelImportService
                     CatalogKind::Vehicles->value,
                     $row,
                     $field,
-                    'Телефон должен быть в формате +7 (ххх) ххх хх хх',
+                    'Телефон должен быть в формате ' . \App\Support\RussianPhone::HINT,
                     $phoneValue,
                 );
 

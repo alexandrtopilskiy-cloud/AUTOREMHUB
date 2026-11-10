@@ -9,7 +9,6 @@ const FIELDS = {
     taxId: "ИНН",
     kpp: "КПП",
     ogrn: "ОГРН",
-    registrationDate: "Дата регистрации",
     legalFormName: "Наименование организационно-правовой формы",
     lastName: "Фамилия ИП",
     firstName: "Имя ИП",
@@ -25,7 +24,6 @@ const FIELDS = {
     bik: "БИК",
     settlementAccount: "Расчётный счёт",
     correspondentAccount: "Корреспондентский счёт",
-    treasuryAccount: "Казначейский счёт",
     taxRegime: "Система налогообложения",
     vatRate: "Ставка НДС / без НДС",
 };
@@ -35,7 +33,6 @@ const OPTIONAL = [
     "okpo",
     "oktmo",
     "okved",
-    "treasuryAccount",
 ];
 
 export default {
@@ -141,7 +138,6 @@ export default {
                     bik: 9,
                     settlementAccount: 20,
                     correspondentAccount: 20,
-                    treasuryAccount: 20,
                 }[key] || (key.toLowerCase().includes("address") ? 1000 : 255)
             );
         },
@@ -208,9 +204,7 @@ export default {
                             /></span>
                             <input
                                 v-model="form[key]"
-                                :type="
-                                    key === 'registrationDate' ? 'date' : 'text'
-                                "
+                                type="text"
                                 :maxlength="maxLength(key)"
                                 :required="required(key)"
                                 :title="form[key]"

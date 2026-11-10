@@ -69,7 +69,7 @@ trait CreatesTestData
             'last_name'       => 'Иванов',
             'first_name'      => 'Иван',
             'middle_name'     => 'Иванович',
-            'phone'           => '+79991234567',
+            'phone'           => '+7 999 123 45 67',
         ]);
 
         $driverPerson = OrganizationPerson::create([
@@ -79,7 +79,7 @@ trait CreatesTestData
             'last_name'       => 'Петров',
             'first_name'      => 'Пётр',
             'middle_name'     => 'Петрович',
-            'phone'           => '+79997654321',
+            'phone'           => '+7 999 765 43 21',
         ]);
 
         $this->contact = VehicleContact::create([
@@ -89,7 +89,7 @@ trait CreatesTestData
             'last_name'              => 'Иванов',
             'first_name'             => 'Иван',
             'middle_name'            => 'Иванович',
-            'phone'                  => '+79991234567',
+            'phone'                  => '+7 999 123 45 67',
         ]);
 
         $this->driver = VehicleContact::create([
@@ -99,7 +99,7 @@ trait CreatesTestData
             'last_name'              => 'Петров',
             'first_name'             => 'Пётр',
             'middle_name'            => 'Петрович',
-            'phone'                  => '+79997654321',
+            'phone'                  => '+7 999 765 43 21',
         ]);
 
         $this->station = Station::create([

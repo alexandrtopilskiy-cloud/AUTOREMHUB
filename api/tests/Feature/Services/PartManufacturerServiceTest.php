@@ -81,10 +81,8 @@ final class PartManufacturerServiceTest extends TestCase
         } catch (ValidationException|ApiException $e) {
             $this->assertTrue(true);
         }
-        $part = $service->create($this->station, 'parts', ['name' => 'Filter', 'article' => 'F1', 'unit' => 'шт.', 'manufacturerId' => $manufacturer['id'], 'supplierId' => $supplier->uuid, 'purchasePrice' => 100, 'salePrice' => 150]);
+        $part = $service->create($this->station, 'parts', ['name' => 'Filter', 'article' => 'F1', 'unit' => 'шт.', 'manufacturerId' => $manufacturer['id']]);
         $this->assertSame('TEST', $part['manufacturer']);
-        $this->assertSame(150.0, $part['salePrice']);
-        $this->assertSame($supplier->uuid, $part['supplierId']);
     }
 
     public function test_manager_cannot_approve_other_tenant_proposal(): void

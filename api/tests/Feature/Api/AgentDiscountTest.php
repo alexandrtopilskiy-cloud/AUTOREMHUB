@@ -151,7 +151,7 @@ final class AgentDiscountTest extends TestCase
     {
         return \App\Models\CatalogPart::query()->create([
             'tenant_id' => $this->tenant->id, 'name' => 'Фильтр', 'article' => 'F-1',
-            'unit' => 'шт.', 'supplier_id' => $this->supplier->id, 'sale_price' => 250, 'active' => true,
+            'unit' => 'шт.', 'active' => true,
         ]);
     }
 }

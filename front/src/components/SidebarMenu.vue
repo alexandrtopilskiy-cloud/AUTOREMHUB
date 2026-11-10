@@ -51,43 +51,45 @@
         ▦ Отчёт
       </button>
 
-      <!-- Справочники: по клику — всплывающий список, набор зависит от ЛК -->
-      <template v-if="catalogKeys.length">
+      <!-- Склад, Справочники, Настройки: по клику — всплывающий список, набор зависит от ЛК -->
+      <template v-for="group in menuGroups" :key="group.key">
         <button
-          ref="catalogButton"
+          :ref="(el) => setGroupButton(group.key, el)"
           class="nav-item nav-group"
-          :class="{ active: catalogActive, open: catalogsOpen }"
+          :class="{ active: groupActive(group), open: openGroup === group.key }"
+          :data-menu-group="group.key"
           aria-haspopup="menu"
-          :aria-expanded="catalogsOpen"
-          @click="toggleCatalogs"
+          :aria-expanded="openGroup === group.key"
+          @click="toggleGroup(group.key)"
         >
-          ☷ Справочники
+          {{ group.icon }} {{ group.title }}
           <span class="nav-chevron" aria-hidden="true">▸</span>
         </button>
-        <Teleport to="body">
-          <div
-            v-if="catalogsOpen"
-            ref="catalogPopup"
-            class="catalog-popup"
-            role="menu"
-            aria-label="Справочники"
-            :style="popupStyle"
-            @keydown.esc.stop="closeCatalogs(true)"
-          >
-            <span class="catalog-popup-caption">Справочники</span>
-            <button
-              v-for="key in catalogKeys"
-              :key="key"
-              class="catalog-popup-item"
-              :class="{ active: active?.key === key }"
-              role="menuitem"
-              @click="selectCatalog(key)"
-            >
-              {{ catalogNames[key] }}
-            </button>
-          </div>
-        </Teleport>
       </template>
+      <Teleport to="body">
+        <div
+          v-if="openedGroup"
+          ref="catalogPopup"
+          class="catalog-popup"
+          role="menu"
+          :aria-label="openedGroup.title"
+          :style="popupStyle"
+          @keydown.esc.stop="closeCatalogs(true)"
+        >
+          <span class="catalog-popup-caption">{{ openedGroup.title }}</span>
+          <template v-for="item in openedGroup.items" :key="item.key">
+            <span v-if="item.caption" class="catalog-popup-subcaption">{{ item.caption }}</span>
+            <button
+              class="catalog-popup-item"
+              :class="{ active: itemActive(item.key) }"
+              role="menuitem"
+              @click="selectCatalog(item.key)"
+            >
+              {{ item.label }}
+            </button>
+          </template>
+        </div>
+      </Teleport>
 
       <!-- Уведомления -->
       <span class="nav-caption notification-caption">
@@ -139,7 +141,7 @@
 </template>
 
 <script>
-import { formatDateTime, catalogNames } from "../data/permissions";
+import { formatDateTime } from "../data/permissions";
 
 const POPUP_GAP = 6;
 const VIEWPORT_PAD = 8;
@@ -157,10 +159,12 @@ export default {
     unreadNotifications: { type: Number, default: 0 },
     unreadChatSummaries: { type: Array, default: () => [] },
     chatUnreadTotal: { type: Number, default: 0 },
-    catalogKeys: { type: Array, default: () => [] },
+    /** Группы меню со всплывающим списком: [{ key, title, icon, items: [{ key, label, caption? }] }]. */
+    menuGroups: { type: Array, default: () => [] },
   },
   emits: [
     "open-list",
+    "open-menu-item",
     "open-recommendations",
     "open-edo",
     "open-report",
@@ -170,15 +174,20 @@ export default {
   ],
   data() {
     return {
-      catalogNames,
-      catalogsOpen: false,
+      openGroup: "",
       popupStyle: {},
     };
   },
   computed: {
-    catalogActive() {
-      return this.catalogKeys.includes(this.active?.key);
+    openedGroup() {
+      return this.menuGroups.find((group) => group.key === this.openGroup) || null;
     },
+    activeKey() {
+      return this.active?.menuKey || this.active?.key || "";
+    },
+  },
+  created() {
+    this.groupButtons = {};
   },
   watch: {
     "panel.menu"(value) {
@@ -190,12 +199,23 @@ export default {
   },
   methods: {
     formatDateTime,
-    toggleCatalogs() {
-      if (this.catalogsOpen) this.closeCatalogs();
-      else this.openCatalogs();
+    setGroupButton(key, el) {
+      if (el) this.groupButtons[key] = el;
+      else delete this.groupButtons[key];
     },
-    openCatalogs() {
-      this.catalogsOpen = true;
+    groupActive(group) {
+      return group.items.some((item) => item.key === this.activeKey);
+    },
+    itemActive(key) {
+      return this.activeKey === key;
+    },
+    toggleGroup(key) {
+      if (this.openGroup === key) this.closeCatalogs();
+      else this.openCatalogs(key);
+    },
+    openCatalogs(key) {
+      if (this.openGroup) this.unbindPopupListeners();
+      this.openGroup = key;
       this.placePopup();
       this.$nextTick(() => {
         this.placePopup();
@@ -204,18 +224,19 @@ export default {
       this.bindPopupListeners();
     },
     closeCatalogs(returnFocus = false) {
-      if (!this.catalogsOpen) return;
-      this.catalogsOpen = false;
+      if (!this.openGroup) return;
+      const button = this.groupButtons[this.openGroup];
+      this.openGroup = "";
       this.unbindPopupListeners();
-      if (returnFocus) this.$refs.catalogButton?.focus();
+      if (returnFocus) button?.focus();
     },
     selectCatalog(key) {
       this.closeCatalogs();
-      this.$emit("open-list", key);
+      this.$emit("open-menu-item", key);
     },
     /* Справа от пункта меню; если места справа нет (мобильный вид) — под пунктом. */
     placePopup() {
-      const button = this.$refs.catalogButton;
+      const button = this.groupButtons[this.openGroup];
       if (!button) return;
       const rect = button.getBoundingClientRect();
       const vw = window.innerWidth;
@@ -244,7 +265,7 @@ export default {
     onDocumentPointer(event) {
       const target = event.target;
       if (this.$refs.catalogPopup?.contains(target)) return;
-      if (this.$refs.catalogButton?.contains(target)) return;
+      if (this.groupButtons[this.openGroup]?.contains(target)) return;
       this.closeCatalogs();
     },
     onDocumentKey(event) {
@@ -307,6 +328,15 @@ export default {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: #6e7c8e;
+}
+
+.catalog-popup-subcaption {
+  padding: 8px 10px 2px;
+  font-size: 11px;
+  font-weight: 650;
+  color: #8a97a8;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
 }
 
 .catalog-popup-item {

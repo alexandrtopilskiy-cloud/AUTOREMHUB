@@ -1,5 +1,6 @@
 <script setup>
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { marketplaceApi } from "../../api/marketplace.js";
 import { money, agentDiscountPercent, agentDiscountAmount } from "../../data/permissions.js";
 import { startColumnResize } from "../../utils/columnResize.js";
 import WorkTypePicker from "./WorkTypePicker.vue";
@@ -55,6 +56,37 @@ function emptyPart() {
     };
 }
 const placeholder = ref(emptyPart());
+/* Складской учёт: наличие ЗЧ на складах СТО, назначенной в ЗР (не для Заказчика). */
+const stock = ref(null);
+async function loadStock() {
+    if (props.customerView || !props.request.id) return;
+    try {
+        stock.value = await marketplaceApi.requestStock(props.request.id);
+    } catch {
+        stock.value = null;
+    }
+}
+onMounted(loadStock);
+watch(() => [props.request.revision, props.request.stationId], loadStock);
+function stockQty(value) {
+    return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+function stockState(row) {
+    if (!stock.value?.available || props.customerView) return null;
+    const need = Number(row.qty || 0) - Number(row.returnedQty || 0);
+    if (row.id && stock.value.rows[row.id] && !row._stockDirty) {
+        const state = stock.value.rows[row.id];
+        if (state.writtenOff) return { label: "Списано со склада", kind: "written" };
+        if (state.sufficient) return { label: stock.value.reserving ? "В резерве" : "Есть на складе", kind: "ok" };
+        return { label: `Нет на складе (есть ${stockQty(state.covered)})`, kind: "missing" };
+    }
+    if (!row.catalogPartId) return row.name ? { label: "Нет на складе", kind: "missing" } : null;
+    const free = Number(stock.value.parts[row.catalogPartId]?.free || 0);
+    return free + 0.0005 >= need
+        ? { label: "Есть на складе", kind: "ok" }
+        : { label: `Нет на складе (есть ${stockQty(free)})`, kind: "missing" };
+}
+const hasMissingStock = computed(() => rows.value.some((row) => stockState(row)?.kind === "missing"));
 const canEditParts = computed(
     () => props.request.permissions?.canEditParts === true,
 );
@@ -73,7 +105,14 @@ const catalogOptions = computed(() =>
         .filter((p) => p.active !== false)
         .map((p) => ({
             ...p,
-            optionLabel: [p.name, p.article, p.manufacturer]
+            optionLabel: [
+                p.name,
+                p.article,
+                p.manufacturer,
+                stock.value?.available
+                    ? `на складе: ${stockQty(stock.value.parts[p.id]?.free || 0)}`
+                    : "",
+            ]
                 .filter(Boolean)
                 .join(" · "),
         })),
@@ -111,6 +150,7 @@ function ensureRow(row) {
 }
 function changed(row) {
     ensureRow(row);
+    row._stockDirty = true;
     emit("touch");
 }
 function selectPart(row, part) {
@@ -120,8 +160,9 @@ function selectPart(row, part) {
         article: part.article || "",
         manufacturer: part.manufacturer || "",
         unit: part.unit || "шт.",
-        supplierId: part.supplierId || "",
-        price: part.salePrice ?? 0,
+        // Цена реализации и поставщик — из последнего проведённого Прихода на склад СТО.
+        supplierId: stock.value?.parts[part.id]?.supplierId || row.supplierId || "",
+        price: stock.value?.parts[part.id]?.salePrice ?? row.price ?? 0,
     });
     changed(row);
 }
@@ -238,6 +279,7 @@ async function apply() {
                     <col v-if="!customerView" style="width: 7%" />
                     <col v-if="!customerView" style="width: 8%" />
                     <col style="width: 8%" />
+                    <col v-if="!customerView" style="width: 9%" />
                     <col style="width: 8%" />
                     <col v-if="showChangeNotes" style="width: 9%" />
                     <col style="width: 26px" />
@@ -259,6 +301,7 @@ async function apply() {
                                     ? ['Агентская скидка, %', 'Скидка, ₽']
                                     : []),
                                 'Статус',
+                                ...(!customerView ? ['Склад'] : []),
                                 'Комментарий',
                                 ...(showChangeNotes
                                     ? ['Примечание к изменению']
@@ -281,7 +324,10 @@ async function apply() {
                         v-for="row in rows"
                         :key="row.id || row._clientId"
                         class="part-draft-row"
-                        :class="lineChange(row) ? 'line-' + lineChange(row) : ''"
+                        :class="[
+                            lineChange(row) ? 'line-' + lineChange(row) : '',
+                            stockState(row)?.kind === 'missing' ? 'part-missing-stock' : '',
+                        ]"
                     >
                         <td v-if="selectable">
                             <input
@@ -448,6 +494,14 @@ async function apply() {
                             </select>
                             <span v-else>{{ statusLabel(row.status) }}</span>
                         </td>
+                        <td v-if="!customerView" :title="stockState(row)?.label || ''">
+                            <span
+                                v-if="stockState(row)"
+                                class="part-stock-badge"
+                                :class="stockState(row).kind"
+                            >{{ stockState(row).label }}</span>
+                            <span v-else class="muted">—</span>
+                        </td>
                         <td class="line-comment-cell" :title="row.comment || ''">
                             <input
                                 v-if="canEditParts"
@@ -512,6 +566,10 @@ async function apply() {
             </button>
         </div>
         <p v-if="!rows.length" class="muted">Запчасти не добавлены.</p>
+        <p v-if="hasMissingStock" class="parts-stock-note">
+            Синим выделены ЗЧ, которых нет на складе СТО в нужном количестве — они есть только в ЗР.
+            Перевести ЗР на этап «ТС готово к выдаче Заказчику» можно только после оприходования этих ЗЧ.
+        </p>
         <form
             v-if="operation"
             class="form-grid inset-form"

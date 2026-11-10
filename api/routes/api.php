@@ -13,6 +13,7 @@ use App\Http\Controllers\EdoDocumentController;
 use App\Http\Controllers\EdoSettingsController;
 use App\Http\Controllers\ClosingDocumentController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationPersonController;
 use App\Http\Controllers\PartController;
@@ -208,6 +209,25 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 
     Route::get('/request-documents/{documentId}/pdf', [ClosingDocumentController::class, 'pdf'])->whereUuid('documentId')->name('request-documents.pdf');
     Route::get('/reports/requests', [ReportController::class, 'requests'])->name('reports.requests');
+
+    // ─── Склад ───
+    Route::prefix('warehouse')->name('warehouse.')->group(function (): void {
+        Route::get('/settings', [WarehouseController::class, 'settings'])->name('settings');
+        Route::put('/settings/markup', [WarehouseController::class, 'saveMarkup'])->name('settings.markup');
+        Route::post('/warehouses', [WarehouseController::class, 'storeWarehouse'])->name('warehouses.store');
+        Route::patch('/warehouses/{id}', [WarehouseController::class, 'updateWarehouse'])->whereUuid('id')->name('warehouses.update');
+        Route::delete('/warehouses/{id}', [WarehouseController::class, 'destroyWarehouse'])->whereUuid('id')->name('warehouses.destroy');
+        Route::get('/counterparties', [WarehouseController::class, 'counterparties'])->name('counterparties');
+        Route::get('/balance', [WarehouseController::class, 'balance'])->name('balance');
+        Route::get('/documents', [WarehouseController::class, 'index'])->name('documents.index');
+        Route::post('/documents', [WarehouseController::class, 'store'])->name('documents.store');
+        Route::get('/documents/{id}', [WarehouseController::class, 'show'])->whereUuid('id')->name('documents.show');
+        Route::patch('/documents/{id}', [WarehouseController::class, 'update'])->whereUuid('id')->name('documents.update');
+        Route::delete('/documents/{id}', [WarehouseController::class, 'destroy'])->whereUuid('id')->name('documents.destroy');
+        Route::post('/documents/{id}/post', [WarehouseController::class, 'post'])->whereUuid('id')->name('documents.post');
+        Route::post('/documents/{id}/unpost', [WarehouseController::class, 'unpost'])->whereUuid('id')->name('documents.unpost');
+    });
+    Route::get('/requests/{id}/stock', [WarehouseController::class, 'requestStock'])->name('requests.stock');
 
     Route::prefix('edo')->name('edo.')->group(function (): void {
         Route::post('/connect', [EdoSettingsController::class, 'connect']);

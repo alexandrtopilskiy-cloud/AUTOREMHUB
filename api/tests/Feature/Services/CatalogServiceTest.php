@@ -221,9 +221,6 @@ final class CatalogServiceTest extends TestCase
             'name'         => 'Фильтр',
             'article'      => 'F-1',
             'manufacturerId' => $manufacturer['id'],
-            'supplierId' => $supplier->uuid,
-            'purchasePrice' => 100,
-            'salePrice' => 150,
             'unit'         => 'шт.',
             'active'       => true,
         ]);
@@ -394,11 +391,10 @@ final class CatalogServiceTest extends TestCase
         $supplier = $this->makeSupplier('Поставщик');
         $part = $this->service()->create($this->manager, 'parts', [
             'name' => 'Фильтр', 'article' => 'F-1', 'manufacturerId' => $manufacturer['id'],
-            'supplierId' => $supplier->uuid, 'purchasePrice' => 100, 'salePrice' => 150, 'unit' => 'шт.',
+            'unit' => 'шт.',
         ]);
         $updated = $this->service()->update($this->manager, $part['id'], ['name' => 'Фильтр обновлённый']);
         $this->assertSame('Фильтр обновлённый', $updated['name']);
-        $this->assertSame(150.0, $updated['salePrice']);
     }
 
     public function test_update_forbidden_for_customer(): void

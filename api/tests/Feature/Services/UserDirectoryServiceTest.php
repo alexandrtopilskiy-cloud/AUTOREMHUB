@@ -158,7 +158,7 @@ final class UserDirectoryServiceTest extends TestCase
 
         $this->assertSame('customer-user', $record['login']);
         $this->assertSame('Иванов Иван Иванович', $record['fullName']);
-        $this->assertSame('+7 (999) 111 22 33', $record['phone']);
+        $this->assertSame('+7 999 111 22 33', $record['phone']);
         $this->assertSame(UserDirectoryService::PASSWORD_MASK, $record['password']);
 
         $created = User::query()->where('login', 'customer-user')->firstOrFail();
@@ -206,7 +206,7 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_create_rejects_invalid_phone(): void
     {
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('Телефон должен быть указан в формате +7 (ххх) ххх хх хх');
+        $this->expectExceptionMessage('Телефон должен быть указан в формате +7 ххх ххх хх хх');
 
         $this->service()->create($this->manager, $this->validPayload([
             'phone' => '+7 (999) 12',
@@ -256,7 +256,7 @@ final class UserDirectoryServiceTest extends TestCase
 
         $this->customer->refresh();
         $this->assertSame('Петров', $this->customer->last_name);
-        $this->assertSame('+79995556677', $this->customer->phone);
+        $this->assertSame('+7 999 555 66 77', $this->customer->phone);
     }
 
     public function test_update_ignores_password_mask(): void
@@ -436,7 +436,7 @@ final class UserDirectoryServiceTest extends TestCase
             'last_name'       => 'Тестов',
             'first_name'      => 'Тест',
             'email'           => $login . '@example.test',
-            'phone'           => '+79991112233',
+            'phone'           => '+7 999 111 22 33',
             'access_rights'   => ['requests.view'],
         ]);
     }

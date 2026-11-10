@@ -25,6 +25,18 @@ import EdoDocuments from "./components/edo/EdoDocuments.vue";
 import RegistryTable from "./components/RegistryTable.vue";
 import WorkspaceTabs from "./components/WorkspaceTabs.vue";
 import WorkspaceAlerts from "./components/WorkspaceAlerts.vue";
+import WarehouseSettings from "./features/warehouse/WarehouseSettings.vue";
+import StockDocumentList from "./features/warehouse/StockDocumentList.vue";
+import StockDocumentEditor from "./features/warehouse/StockDocumentEditor.vue";
+import StockBalanceReport from "./features/warehouse/StockBalanceReport.vue";
+
+/** Пункты меню «Склад» и «Настройки» (ЛК УК и СТО). */
+const WAREHOUSE_MENU = {
+    stockReceipts: "Приход",
+    stockSales: "Реализация",
+    stockBalance: "Остатки на складе",
+};
+const WAREHOUSE_CATALOGS = ["parts", "partManufacturers", "suppliers"];
 import { createRequestStore } from "./stores/requestStore.js";
 import { marketplaceApi, restoreToken, clearToken } from "./api/marketplace.js";
 import { http } from "./api/client.js";
@@ -77,6 +89,10 @@ export default {
         RegistryTable,
         WorkspaceTabs,
         WorkspaceAlerts,
+        WarehouseSettings,
+        StockDocumentList,
+        StockDocumentEditor,
+        StockBalanceReport,
     },
     data() {
         return {
@@ -192,9 +208,6 @@ export default {
                     "contactPersons",
                     "workTypes",
                     "normApplicabilities",
-                    "partManufacturers",
-                    "suppliers",
-                    "parts",
                     "customers",
                     "stations",
                     "managers",
@@ -204,9 +217,46 @@ export default {
                 ];
             }
 
-            return this.user?.role === "station"
-                ? ["parts", "partManufacturers", "suppliers"]
-                : [];
+            // Справочники ЗЧ, Производители и Поставщики перенесены в меню «Склад».
+            return [];
+        },
+        hasWarehouse() {
+            return ["manager", "station"].includes(this.user?.role);
+        },
+        menuGroups() {
+            const groups = [];
+            if (this.hasWarehouse) {
+                groups.push({
+                    key: "warehouse",
+                    title: "Склад",
+                    icon: "▣",
+                    items: [
+                        ...Object.entries(WAREHOUSE_MENU).map(([key, label]) => ({ key, label })),
+                        ...WAREHOUSE_CATALOGS.map((key, index) => ({
+                            key,
+                            label: catalogNames[key],
+                            caption: index === 0 ? "Справочники" : "",
+                        })),
+                    ],
+                });
+            }
+            if (this.catalogKeys.length) {
+                groups.push({
+                    key: "catalogs",
+                    title: "Справочники",
+                    icon: "☷",
+                    items: this.catalogKeys.map((key) => ({ key, label: catalogNames[key] })),
+                });
+            }
+            if (this.hasWarehouse) {
+                groups.push({
+                    key: "settings",
+                    title: "Настройки",
+                    icon: "⚙",
+                    items: [{ key: "warehouseSettings", label: "Складской учёт" }],
+                });
+            }
+            return groups;
         },
         awaiting() {
             return this.store.requests.filter(
@@ -268,6 +318,12 @@ export default {
                         r.permissions.requiresAction ??
                         r.permissions.canAdvance,
                 );
+            if (this.active.key === "partManufacturers") {
+                const search = String(this.active.search || "").toLowerCase().trim();
+                rows = rows
+                    .filter((row) => !search || matchesReference([row.name, row.proposedName].filter(Boolean).join(" "), search))
+                    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru", { sensitivity: "base" }));
+            }
             const filters = this.active.filters || {};
 
             return rows.filter((row) =>
@@ -933,6 +989,7 @@ export default {
                             action: "Ожидают действия",
                         }[key] || catalogNames[key],
                     filters: {},
+                    search: "",
                     selection: null,
                 };
 
@@ -1093,6 +1150,10 @@ export default {
             if (t.kind === "request" && this.store.pending[t.recordId]) {
                 this.pendingCloseTabId = id;
 
+                return;
+            }
+
+            if (t.kind === "stock-doc" && t.dirty && !window.confirm("Документ не сохранён. Закрыть без сохранения?")) {
                 return;
             }
 
@@ -1347,6 +1408,73 @@ export default {
                 });
             await this.activate(id);
         },
+        async openMenuItem(key) {
+            if (key === "stockReceipts") return this.openStockList("receipt");
+            if (key === "stockSales") return this.openStockList("sale");
+            if (key === "stockBalance") return this.openSimpleTab("stock-balance", "Остатки на складе", key);
+            if (key === "warehouseSettings") return this.openSimpleTab("warehouse-settings", "Складской учёт", key);
+            return this.openList(key);
+        },
+        async openSimpleTab(kind, title, menuKey) {
+            const id = kind;
+            if (!this.tabs.some((tab) => tab.id === id)) this.tabs.push({ id, kind, title, menuKey });
+            await this.activate(id);
+        },
+        async openStockList(type) {
+            const id = "stock-list:" + type;
+            const tab = this.tabs.find((item) => item.id === id);
+            if (tab) tab.reloadToken += 1;
+            else
+                this.tabs.push({
+                    id,
+                    kind: "stock-list",
+                    type,
+                    menuKey: type === "receipt" ? "stockReceipts" : "stockSales",
+                    title: type === "receipt" ? "Приход" : "Реализация",
+                    reloadToken: 0,
+                });
+            await this.activate(id);
+        },
+        async openStockDocument(type, doc = null) {
+            const id = doc ? "stock-doc:" + doc.id : `stock-doc:new-${Date.now()}`;
+            if (!this.tabs.some((tab) => tab.id === id))
+                this.tabs.push({
+                    id,
+                    kind: "stock-doc",
+                    type,
+                    docId: doc?.id || "",
+                    draft: null,
+                    dirty: false,
+                    menuKey: type === "receipt" ? "stockReceipts" : "stockSales",
+                    title: doc?.number || (type === "receipt" ? "Новый Приход" : "Новая Реализация"),
+                });
+            await this.activate(id);
+        },
+        stockDocumentSaved(doc) {
+            const tab = this.active;
+            if (doc && tab?.kind === "stock-doc") tab.title = doc.number;
+            const list = this.tabs.find((item) => item.id === "stock-list:" + tab?.type);
+            if (list) list.reloadToken += 1;
+        },
+        async createPartFromStockDocument(target) {
+            const tabId = this.activeId;
+            await this.openRecord(
+                {
+                    id: "new-" + Date.now(),
+                    kind: "parts",
+                    createdByOrganization: this.user.organization,
+                    name: String(target?.name || "").trim(),
+                    article: "",
+                    manufacturer: "",
+                    unit: "шт.",
+                    active: true,
+                    permissions: { canEdit: true },
+                    isNew: true,
+                    _stockTarget: { tabId, clientId: target?.clientId || "" },
+                },
+                "record",
+            );
+        },
         async openReport() {
             const id = "report:requests";
             if (!this.tabs.some((tab) => tab.id === id))
@@ -1591,6 +1719,7 @@ export default {
             const tab = this.active;
             const requestWorkTarget = tab?.record?._requestWorkTarget;
             const requestPartTarget = tab?.record?._requestPartTarget;
+            const stockTarget = tab?.record?._stockTarget;
 
             tab.record = record;
             tab.recordId = record.id;
@@ -1641,6 +1770,24 @@ export default {
                 );
             }
 
+            if (record.kind === "parts" && stockTarget) {
+                const stockTab = this.tabs.find((item) => item.id === stockTarget.tabId);
+                const row = stockTab?.draft?.items?.find((item) => item._clientId === stockTarget.clientId);
+                if (row) {
+                    Object.assign(row, {
+                        catalogPartId: record.id,
+                        name: record.name,
+                        article: record.article || "",
+                        manufacturer: record.manufacturer || "",
+                        unit: record.unit || "",
+                    });
+                    stockTab.dirty = true;
+                }
+                this.removeTab(tab.id);
+                if (stockTab) this.activate(stockTab.id);
+                this.notify(row ? "Запчасть добавлена в справочник и в документ" : "Запчасть добавлена в справочник");
+            }
+
             if (record.kind === "parts" && requestPartTarget) {
                 const request = this.store.get(requestPartTarget.requestId);
                 const part =
@@ -1656,8 +1803,6 @@ export default {
                     part.article = record.article || "";
                     part.manufacturer = record.manufacturer || "";
                     part.unit = record.unit || "шт.";
-                    part.supplierId = record.supplierId || "";
-                    part.price = record.salePrice ?? 0;
                     this.store.touch(request.id);
                 }
 
@@ -1980,8 +2125,9 @@ export default {
                 :unread-notifications="unreadNotifications"
                 :unread-chat-summaries="unreadChatSummaries"
                 :chat-unread-total="store.chatUnreadTotal"
-                :catalog-keys="catalogKeys"
+                :menu-groups="menuGroups"
                 @open-list="openList"
+                @open-menu-item="openMenuItem"
                 @open-recommendations="openAllRecommendations"
                 @open-edo="openEdoTab"
                 @open-report="openReport"
@@ -2061,7 +2207,9 @@ export default {
                                     <span class="eyebrow">{{
                                         isRequestList
                                             ? "Документы"
-                                            : "Справочники"
+                                            : ["parts", "partManufacturers", "suppliers"].includes(active.key)
+                                              ? "Склад · справочники"
+                                              : "Справочники"
                                     }}</span>
                                     <h1>
                                         {{ active.title }}
@@ -2120,6 +2268,18 @@ export default {
                                     </button>
                                 </div>
                             </div>
+                            <label
+                                v-if="active.key === 'partManufacturers'"
+                                class="manufacturer-search"
+                            >
+                                <span>Поиск по производителю</span>
+                                <input
+                                    v-model="active.search"
+                                    type="search"
+                                    placeholder="Начните вводить наименование производителя"
+                                    aria-label="Поиск по производителю"
+                                />
+                            </label>
                             <p class="list-hint">
                                 <template
                                     v-if="active.key === 'changeRegistry'"
@@ -2305,6 +2465,33 @@ export default {
                             :vehicle-id="active.recordId"
                         />
                         <EdoDocuments v-else-if="active?.kind === 'edo'" />
+                        <WarehouseSettings
+                            v-else-if="active?.kind === 'warehouse-settings'"
+                            @notify="notify"
+                        />
+                        <StockDocumentList
+                            v-else-if="active?.kind === 'stock-list'"
+                            :key="active.id"
+                            :type="active.type"
+                            :reload-token="active.reloadToken"
+                            @open="openStockDocument(active.type, $event)"
+                            @create="openStockDocument(active.type)"
+                            @notify="notify"
+                        />
+                        <StockDocumentEditor
+                            v-else-if="active?.kind === 'stock-doc'"
+                            :key="active.id"
+                            :tab="active"
+                            :references="store.references"
+                            @saved="stockDocumentSaved"
+                            @close="removeTab(active.id)"
+                            @create-part="createPartFromStockDocument"
+                            @notify="notify"
+                        />
+                        <StockBalanceReport
+                            v-else-if="active?.kind === 'stock-balance'"
+                            @notify="notify"
+                        />
                         <RequestReport
                             v-else-if="active?.kind === 'report'"
                             :key="active.id"

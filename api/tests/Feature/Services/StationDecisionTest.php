@@ -76,7 +76,7 @@ final class StationDecisionTest extends TestCase
             'kind'       => 'contact',
             'last_name'  => 'Иванов',
             'first_name' => 'Иван',
-            'phone'      => '+79990000000',
+            'phone'      => '+7 999 000 00 00',
         ]);
 
         $this->stationRecord = Station::query()->create([

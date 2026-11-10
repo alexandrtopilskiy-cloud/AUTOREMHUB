@@ -1265,6 +1265,55 @@ export const marketplaceApi = {
         return http.request("/reports/requests");
     },
 
+    /* ─── Склад ─── */
+
+    warehouseSettings() {
+        return http.request("/warehouse/settings");
+    },
+    saveWarehouseMarkup(markup) {
+        return http.request("/warehouse/settings/markup", { method: "PUT", body: markup });
+    },
+    createWarehouse(name) {
+        return http.request("/warehouse/warehouses", { method: "POST", body: { name } });
+    },
+    updateWarehouse(id, name) {
+        return http.request(`/warehouse/warehouses/${encodeId(id)}`, { method: "PATCH", body: { name } });
+    },
+    deleteWarehouse(id) {
+        return http.request(`/warehouse/warehouses/${encodeId(id)}`, { method: "DELETE" });
+    },
+    warehouseCounterparties() {
+        return http.request("/warehouse/counterparties");
+    },
+    stockDocuments(type) {
+        return http.request(`/warehouse/documents?type=${encodeURIComponent(type)}`);
+    },
+    stockDocument(id) {
+        return http.request(`/warehouse/documents/${encodeId(id)}`);
+    },
+    saveStockDocument(id, body) {
+        return id
+            ? http.request(`/warehouse/documents/${encodeId(id)}`, { method: "PATCH", body })
+            : http.request("/warehouse/documents", { method: "POST", body });
+    },
+    postStockDocument(id) {
+        return http.request(`/warehouse/documents/${encodeId(id)}/post`, { method: "POST" });
+    },
+    unpostStockDocument(id) {
+        return http.request(`/warehouse/documents/${encodeId(id)}/unpost`, { method: "POST" });
+    },
+    deleteStockDocument(id) {
+        return http.request(`/warehouse/documents/${encodeId(id)}`, { method: "DELETE" });
+    },
+    stockBalance(date, warehouseId = "") {
+        const query = new URLSearchParams({ date });
+        if (warehouseId) query.set("warehouseId", warehouseId);
+        return http.request(`/warehouse/balance?${query}`);
+    },
+    requestStock(key) {
+        return http.request(`/requests/${encodeId(key)}/stock`);
+    },
+
     /* ─── Вложения ─── */
 
     /**

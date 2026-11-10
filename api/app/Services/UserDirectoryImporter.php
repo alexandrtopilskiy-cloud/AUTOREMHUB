@@ -333,7 +333,7 @@ final class UserDirectoryImporter
             if ($value('phone') !== '') {
                 Input::fail(
                     "Строка {$rowNumber}: телефон должен иметь формат "
-                    . '+7 (ххх) ххх хх хх',
+                    . \App\Support\RussianPhone::HINT,
                 );
             }
 
@@ -494,7 +494,7 @@ final class UserDirectoryImporter
             STR_PAD_LEFT,
         );
 
-        return '+79' . $number;
+        return (string) RussianPhone::normalize('+79' . $number);
     }
 
     private function retireConflictingLogin(Tenant $tenant, User $user): void
