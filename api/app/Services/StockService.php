@@ -128,7 +128,18 @@ final class StockService
      */
     public function requestStock(RepairRequest $request): array
     {
-        $organizationId = $this->requestOrganizationId($request);
+        return $this->stockFor($request, $this->requestOrganizationId($request));
+    }
+
+    /**
+     * Наличие и цены по складам организации $organizationId для строк ЗР.
+     * Отдельно от requestStock: форма ЗР может спросить остатки по СТО,
+     * выбранной, но ещё не сохранённой (новая ЗР или смена СТО на этапе 1).
+     *
+     * @return array<string, mixed>
+     */
+    public function stockFor(RepairRequest $request, ?int $organizationId): array
+    {
         if ($organizationId === null) {
             return ['available' => false, 'parts' => [], 'rows' => []];
         }

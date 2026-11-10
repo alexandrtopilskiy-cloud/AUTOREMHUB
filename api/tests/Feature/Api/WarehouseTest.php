@@ -392,6 +392,24 @@ final class WarehouseTest extends TestCase
         $this->assertSame(0, StockMovement::query()->where('source_type', 'repair_request')->count());
     }
 
+    public function test_stock_prices_for_station_chosen_in_unsaved_form(): void
+    {
+        $this->stockPart($this->users['station'], $this->catalog, 3, $this->supplier, 100, 180);
+        $stationUuid = $this->request->stationRecord->uuid;
+        $this->actingAs($this->users['manager']);
+
+        // Новая ЗР: СТО выбрана в форме, ЗР ещё не сохранена.
+        $stock = $this->getJson('/api/warehouse/station-stock?stationId=' . $stationUuid)->assertOk()->json();
+        $this->assertTrue($stock['available']);
+        $this->assertSame(180.0, (float) $stock['parts'][$this->catalog->uuid]['salePrice']);
+        $this->assertFalse($this->getJson('/api/warehouse/station-stock')->assertOk()->json('available'), 'Без СТО остатков нет');
+
+        // Сохранённая ЗР: СТО снята в форме — остатков нет, выбрана снова — есть.
+        $this->assertFalse($this->getJson('/api/requests/' . $this->request->uuid . '/stock?stationId=')->assertOk()->json('available'));
+        $stock = $this->getJson('/api/requests/' . $this->request->uuid . '/stock?stationId=' . $stationUuid)->assertOk()->json();
+        $this->assertSame(180.0, (float) $stock['parts'][$this->catalog->uuid]['salePrice']);
+    }
+
     public function test_customer_has_no_stock_access(): void
     {
         $this->actingAs($this->users['customer'])->getJson('/api/requests/' . $this->request->uuid . '/stock')->assertForbidden();
