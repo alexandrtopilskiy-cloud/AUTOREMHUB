@@ -365,6 +365,10 @@ final class WarehouseTest extends TestCase
         $stock = $this->getJson("/api/requests/{$request['id']}/stock")->assertOk()->json();
         $partId = $request['parts'][0]['id'];
         $this->assertFalse($stock['rows'][$partId]['sufficient'], 'ЗЧ только в ЗР, на склад не добавлены');
+        $this->assertSame(['Фильтр (F-1) — нужно 2, на складе доступно 0'], $request['stockShortage'], 'ЛК СТО видит, каких ЗЧ не хватает');
+        $this->actingAs($this->users['manager']);
+        $this->assertSame([], $this->get('/api/requests/' . $this->request->uuid)->assertOk()->json('request.stockShortage'));
+        $this->actingAs($this->users['station']);
 
         $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => 'Готово', 'attachmentIds' => []])
             ->assertStatus(422)
@@ -373,6 +377,7 @@ final class WarehouseTest extends TestCase
         $this->stockPart($this->users['station'], $this->catalog, 2, $this->supplier);
         $stock = $this->getJson("/api/requests/{$request['id']}/stock")->assertOk()->json();
         $this->assertTrue($stock['rows'][$partId]['sufficient'], 'ЗЧ в резерве');
+        $this->assertSame([], $this->get('/api/requests/' . $this->request->uuid)->assertOk()->json('request.stockShortage'));
 
         $request = $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => 'Готово', 'attachmentIds' => []])
             ->assertOk()->json('request');
