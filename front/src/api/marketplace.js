@@ -1265,6 +1265,10 @@ export const marketplaceApi = {
         return http.request("/reports/requests");
     },
 
+    async reportCashFlow() {
+        return http.request("/reports/cash-flow");
+    },
+
     /* ─── Склад ─── */
 
     warehouseSettings() {

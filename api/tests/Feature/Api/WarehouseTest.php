@@ -283,6 +283,25 @@ final class WarehouseTest extends TestCase
         $afterDelete = $this->documents()->deletePayment($user, $sale['id'], $sale['payments'][0]['id']);
         $this->assertSame('unpaid', $afterDelete['paymentStatus']);
         $this->assertSame([], $afterDelete['payments']);
+
+        // ДДС: оплаты Поставщику — расход, оплата Реализации — поступление.
+        $this->documents()->addPayment($user, $sale['id'], ['paidOn' => now()->format('Y-m-d'), 'amount' => 200, 'method' => 'cash']);
+        $this->actingAs($user);
+        $rows = $this->get('/api/reports/cash-flow')->assertOk()->json('rows');
+        $this->assertSame([400.0, 600.0, 200.0], array_map(fn ($row) => (float) $row['amount'], $rows));
+        $this->assertSame(['out', 'out', 'in'], array_column($rows, 'direction'));
+        $this->assertSame(['receipt_payment', 'receipt_payment', 'sale_payment'], array_column($rows, 'article'));
+        $this->assertSame('Поставщик', $rows[0]['counterparty']);
+        $this->assertSame('ООО "Альфа"', $rows[2]['counterparty']);
+        $this->assertSame('Наличные', $rows[2]['method']);
+        $this->assertSame($receipt['number'], $rows[0]['document']);
+
+        // Заказчик видит оплату Реализации как расход; УК чужих оплат склада не видит.
+        $this->actingAs($this->users['customer']);
+        $rows = $this->get('/api/reports/cash-flow')->assertOk()->json('rows');
+        $this->assertSame(['out', 'sale_payment', 'Покупка ЗЧ', 'ООО "КУБ"'], [$rows[0]['direction'], $rows[0]['article'], $rows[0]['articleLabel'], $rows[0]['counterparty']]);
+        $this->actingAs($this->users['manager']);
+        $this->assertSame([], $this->get('/api/reports/cash-flow')->assertOk()->json('rows'));
     }
 
     public function test_cost_method_drives_prices_write_off_and_balance(): void

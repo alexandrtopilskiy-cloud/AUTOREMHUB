@@ -209,6 +209,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 
     Route::get('/request-documents/{documentId}/pdf', [ClosingDocumentController::class, 'pdf'])->whereUuid('documentId')->name('request-documents.pdf');
     Route::get('/reports/requests', [ReportController::class, 'requests'])->name('reports.requests');
+    Route::get('/reports/cash-flow', [ReportController::class, 'cashFlow'])->name('reports.cash-flow');
 
     // ─── Склад ───
     Route::prefix('warehouse')->name('warehouse.')->group(function (): void {

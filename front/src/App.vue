@@ -4,6 +4,7 @@ import LoginForm from "./features/auth/LoginForm.vue";
 import RepairEditor from "./features/requests/RepairEditor.vue";
 import { forgetZrTab } from "./features/requests/zrTabMemory.js";
 import RequestReport from "./features/reports/RequestReport.vue";
+import CashFlowReport from "./features/reports/CashFlowReport.vue";
 import UnsavedChangesDialog from "./features/requests/UnsavedChangesDialog.vue";
 import RequestPreview from "./features/requests/RequestPreview.vue";
 import SupplierEditor from "./features/catalogs/SupplierEditor.vue";
@@ -68,6 +69,7 @@ export default {
         LoginForm,
         RepairEditor,
         RequestReport,
+        CashFlowReport,
         UnsavedChangesDialog,
         RequestPreview,
         CatalogEditor,
@@ -1478,8 +1480,15 @@ export default {
         async openReport() {
             const id = "report:requests";
             if (!this.tabs.some((tab) => tab.id === id))
-                this.tabs.push({ id, kind: "report", title: "Отчёт" });
+                this.tabs.push({ id, kind: "report", title: "Отчёт по заявкам" });
             await this.activate(id);
+        },
+        async openCashFlow() {
+            await this.openSimpleTab("cash-flow", "ДДС", "reportCashFlow");
+        },
+        async openCashFlowRow(row) {
+            if (row.requestId) return this.openRecord({ id: row.requestId, number: row.requestNumber });
+            if (row.stockDocumentId && this.hasWarehouse) return this.openStockDocument(row.stockDocumentType, { id: row.stockDocumentId, number: row.document });
         },
         async openReportRow(row) {
             await this.openRecord({ id: row.id, number: row.number });
@@ -2131,6 +2140,7 @@ export default {
                 @open-recommendations="openAllRecommendations"
                 @open-edo="openEdoTab"
                 @open-report="openReport"
+                @open-cash-flow="openCashFlow"
                 @open-notification="openNotification"
                 @open-unread-chat="openUnreadChat"
                 @collapse="collapse"
@@ -2497,6 +2507,11 @@ export default {
                             :key="active.id"
                             :user="user"
                             @open="openReportRow"
+                        />
+                        <CashFlowReport
+                            v-else-if="active?.kind === 'cash-flow'"
+                            :user="user"
+                            @open="openCashFlowRow"
                         />
                         <div v-else-if="!active" class="workspace-splash">
                             <img
