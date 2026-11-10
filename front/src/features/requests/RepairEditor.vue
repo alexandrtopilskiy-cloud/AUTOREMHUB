@@ -1203,6 +1203,17 @@ onMounted(() => {
       >{{ tab.label }}</button>
     </nav>
 
+    <!-- ЛК СТО: нехватка ЗЧ на складе (этапы «Ожидание ТС на СТО» и «В работе») -->
+    <div v-if="isStation && request.stockShortage?.length" class="stock-shortage-banner" role="alert">
+      <strong>Недостаточно ЗЧ на складе СТО:</strong>
+      <ul>
+        <li v-for="line in request.stockShortage" :key="line">{{ line }}</li>
+      </ul>
+      <span>
+        Оприходуйте эти ЗЧ на склад: без них ЗР нельзя перевести на этап «ТС готово к выдаче Заказчику».
+      </span>
+    </div>
+
     <div v-show="activeTab === 'vehicle'" id="zr-tab-vehicle" class="zr-tab-panel" role="tabpanel">
       <!-- Автомобиль -->
       <div class="section-title">

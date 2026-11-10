@@ -36,6 +36,7 @@ export default {
             currentManagerId: "",
             payment: { paidOn: today(), amount: null, method: "bank", comment: "" },
             paymentError: "",
+            markup: null,
         };
     },
     computed: {
@@ -97,6 +98,7 @@ export default {
                 marketplaceApi.warehouseCounterparties(),
             ]);
             this.warehouses = settings.warehouses;
+            this.markup = settings.markup || null;
             this.customers = parties.customers;
             this.vehicles = parties.vehicles;
             this.managers = parties.managers;
@@ -161,6 +163,34 @@ export default {
         removeRow(row) {
             const index = this.draft.items.indexOf(row);
             if (index >= 0) this.draft.items.splice(index, 1);
+            this.touch();
+        },
+        /** Цена реализации по наценке из Настроек (как на сервере при сохранении). */
+        markupPrice(purchase) {
+            const price = Number(purchase);
+            if (!this.markup || purchase === "" || purchase === null || !Number.isFinite(price)) return null;
+            let percent = null;
+            if (this.markup.mode === "flat") {
+                percent = Number(this.markup.percent || 0);
+            } else {
+                const tier = (this.markup.tiers || []).find(
+                    (row) => price >= Number(row.from || 0) && (row.to === null || row.to === "" || price <= Number(row.to)),
+                );
+                percent = tier ? Number(tier.percent) : null;
+            }
+            return percent === null ? null : Math.round(price * (1 + percent / 100) * 100) / 100;
+        },
+        purchaseChanged(row) {
+            // Пока цену реализации не ввели вручную, она пересчитывается по наценке.
+            if (row.salePrice === "" || row.salePrice === null || row.salePrice === undefined || row._saleAuto) {
+                const price = this.markupPrice(row.purchasePrice);
+                row.salePrice = price;
+                row._saleAuto = price !== null;
+            }
+            this.touch();
+        },
+        saleChanged(row) {
+            row._saleAuto = false;
             this.touch();
         },
         touch() {
@@ -438,7 +468,7 @@ export default {
                             </td>
                             <td v-if="!isReceipt">{{ row.onHand ?? "—" }}</td>
                             <td v-if="isReceipt">
-                                <input v-if="editable" v-model.number="row.purchasePrice" type="number" min="0" step="0.01" aria-label="Цена прихода" @input="touch" />
+                                <input v-if="editable" v-model.number="row.purchasePrice" type="number" min="0" step="0.01" aria-label="Цена прихода" @input="purchaseChanged(row)" />
                                 <span v-else>{{ money(row.purchasePrice) }}</span>
                             </td>
                             <td>
@@ -450,7 +480,7 @@ export default {
                                     step="0.01"
                                     :placeholder="isReceipt ? 'по наценке' : 'из Прихода'"
                                     aria-label="Цена реализации"
-                                    @input="touch"
+                                    @input="isReceipt ? saleChanged(row) : touch()"
                                 />
                                 <span v-else>{{ row.salePrice == null ? "—" : money(row.salePrice) }}</span>
                             </td>
@@ -483,7 +513,7 @@ export default {
             </div>
             <div class="table-actions">
                 <button v-if="editable" class="grid-add-row" type="button" title="Добавить строку" @click="addRow">＋</button>
-                <small v-if="isReceipt && editable" class="muted">Пустая «Цена реализации» рассчитается по наценке из Настроек при сохранении.</small>
+                <small v-if="isReceipt && editable" class="muted">«Цена реализации» рассчитывается по наценке из Настроек, пока её не изменили вручную.</small>
                 <small v-if="hasMissing" class="error-text">Строки, выделенные красным: ЗЧ нет на складе или их недостаточно.</small>
             </div>
             <label class="stock-comment">
