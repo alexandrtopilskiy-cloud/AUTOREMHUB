@@ -72,7 +72,12 @@ final class StockService
             ->get();
 
         return $requestRows->concat($saleRows)
-            ->sortBy([['created_at', 'asc'], ['key', 'asc']])
+            // В одну секунду — сначала строки ЗР, затем Реализации, внутри — по id
+            // числом (строковое сравнение ключей ставило «si:10» раньше «si:9»).
+            ->sortBy([
+                ['created_at', 'asc'],
+                fn ($a, $b): int => [str_starts_with((string) $a->key, 'si:'), (int) $a->id] <=> [str_starts_with((string) $b->key, 'si:'), (int) $b->id],
+            ])
             ->values()
             ->map(fn ($row): array => [
                 'key' => (string) $row->key,
