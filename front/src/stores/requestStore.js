@@ -7,6 +7,10 @@
 
 import { requestFields } from "../data/permissions.js";
 
+/* Фоновое обновление справочников и references (ЗЧ, поставщики…), мс. */
+const CATALOG_REFRESH_MS = 60_000;
+let catalogsRefreshedAt = 0;
+
 /**
  * Глубокое клонирование значения. `undefined` остаётся `undefined`.
  *
@@ -207,6 +211,7 @@ export function createRequestStore(api) {
 
         async refresh() {
             const version = this.generation;
+            catalogsRefreshedAt = Date.now();
 
             this.loading = true;
 
@@ -261,7 +266,11 @@ export function createRequestStore(api) {
             this.notifications = notifications;
             this.chatSummaries = chats.chats;
             this.chatUnreadTotal = chats.unreadTotal;
-            if (manufacturerChanged) await this.refreshCatalogs(true);
+            // Справочники (ЗЧ, поставщики и т.д.) общие для УК и СТО: то, что добавил
+            // другой кабинет, подтягивается без перезагрузки страницы.
+            if (manufacturerChanged || Date.now() - catalogsRefreshedAt >= CATALOG_REFRESH_MS) {
+                await this.refreshCatalogs(true);
+            }
         },
 
         /**
@@ -272,6 +281,7 @@ export function createRequestStore(api) {
          */
         async refreshCatalogs(includeReferences = false) {
             const version = this.generation;
+            if (includeReferences) catalogsRefreshedAt = Date.now();
             const tasks = [api.listCatalogs()];
 
             if (includeReferences) {
