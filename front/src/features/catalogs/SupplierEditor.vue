@@ -1,5 +1,6 @@
 <script>
 import PhoneInput from "../../components/PhoneInput.vue";
+import FormAlert from "../../components/FormAlert.vue";
 import FormatHint from "../../components/FormatHint.vue";
 import { requisiteFormatHint } from "../../data/requisiteFormats.js";
 
@@ -37,7 +38,7 @@ const OPTIONAL = [
 
 export default {
     name: "SupplierEditor",
-    components: { FormatHint, PhoneInput },
+    components: { FormAlert, FormatHint, PhoneInput },
     props: {
         record: { type: Object, required: true },
         references: { type: Object, required: true },
@@ -172,6 +173,7 @@ export default {
                 <h2>{{ record.isNew ? "Новый поставщик" : record.name }}</h2>
             </div>
         </div>
+        <FormAlert v-if="error" class="error-banner">{{ error }}</FormAlert>
         <form ref="form" @submit.prevent="save(false)">
             <fieldset :disabled="busy || !editable">
                 <label class="supplier-legal-form"
@@ -279,7 +281,6 @@ export default {
                 </template>
             </fieldset>
         </form>
-        <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
         <div class="record-editor-footer action-buttons">
             <button
                 v-if="editable"

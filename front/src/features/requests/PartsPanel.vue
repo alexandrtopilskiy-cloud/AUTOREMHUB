@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, toRaw, watch } from "vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 import { money, agentDiscountPercent, agentDiscountAmount } from "../../data/permissions.js";
 import { startColumnResize } from "../../utils/columnResize.js";
@@ -146,6 +147,12 @@ function rowAgentDiscount(row) {
         Number(row.qty || 0) * Number(row.price || 0),
         rowAgentPercent(row),
     );
+}
+/** Сумма строки: Заказчику — полная, в ЛК УК и ЛК СТО — за вычетом агентской скидки. */
+function rowAmount(row) {
+    const amount = Number(row.qty || 0) * Number(row.price || 0);
+    if (props.customerView) return amount;
+    return Math.round((amount - (rowAgentDiscount(row) ?? 0)) * 100) / 100;
 }
 function editable(row) {
     return (
@@ -306,6 +313,7 @@ async function apply() {
 <template>
     <div class="parts-panel estimate-section">
         <h3>Запчасти</h3>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
         <div class="table-wrap excel-grid-wrap">
             <table
                 class="excel-grid parts-grid"
@@ -319,8 +327,7 @@ async function apply() {
                     <col style="width: 38px" />
                     <col style="width: 58px" />
                     <col style="width: 74px" />
-                    <col v-if="!customerView" style="width: 64px" />
-                    <col v-if="!customerView" style="width: 68px" />
+                    <col v-if="!customerView" style="width: 84px" />
                     <col v-if="showChangeNotes" style="width: 132px" />
                     <col style="width: 80px" />
                     <col style="width: 26px" />
@@ -337,7 +344,7 @@ async function apply() {
                                 'Кол-во',
                                 'Цена, ₽',
                                 ...(!customerView
-                                    ? ['Агентская скидка, %', 'Скидка, ₽']
+                                    ? ['Агентская скидка, ₽']
                                     : []),
                                 ...(showChangeNotes
                                     ? ['Примечание к изменению']
@@ -431,17 +438,6 @@ async function apply() {
                             /><span v-else>{{ money(row.price) }}</span>
                         </td>
                         <td v-if="!customerView" class="agent-discount-cell">
-                            <input
-                                :value="rowAgentPercent(row) ?? ''"
-                                type="number"
-                                readonly
-                                disabled
-                                placeholder="—"
-                                aria-label="Агентская скидка, %"
-                                title="Подставляется из реквизитов СТО"
-                            />
-                        </td>
-                        <td v-if="!customerView" class="agent-discount-cell">
                             {{
                                 rowAgentDiscount(row) == null
                                     ? "—"
@@ -470,12 +466,7 @@ async function apply() {
                             /><span v-else>{{ row.changeNote || "" }}</span>
                         </td>
                         <td class="part-sum-cell">
-                            {{
-                                money(
-                                    Number(row.qty || 0) *
-                                        Number(row.price || 0),
-                                )
-                            }}
+                            {{ money(rowAmount(row)) }}
                         </td>
                         <td>
                             <button
@@ -565,7 +556,6 @@ async function apply() {
             </div>
         </form>
 
-        <p v-if="error" class="error-message">{{ error }}</p>
 
         <PartLineDialog
             v-if="dialogPart"

@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
@@ -288,6 +289,7 @@ defineExpose({ refresh });
             </div>
             <button type="button" aria-label="Закрыть чат" @click="emit('close')">×</button>
         </header>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
         <div ref="messageList" class="chat-history" @scroll.passive="onScroll">
             <button
@@ -337,7 +339,6 @@ defineExpose({ refresh });
         </button>
 
         <div class="chat-compose">
-            <p v-if="error" class="error-message" role="alert">{{ error }}</p>
             <div v-if="files.length" class="chat-pending">
                 <span v-for="(file, index) in files" :key="index">
                     {{ file.name }}

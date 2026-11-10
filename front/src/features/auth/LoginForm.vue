@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from '../../api/marketplace.js';
 
 const props = defineProps({
@@ -87,6 +88,7 @@ function togglePassword() {
       <form class="login-card" @submit.prevent="submit(false)">
         <span class="eyebrow">Вход в платформу</span>
         <h2>{{ lockedLogin ? 'Подтвердите вход' : 'Личный кабинет' }}</h2>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
         <p class="muted">
           {{
             lockedLogin
@@ -129,7 +131,6 @@ function togglePassword() {
           </div>
         </label>
 
-        <p v-if="error" role="alert" class="error-message">{{ error }}</p>
 
         <div v-if="takeoverRequired" class="session-choice">
           <p>

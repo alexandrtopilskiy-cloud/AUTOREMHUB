@@ -1,9 +1,10 @@
 <script>
 import PhoneInput from "../../components/PhoneInput.vue";
+import FormAlert from "../../components/FormAlert.vue";
 
 export default {
     name: "PersonCatalogEditor",
-    components: { PhoneInput },
+    components: { FormAlert, PhoneInput },
     props: {
         record: {
             type: Object,
@@ -117,6 +118,7 @@ export default {
     <section class="document-panel person-catalog-editor">
         <span class="eyebrow">{{ record.kind === "drivers" ? "Водители" : "Контактные лица" }}</span>
         <h1>{{ isNew ? `Новое: ${title.toLowerCase()}` : record.fullName }}</h1>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
         <form @submit.prevent="save()">
             <fieldset class="catalog-fieldset" :disabled="!editable || busy">
@@ -184,7 +186,6 @@ export default {
                 </div>
             </fieldset>
 
-            <p v-if="error" class="error-message">{{ error }}</p>
         </form>
     </section>
 </template>

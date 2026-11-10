@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from '../../api/marketplace.js';
 import { formatDateTime, money } from '../../data/permissions.js';
 import { handoverSheet } from './handoverSheet.js';
@@ -60,6 +61,14 @@ const payableInvoice = computed(() => {
 
 const paymentTitle = computed(() =>
   permissions.value.canMarkCustomerPayment ? 'Оплата Заказчика' : 'Оплата в пользу СТО',
+);
+
+/** Этап 8 — УК принимает оплату Заказчика, этап 9 «Оплата в СТО» — УК оплачивает СТО. */
+const payButtonLabel = computed(() =>
+  permissions.value.canMarkStationPayment ? 'Оплатить' : 'Принять оплату',
+);
+const paidStateLabel = computed(() =>
+  permissions.value.canMarkStationPayment ? 'Оплачено' : 'Принято',
 );
 
 watch(
@@ -162,6 +171,7 @@ async function download(doc) {
 <template>
   <section v-if="visible" class="feature-card closing-panel" :class="{ 'closing-panel-act': part === 'act' }">
     <h3 v-if="part === 'all'">Выдача ТС и закрывающие документы</h3>
+    <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
     <!-- Приём ТС от СТО на Заказчика: лист приёма-передачи ТС (APP-…/2) -->
     <div v-if="showAct" class="closing-block">
@@ -313,23 +323,22 @@ async function download(doc) {
         <label class="full">Комментарий (необязательно)<input v-model="payment.comment" :disabled="busy" placeholder="Номер платёжного поручения" /></label>
       </div>
       <div class="closing-actions">
-        <button class="primary-btn" :disabled="busy">Принять оплату</button>
+        <button class="primary-btn" :disabled="busy">{{ payButtonLabel }}</button>
         <button
           type="button"
           class="ghost-btn danger-btn"
           :disabled="busy || !payableInvoice.paidAt"
-          :title="payableInvoice.paidAt ? '' : 'Оплата ещё не принята'"
+          :title="payableInvoice.paidAt ? '' : (permissions.canMarkStationPayment ? 'Оплата ещё не внесена' : 'Оплата ещё не принята')"
           @click="deletePayment"
         >
           Удалить оплату
         </button>
         <span v-if="payableInvoice.paidAt" class="closing-state done">
-          Принято: {{ formatDate(payableInvoice.paidAt) }}, {{ money(payableInvoice.paidAmount) }} ₽ — нажмите «Далее по маршруту»
+          {{ paidStateLabel }}: {{ formatDate(payableInvoice.paidAt) }}, {{ money(payableInvoice.paidAmount) }} ₽ — нажмите «Далее по маршруту»
         </span>
       </div>
     </form>
 
-    <p v-if="error" class="error-message">{{ error }}</p>
   </section>
 </template>
 

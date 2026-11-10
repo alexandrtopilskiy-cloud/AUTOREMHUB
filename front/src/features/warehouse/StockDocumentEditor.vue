@@ -1,5 +1,6 @@
 <script>
 import { marketplaceApi } from "../../api/marketplace.js";
+import FormAlert from "../../components/FormAlert.vue";
 import { money } from "../../data/permissions.js";
 import WorkTypePicker from "../requests/WorkTypePicker.vue";
 import ReferencePicker from "../../components/ReferencePicker.vue";
@@ -18,7 +19,7 @@ function today() {
  */
 export default {
     name: "StockDocumentEditor",
-    components: { WorkTypePicker, ReferencePicker },
+    components: { FormAlert, WorkTypePicker, ReferencePicker },
     props: {
         tab: { type: Object, required: true },
         references: { type: Object, required: true },
@@ -364,6 +365,8 @@ export default {
                 </h2>
             </div>
         </div>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
+        <FormAlert v-if="paymentError" class="error-message">{{ paymentError }}</FormAlert>
         <p v-if="loading" class="muted">Загружаем документ…</p>
         <template v-else-if="draft">
             <p class="stock-status-hint muted">
@@ -576,9 +579,7 @@ export default {
                     </label>
                     <button class="primary-btn" :disabled="busy">{{ isReceipt ? "Оплатить" : "Принять оплату" }}</button>
                 </form>
-                <p v-if="paymentError" class="error-message">{{ paymentError }}</p>
             </section>
-            <p v-if="error" class="error-message">{{ error }}</p>
             <div class="catalog-actions">
                 <template v-if="!posted">
                     <button class="primary-btn" :disabled="busy" @click="save(false)">Сохранить</button>

@@ -1,11 +1,13 @@
 <script>
 import { marketplaceApi } from "../../api/marketplace.js";
+import FormAlert from "../../components/FormAlert.vue";
 import { money } from "../../data/permissions.js";
 
 const MAX_TIERS = 10;
 
 /** Настройки → Складской учёт: склады организации и наценка на товары. */
 export default {
+    components: { FormAlert },
     name: "WarehouseSettings",
     emits: ["notify"],
     data() {
@@ -170,6 +172,7 @@ export default {
         <template v-else>
             <section class="feature-card warehouse-card">
                 <h3>Склады</h3>
+                <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
                 <div class="table-wrap">
                     <table class="warehouse-table">
                         <thead>
@@ -217,11 +220,11 @@ export default {
                     <input v-model="newName" maxlength="255" placeholder="Наименование нового склада" aria-label="Наименование нового склада" />
                     <button class="primary-btn" :disabled="busy">＋ Создать склад</button>
                 </form>
-                <p v-if="error" class="error-message">{{ error }}</p>
             </section>
 
             <section class="feature-card warehouse-card">
                 <h3>Метод списания со склада</h3>
+                <FormAlert v-if="costMethodError" class="error-message">{{ costMethodError }}</FormAlert>
                 <p class="muted">
                     Определяет цену ЗЧ, которая подставляется в ЗР и Реализацию, если ЗЧ есть на складе,
                     себестоимость списания и стоимость остатков в отчёте.
@@ -235,7 +238,6 @@ export default {
                     <li><b>ЛИФО</b> — цена самой поздней такой партии.</li>
                     <li><b>Средневзвешенная</b> — средние цены закупа и реализации по всем проведённым Приходам.</li>
                 </ul>
-                <p v-if="costMethodError" class="error-message">{{ costMethodError }}</p>
                 <div class="action-buttons">
                     <button class="primary-btn" :disabled="busy || costMethod === savedCostMethod" @click="saveCostMethod">Сохранить метод списания</button>
                 </div>
@@ -243,6 +245,7 @@ export default {
 
             <section class="feature-card warehouse-card">
                 <h3>Наценка на товары</h3>
+                <FormAlert v-if="markupError" class="error-message">{{ markupError }}</FormAlert>
                 <p class="muted">
                     Цена реализации ЗЧ = цена прихода × (1 + наценка / 100). Подставляется в документ
                     Приход при сохранении, если цена реализации не указана вручную.
@@ -303,7 +306,6 @@ export default {
                     <strong v-if="exampleSalePrice != null">цена реализации {{ money(exampleSalePrice) }} ₽</strong>
                     <strong v-else class="error-text">диапазон не найден</strong>
                 </div>
-                <p v-if="markupError" class="error-message">{{ markupError }}</p>
                 <div class="action-buttons">
                     <button class="primary-btn" :disabled="busy" @click="saveMarkup">Сохранить наценку</button>
                 </div>

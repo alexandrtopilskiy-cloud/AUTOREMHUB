@@ -1,5 +1,6 @@
 <script>
 import { marketplaceApi } from "../../api/marketplace.js";
+import FormAlert from "../../components/FormAlert.vue";
 import { money } from "../../data/permissions.js";
 import { matchesReference } from "../../utils/referenceSearch.js";
 
@@ -11,6 +12,7 @@ function today() {
 
 /** Отчёт «Остатки на складе» на конец выбранной даты (23:59:59). */
 export default {
+    components: { FormAlert },
     name: "StockBalanceReport",
     emits: ["notify"],
     data() {
@@ -77,6 +79,7 @@ export default {
                 <h1>Остатки на складе <span class="count">{{ listed.length }}</span></h1>
             </div>
         </div>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
         <div class="stock-balance-filters">
             <label>
                 <span>На дату (на 23:59:59)</span>
@@ -94,7 +97,6 @@ export default {
                 <input v-model="search" type="search" placeholder="Наименование, артикул, производитель" />
             </label>
         </div>
-        <p v-if="error" class="error-message">{{ error }}</p>
         <div class="registry-wrap">
             <table class="registry stock-balance-table">
                 <thead>

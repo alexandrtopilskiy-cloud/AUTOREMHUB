@@ -1,5 +1,6 @@
 <script>
 import { formatDateTime } from '../../data/permissions.js';
+import FormAlert from "../../components/FormAlert.vue";
 import { handoverSheet } from './handoverSheet.js';
 
 /*
@@ -11,6 +12,7 @@ const PURPOSE = 'acceptance_act';
 const STAGE_WAITING_VEHICLE = 4;
 
 export default {
+    components: { FormAlert },
     name: "AcceptanceActPanel",
     props: {
         request: { type: Object, required: true },
@@ -116,6 +118,7 @@ export default {
             <span v-else-if="available" class="handover-state">Ожидает подписанного листа</span>
             <span v-else class="handover-state muted-state">Этап «Ожидание ТС на СТО»</span>
         </div>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
         <p v-if="!available" class="muted handover-note">
             Лист станет доступен, когда ЗР перейдёт на этап «Ожидание ТС на СТО».
@@ -171,6 +174,5 @@ export default {
             </p>
         </template>
 
-        <p v-if="error" class="error-message">{{ error }}</p>
     </section>
 </template>

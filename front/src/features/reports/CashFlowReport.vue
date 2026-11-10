@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from '../../api/marketplace.js';
 import { money } from '../../data/permissions.js';
 
@@ -209,6 +210,7 @@ onMounted(load);
       </div>
       <button type="button" class="ghost-btn" :disabled="loading" @click="load">Обновить</button>
     </header>
+    <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
     <form class="report-filters" @submit.prevent>
       <div class="period-presets" role="group" aria-label="Период">
@@ -260,7 +262,6 @@ onMounted(load);
       </div>
     </form>
 
-    <p v-if="error" class="error-message">{{ error }}</p>
 
     <div class="cash-summary">
       <div class="cash-card">

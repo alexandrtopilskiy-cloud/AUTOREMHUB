@@ -1,5 +1,6 @@
 <script>
 import PhoneInput from "../../components/PhoneInput.vue";
+import FormAlert from "../../components/FormAlert.vue";
 
 const PASSWORD_MASK = "••••••••••••";
 const DEFAULT_RIGHTS = {
@@ -20,7 +21,7 @@ const DEFAULT_RIGHTS = {
 
 export default {
     name: "UserCatalogEditor",
-    components: { PhoneInput },
+    components: { FormAlert, PhoneInput },
     props: {
         record: {
             type: Object,
@@ -159,6 +160,7 @@ export default {
     <section class="document-panel user-catalog-editor">
         <span class="eyebrow">Справочник пользователей</span>
         <h1>{{ isNew ? "Новый пользователь" : record.fullName }}</h1>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
         <p>
             Учётная запись относится к выбранной организации. Логин и пароль
             больше не хранятся в справочниках Заказчиков, СТО и УК.
@@ -276,7 +278,6 @@ export default {
                 </div>
             </fieldset>
 
-            <p v-if="error" class="error-message">{{ error }}</p>
         </form>
     </section>
 </template>

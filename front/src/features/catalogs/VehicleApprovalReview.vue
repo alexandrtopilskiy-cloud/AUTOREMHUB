@@ -1,5 +1,6 @@
 <script>
 import { formatDateTime } from "../../data/permissions.js";
+import FormAlert from "../../components/FormAlert.vue";
 
 const ACTION_LABELS = {
     create: "Добавление ТС",
@@ -8,6 +9,7 @@ const ACTION_LABELS = {
 };
 
 export default {
+    components: { FormAlert },
     name: "VehicleApprovalReview",
     props: {
         record: {
@@ -71,6 +73,7 @@ export default {
     <section class="document-panel">
         <span class="eyebrow">Согласование справочника ТС</span>
         <h1>{{ actionLabel(record.action) }}</h1>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
         <p>{{ record.company }} · {{ record.requestedBy }}</p>
 
         <dl class="approval-details">
@@ -159,6 +162,5 @@ export default {
             </button>
         </div>
 
-        <p v-if="error" class="error-message">{{ error }}</p>
     </section>
 </template>

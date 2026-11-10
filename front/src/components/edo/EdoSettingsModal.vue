@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from "vue";
+import FormAlert from "../FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace";
 
 const emit = defineEmits(["close", "connected"]);
@@ -63,6 +64,8 @@ const submit = async () => {
             </header>
 
             <div class="modal-body">
+                <FormAlert v-if="error" class="error-banner">{{ error }}</FormAlert>
+                <FormAlert v-if="success" class="success-banner">{{ success }}</FormAlert>
                 <p class="hint">
                     Введите данные из Кабинета интегратора Контура. Токен будет
                     зашифрован и сохранен в базе данных.
@@ -86,8 +89,6 @@ const submit = async () => {
                     ></textarea>
                 </label>
 
-                <div v-if="error" class="error-banner">{{ error }}</div>
-                <div v-if="success" class="success-banner">{{ success }}</div>
             </div>
 
             <footer class="modal-footer">

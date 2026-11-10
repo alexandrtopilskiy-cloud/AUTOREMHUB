@@ -1,5 +1,6 @@
 <script>
 import { formatDateTime } from "../../data/permissions.js";
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 import SequentialVehiclePicker from "./SequentialVehiclePicker.vue";
 import {
@@ -13,7 +14,7 @@ function clone(value) {
 
 export default {
     name: "VehicleCatalogEditor",
-    components: { SequentialVehiclePicker },
+    components: { FormAlert, SequentialVehiclePicker },
     props: {
         record: {
             type: Object,
@@ -270,6 +271,7 @@ export default {
                 <span class="eyebrow">Справочник ТС Заказчиков</span>
                 <h1>{{ isNew ? "Новый автомобиль" : record.vehicle }}</h1>
             </div>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
             <button
                 v-if="!isNew && record.id"
                 type="button"
@@ -518,7 +520,6 @@ export default {
             </div>
             </fieldset>
 
-            <p v-if="error" role="alert" class="error-message">{{ error }}</p>
         </form>
     </section>
 </template>

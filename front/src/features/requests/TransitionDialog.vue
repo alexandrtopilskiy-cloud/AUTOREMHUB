@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import { workflow } from '../../data/workflow.js';
 
 /* ─── Константы ─── */
@@ -124,6 +125,7 @@ onMounted(() => {
   >
     <form @submit.prevent="submit">
       <h2>{{ title }}</h2>
+      <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
       <p>{{ request.number }}</p>
       <div v-if="stockShortage.length" class="stock-shortage-banner" role="alert">
         <strong>Недостаточно ЗЧ на складе СТО:</strong>
@@ -167,7 +169,6 @@ onMounted(() => {
         </label>
       </fieldset>
 
-      <p v-if="error" class="error-message">{{ error }}</p>
 
       <div class="action-buttons">
         <button
