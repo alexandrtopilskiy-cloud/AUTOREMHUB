@@ -4,6 +4,7 @@ import FormAlert from "../../components/FormAlert.vue";
 import { money } from "../../data/permissions.js";
 import WorkTypePicker from "../requests/WorkTypePicker.vue";
 import ReferencePicker from "../../components/ReferencePicker.vue";
+import IconButton from "../../components/IconButton.vue";
 
 let sequence = 0;
 
@@ -19,7 +20,7 @@ function today() {
  */
 export default {
     name: "StockDocumentEditor",
-    components: { FormAlert, WorkTypePicker, ReferencePicker },
+    components: { FormAlert, WorkTypePicker, ReferencePicker, IconButton },
     props: {
         tab: { type: Object, required: true },
         references: { type: Object, required: true },
@@ -263,9 +264,10 @@ export default {
                 this.busy = false;
             }
         },
-        async post() {
+        async post(exit = false) {
             if (!(await this.save())) return;
-            await this.command(() => marketplaceApi.postStockDocument(this.draft.id), "Документ проведён");
+            const posted = await this.command(() => marketplaceApi.postStockDocument(this.draft.id), "Документ проведён");
+            if (posted && exit) this.$emit("close");
         },
         async unpost() {
             await this.command(() => marketplaceApi.unpostStockDocument(this.draft.id), "Проведение отменено");
@@ -331,12 +333,14 @@ export default {
                 this.accept(document);
                 this.$emit("saved", document);
                 this.$emit("notify", message);
+                return true;
             } catch (error) {
                 this.error = error.message;
                 // Обновляем отметки «недостаточно на складе».
                 try {
                     this.accept((await marketplaceApi.stockDocument(this.draft.id)).document);
                 } catch {}
+                return false;
             } finally {
                 this.busy = false;
             }
@@ -580,15 +584,16 @@ export default {
                     <button class="primary-btn" :disabled="busy">{{ isReceipt ? "Оплатить" : "Принять оплату" }}</button>
                 </form>
             </section>
-            <div class="catalog-actions">
+            <div class="catalog-actions stock-actions">
                 <template v-if="!posted">
-                    <button class="primary-btn" :disabled="busy" @click="save(false)">Сохранить</button>
-                    <button class="ghost-btn" :disabled="busy" @click="save(true)">Сохранить и выйти</button>
-                    <button class="primary-btn post-btn" :disabled="busy" @click="post">Провести</button>
-                    <button v-if="draft.id" class="danger-btn" :disabled="busy" @click="remove">Удалить</button>
+                    <IconButton icon="save" label="Сохранить" :disabled="busy" @click="save(false)" />
+                    <IconButton icon="save-exit" label="Сохранить и выйти" :disabled="busy" @click="save(true)" />
+                    <IconButton icon="post" variant="primary" label="Провести" :disabled="busy" @click="post(false)" />
+                    <IconButton icon="post-close" variant="primary" label="Провести и закрыть" :disabled="busy" @click="post(true)" />
+                    <IconButton v-if="draft.id" icon="trash" variant="danger" label="Удалить" :disabled="busy" @click="remove" />
                 </template>
-                <button v-else class="ghost-btn" :disabled="busy" @click="unpost">Отменить проведение</button>
-                <button class="ghost-btn" :disabled="busy" @click="$emit('close')">Закрыть</button>
+                <IconButton v-else icon="undo" label="Отменить проведение" :disabled="busy" @click="unpost" />
+                <IconButton icon="close" label="Закрыть" :disabled="busy" @click="$emit('close')" />
             </div>
         </template>
         <p v-else-if="error" class="error-message">{{ error }}</p>
