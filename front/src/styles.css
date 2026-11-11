@@ -4308,7 +4308,7 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
   scroll-margin: 16px;
 }
 
-/* ─── «ЗЧ от УК» (0.43.004): галочка над таблицей ЗЧ, нехватка на складе УК ─── */
+/* ─── «ЗЧ от УК» (0.43.005): галочка над таблицей ЗЧ, нехватка на складе УК ─── */
 .manager-parts-bar {
   display: flex;
   flex-wrap: wrap;
