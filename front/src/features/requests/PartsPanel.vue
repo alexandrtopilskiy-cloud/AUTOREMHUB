@@ -1,8 +1,11 @@
 <script setup>
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref, toRaw, watch } from "vue";
+import FormAlert from "../../components/FormAlert.vue";
+import { marketplaceApi } from "../../api/marketplace.js";
 import { money, agentDiscountPercent, agentDiscountAmount } from "../../data/permissions.js";
 import { startColumnResize } from "../../utils/columnResize.js";
 import WorkTypePicker from "./WorkTypePicker.vue";
+import PartLineDialog from "./PartLineDialog.vue";
 const props = defineProps({
     request: { type: Object, required: true },
     suppliers: { type: Array, default: () => [] },
@@ -55,6 +58,49 @@ function emptyPart() {
     };
 }
 const placeholder = ref(emptyPart());
+/* Складской учёт: наличие ЗЧ на складах СТО, назначенной в ЗР (не для Заказчика). */
+const stock = ref(null);
+async function loadStock() {
+    if (props.customerView) return;
+    try {
+        // СТО берётся из формы: она может быть выбрана, но ещё не сохранена.
+        stock.value = await marketplaceApi.requestStock(props.request.id, props.request.stationId);
+    } catch {
+        stock.value = null;
+    }
+    fillStockPrices();
+}
+/* Строки, выбранные до загрузки остатков (или до выбора СТО), получают цену склада. */
+function fillStockPrices() {
+    if (!stock.value?.available) return;
+    for (const row of props.request.parts || []) {
+        const info = stock.value.parts[row.catalogPartId];
+        if (!info || !editable(row) || (row.id && !row._stockDirty) || Number(row.price || 0) > 0) continue;
+        if (info.salePrice != null) row.price = info.salePrice;
+        if (!row.supplierId && info.supplierId) row.supplierId = info.supplierId;
+    }
+}
+onMounted(loadStock);
+watch(() => [props.request.id, props.request.revision, props.request.stationId], loadStock);
+function stockQty(value) {
+    return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+function stockState(row) {
+    if (!stock.value?.available || props.customerView) return null;
+    const need = Number(row.qty || 0) - Number(row.returnedQty || 0);
+    if (row.id && stock.value.rows[row.id] && !row._stockDirty) {
+        const state = stock.value.rows[row.id];
+        if (state.writtenOff) return { label: "Списано со склада", kind: "written" };
+        if (state.sufficient) return { label: stock.value.reserving ? "В резерве" : "Есть на складе", kind: "ok" };
+        return { label: `Нет на складе (есть ${stockQty(state.covered)})`, kind: "missing" };
+    }
+    if (!row.catalogPartId) return row.name ? { label: "Нет на складе", kind: "missing" } : null;
+    const free = Number(stock.value.parts[row.catalogPartId]?.free || 0);
+    return free + 0.0005 >= need
+        ? { label: "Есть на складе", kind: "ok" }
+        : { label: `Нет на складе (есть ${stockQty(free)})`, kind: "missing" };
+}
+const hasMissingStock = computed(() => rows.value.some((row) => stockState(row)?.kind === "missing"));
 const canEditParts = computed(
     () => props.request.permissions?.canEditParts === true,
 );
@@ -73,7 +119,14 @@ const catalogOptions = computed(() =>
         .filter((p) => p.active !== false)
         .map((p) => ({
             ...p,
-            optionLabel: [p.name, p.article, p.manufacturer]
+            optionLabel: [
+                p.name,
+                p.article,
+                p.manufacturer,
+                stock.value?.available
+                    ? `на складе: ${stockQty(stock.value.parts[p.id]?.free || 0)}`
+                    : "",
+            ]
                 .filter(Boolean)
                 .join(" · "),
         })),
@@ -95,6 +148,12 @@ function rowAgentDiscount(row) {
         rowAgentPercent(row),
     );
 }
+/** Сумма строки: Заказчику — полная, в ЛК УК и ЛК СТО — за вычетом агентской скидки. */
+function rowAmount(row) {
+    const amount = Number(row.qty || 0) * Number(row.price || 0);
+    if (props.customerView) return amount;
+    return Math.round((amount - (rowAgentDiscount(row) ?? 0)) * 100) / 100;
+}
 function editable(row) {
     return (
         canEditParts.value &&
@@ -111,6 +170,7 @@ function ensureRow(row) {
 }
 function changed(row) {
     ensureRow(row);
+    row._stockDirty = true;
     emit("touch");
 }
 function selectPart(row, part) {
@@ -120,8 +180,9 @@ function selectPart(row, part) {
         article: part.article || "",
         manufacturer: part.manufacturer || "",
         unit: part.unit || "шт.",
-        supplierId: part.supplierId || "",
-        price: part.salePrice ?? 0,
+        // Цена реализации и поставщик — по остаткам склада СТО с учётом метода списания.
+        supplierId: stock.value?.parts[part.id]?.supplierId || row.supplierId || "",
+        price: stock.value?.parts[part.id]?.salePrice ?? row.price ?? 0,
     });
     changed(row);
 }
@@ -190,6 +251,38 @@ function cancelOperation() {
     operation.value = null;
 }
 
+/* Карточка ЗЧ: двойное нажатие по строке (кроме флажка и кнопки удаления). */
+const dialogPart = ref(null);
+const dialogPosition = ref(0);
+function openPartDialog(row, event, index) {
+    if (event?.target?.closest?.(".selection-checkbox, .delete-row")) return;
+    dialogPart.value = row;
+    dialogPosition.value = index + 1;
+}
+watch(() => props.request.revision, () => {
+    if (dialogPart.value && !rows.value.some((row) => toRaw(row) === toRaw(dialogPart.value))) dialogPart.value = null;
+});
+function partActions(row) {
+    if (!canManageParts.value) return [];
+    const list = [];
+    if (row.status === "approved") list.push({ kind: "ordered", label: "Заказать" });
+    if (row.status === "ordered") list.push({ kind: "received", label: "Получена" });
+    if (["ordered", "received"].includes(row.status)) {
+        list.push({ kind: "return", label: "Возврат" }, { kind: "exchange", label: "Обмен" });
+    }
+    return list;
+}
+function dialogAction(kind) {
+    const row = dialogPart.value;
+    dialogPart.value = null;
+    start(row, kind);
+}
+function freeQty(row) {
+    if (!stock.value?.available || !row.catalogPartId) return null;
+    const free = stock.value.parts[row.catalogPartId]?.free;
+    return free == null ? null : Number(free);
+}
+
 async function apply() {
     error.value = "";
 
@@ -219,27 +312,24 @@ async function apply() {
 </script>
 <template>
     <div class="parts-panel estimate-section">
-        <h3>Запчасти и поставщики</h3>
+        <h3>Запчасти</h3>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
         <div class="table-wrap excel-grid-wrap">
             <table
                 class="excel-grid parts-grid"
                 :class="{ 'with-change-notes': showChangeNotes }"
             >
                 <colgroup>
-                    <col v-if="selectable" style="width: 28px" />
-                    <col style="width: 16%" />
-                    <col style="width: 8%" />
-                    <col style="width: 8%" />
-                    <col style="width: 5%" />
-                    <col v-if="!customerView" style="width: 11%" />
-                    <col style="width: 6%" />
-                    <col style="width: 8%" />
-                    <col style="width: 8%" />
-                    <col v-if="!customerView" style="width: 7%" />
-                    <col v-if="!customerView" style="width: 8%" />
-                    <col style="width: 8%" />
-                    <col style="width: 8%" />
-                    <col v-if="showChangeNotes" style="width: 9%" />
+                    <col v-if="selectable" style="width: 26px" />
+                    <col />
+                    <col style="width: 84px" />
+                    <col style="width: 88px" />
+                    <col style="width: 38px" />
+                    <col style="width: 58px" />
+                    <col style="width: 74px" />
+                    <col v-if="!customerView" style="width: 84px" />
+                    <col v-if="showChangeNotes" style="width: 132px" />
+                    <col style="width: 80px" />
                     <col style="width: 26px" />
                 </colgroup>
                 <thead>
@@ -251,18 +341,15 @@ async function apply() {
                                 'Артикул',
                                 'Производитель',
                                 'Ед.',
-                                ...(!customerView ? ['Поставщик'] : []),
                                 'Кол-во',
                                 'Цена, ₽',
-                                'Сумма, ₽',
                                 ...(!customerView
-                                    ? ['Агентская скидка, %', 'Скидка, ₽']
+                                    ? ['Агентская скидка, ₽']
                                     : []),
-                                'Статус',
-                                'Комментарий',
                                 ...(showChangeNotes
                                     ? ['Примечание к изменению']
                                     : []),
+                                'Сумма, ₽',
                             ]"
                             :key="title"
                             class="resizable-column"
@@ -278,10 +365,15 @@ async function apply() {
                 </thead>
                 <tbody>
                     <tr
-                        v-for="row in rows"
+                        v-for="(row, index) in rows"
                         :key="row.id || row._clientId"
                         class="part-draft-row"
-                        :class="lineChange(row) ? 'line-' + lineChange(row) : ''"
+                        title="Двойное нажатие — карточка запчасти"
+                        @dblclick="openPartDialog(row, $event, index)"
+                        :class="[
+                            lineChange(row) ? 'line-' + lineChange(row) : '',
+                            stockState(row)?.kind === 'missing' ? 'part-missing-stock' : '',
+                        ]"
                     >
                         <td v-if="selectable">
                             <input
@@ -319,28 +411,6 @@ async function apply() {
                             {{ row.manufacturer || "—" }}
                         </td>
                         <td :title="row.unit">{{ row.unit }}</td>
-                        <td
-                            v-if="!customerView"
-                            :title="supplierName(row.supplierId)"
-                        >
-                            <select
-                                v-if="editable(row)"
-                                v-model="row.supplierId"
-                                :disabled="busy"
-                                @change="changed(row)"
-                            >
-                                <option value="">Выберите поставщика</option>
-                                <option
-                                    v-for="s in suppliers"
-                                    :key="s.id"
-                                    :value="s.id"
-                                >
-                                    {{ s.name }}
-                                </option></select
-                            ><span v-else>{{
-                                supplierName(row.supplierId)
-                            }}</span>
-                        </td>
                         <td>
                             <input
                                 v-if="editable(row)"
@@ -367,98 +437,12 @@ async function apply() {
                                 @input="changed(row)"
                             /><span v-else>{{ money(row.price) }}</span>
                         </td>
-                        <td>
-                            {{
-                                money(
-                                    Number(row.qty || 0) *
-                                        Number(row.price || 0),
-                                )
-                            }}
-                        </td>
-                        <td v-if="!customerView" class="agent-discount-cell">
-                            <input
-                                :value="rowAgentPercent(row) ?? ''"
-                                type="number"
-                                readonly
-                                disabled
-                                placeholder="—"
-                                aria-label="Агентская скидка, %"
-                                title="Подставляется из реквизитов СТО"
-                            />
-                        </td>
                         <td v-if="!customerView" class="agent-discount-cell">
                             {{
                                 rowAgentDiscount(row) == null
                                     ? "—"
                                     : money(rowAgentDiscount(row))
                             }}
-                        </td>
-                        <td :title="statusLabel(row.status)">
-                            <select
-                                v-if="
-                                    canManageParts &&
-                                    [
-                                        'approved',
-                                        'ordered',
-                                        'received',
-                                    ].includes(row.status)
-                                "
-                                :disabled="busy"
-                                :aria-label="`Действие с запчастью ${row.name}`"
-                                @change="
-                                    start(row, $event.target.value);
-                                    $event.target.value = '';
-                                "
-                            >
-                                <option value="">
-                                    {{ statusLabel(row.status) }}
-                                </option>
-                                <option
-                                    v-if="row.status === 'approved'"
-                                    value="ordered"
-                                >
-                                    Заказать
-                                </option>
-                                <option
-                                    v-if="row.status === 'ordered'"
-                                    value="received"
-                                >
-                                    Получена
-                                </option>
-                                <option
-                                    v-if="
-                                        ['ordered', 'received'].includes(
-                                            row.status,
-                                        )
-                                    "
-                                    value="return"
-                                >
-                                    Возврат
-                                </option>
-                                <option
-                                    v-if="
-                                        ['ordered', 'received'].includes(
-                                            row.status,
-                                        )
-                                    "
-                                    value="exchange"
-                                >
-                                    Обмен
-                                </option>
-                            </select>
-                            <span v-else>{{ statusLabel(row.status) }}</span>
-                        </td>
-                        <td class="line-comment-cell" :title="row.comment || ''">
-                            <input
-                                v-if="canEditParts"
-                                v-model="row.comment"
-                                type="text"
-                                maxlength="2000"
-                                :disabled="busy"
-                                placeholder="Комментарий"
-                                aria-label="Комментарий к запчасти (только для этой заявки)"
-                                @input="changed(row)"
-                            /><span v-else>{{ row.comment || "" }}</span>
                         </td>
                         <td
                             v-if="showChangeNotes"
@@ -480,6 +464,9 @@ async function apply() {
                                 aria-label="Примечание к изменению запчасти"
                                 @input="changed(row)"
                             /><span v-else>{{ row.changeNote || "" }}</span>
+                        </td>
+                        <td class="part-sum-cell">
+                            {{ money(rowAmount(row)) }}
                         </td>
                         <td>
                             <button
@@ -512,6 +499,10 @@ async function apply() {
             </button>
         </div>
         <p v-if="!rows.length" class="muted">Запчасти не добавлены.</p>
+        <p v-if="hasMissingStock" class="parts-stock-note">
+            Красным выделены ЗЧ, которых нет на складе СТО в нужном количестве — они есть только в ЗР.
+            Перевести ЗР на этап «ТС готово к выдаче Заказчику» можно только после оприходования этих ЗЧ.
+        </p>
         <form
             v-if="operation"
             class="form-grid inset-form"
@@ -565,7 +556,34 @@ async function apply() {
             </div>
         </form>
 
-        <p v-if="error" class="error-message">{{ error }}</p>
+
+        <PartLineDialog
+            v-if="dialogPart"
+            :part="dialogPart"
+            :position="dialogPosition"
+            :options="catalogOptions"
+            :suppliers="suppliers"
+            :editable="editable(dialogPart)"
+            :can-create="canCreateCatalogPart"
+            :can-edit-comment="canEditParts"
+            :customer-view="customerView"
+            :busy="busy"
+            :status-label="statusLabel(dialogPart.status)"
+            :actions="partActions(dialogPart)"
+            :stock="stockState(dialogPart)"
+            :free-qty="freeQty(dialogPart)"
+            :agent-percent="rowAgentPercent(dialogPart)"
+            :agent-discount="rowAgentDiscount(dialogPart)"
+            :show-change-notes="showChangeNotes"
+            :can-change-in-work="canChangeInWork"
+            :change="lineChange(dialogPart)"
+            @close="dialogPart = null"
+            @select="selectPart(dialogPart, $event)"
+            @edit="nameEdited(dialogPart, $event)"
+            @create="createPart(dialogPart, $event)"
+            @touch="changed(dialogPart)"
+            @action="dialogAction"
+        />
 
         <details v-if="request.partMovements?.length">
             <summary>Возвраты и обмены</summary>

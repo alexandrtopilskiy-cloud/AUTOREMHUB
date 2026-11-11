@@ -1,5 +1,6 @@
 <script>
 import ReferencePicker from "../../components/ReferencePicker.vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 import { matchesReference } from "../../utils/referenceSearch.js";
 const FREE_FIELDS = [
@@ -19,7 +20,7 @@ const STEP = {
 };
 export default {
     name: "VehicleModelCreateDialog",
-    components: { ReferencePicker },
+    components: { FormAlert, ReferencePicker },
     props: {
         initialMake: { type: String, default: "" },
         initialModel: { type: String, default: "" },
@@ -226,6 +227,7 @@ export default {
         <div class="vehicle-model-dialog-content">
             <span class="eyebrow">Справочник ТС (марки, модели)</span>
             <h2>Добавить вариант автомобиля</h2>
+            <FormAlert v-if="error" class="error-banner">{{ error }}</FormAlert>
             <div class="form-grid">
                 <label v-for="field in freeFields.slice(0, 3)" :key="field.key"
                     ><span>{{ field.label }}</span>
@@ -332,7 +334,6 @@ export default {
                     </select></label
                 >
             </div>
-            <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
             <div class="record-editor-footer action-buttons">
                 <button class="ghost-btn" :disabled="busy" @click="close">
                     Отмена</button

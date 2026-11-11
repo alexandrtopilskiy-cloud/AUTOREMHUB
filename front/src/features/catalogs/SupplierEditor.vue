@@ -1,5 +1,6 @@
 <script>
 import PhoneInput from "../../components/PhoneInput.vue";
+import FormAlert from "../../components/FormAlert.vue";
 import FormatHint from "../../components/FormatHint.vue";
 import { requisiteFormatHint } from "../../data/requisiteFormats.js";
 
@@ -9,7 +10,6 @@ const FIELDS = {
     taxId: "ИНН",
     kpp: "КПП",
     ogrn: "ОГРН",
-    registrationDate: "Дата регистрации",
     legalFormName: "Наименование организационно-правовой формы",
     lastName: "Фамилия ИП",
     firstName: "Имя ИП",
@@ -25,7 +25,6 @@ const FIELDS = {
     bik: "БИК",
     settlementAccount: "Расчётный счёт",
     correspondentAccount: "Корреспондентский счёт",
-    treasuryAccount: "Казначейский счёт",
     taxRegime: "Система налогообложения",
     vatRate: "Ставка НДС / без НДС",
 };
@@ -35,12 +34,11 @@ const OPTIONAL = [
     "okpo",
     "oktmo",
     "okved",
-    "treasuryAccount",
 ];
 
 export default {
     name: "SupplierEditor",
-    components: { FormatHint, PhoneInput },
+    components: { FormAlert, FormatHint, PhoneInput },
     props: {
         record: { type: Object, required: true },
         references: { type: Object, required: true },
@@ -141,7 +139,6 @@ export default {
                     bik: 9,
                     settlementAccount: 20,
                     correspondentAccount: 20,
-                    treasuryAccount: 20,
                 }[key] || (key.toLowerCase().includes("address") ? 1000 : 255)
             );
         },
@@ -176,6 +173,7 @@ export default {
                 <h2>{{ record.isNew ? "Новый поставщик" : record.name }}</h2>
             </div>
         </div>
+        <FormAlert v-if="error" class="error-banner">{{ error }}</FormAlert>
         <form ref="form" @submit.prevent="save(false)">
             <fieldset :disabled="busy || !editable">
                 <label class="supplier-legal-form"
@@ -208,9 +206,7 @@ export default {
                             /></span>
                             <input
                                 v-model="form[key]"
-                                :type="
-                                    key === 'registrationDate' ? 'date' : 'text'
-                                "
+                                type="text"
                                 :maxlength="maxLength(key)"
                                 :required="required(key)"
                                 :title="form[key]"
@@ -285,7 +281,6 @@ export default {
                 </template>
             </fieldset>
         </form>
-        <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
         <div class="record-editor-footer action-buttons">
             <button
                 v-if="editable"

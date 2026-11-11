@@ -19,6 +19,9 @@ final class RequestPartService
     public function replace(RepairRequest $request, array $rows): void
     {
         $existing = $request->parts()->lockForUpdate()->get()->keyBy('uuid');
+        $stock = app(StockService::class);
+        $stockOrganizationId = $stock->requestOrganizationId($request);
+        $stockPrices = [];
         $agentDiscount = RepairRequestService::stationAgentDiscount($request);
         $kept = [];
         foreach ($rows as $index => $row) {
@@ -34,7 +37,7 @@ final class RequestPartService
                 'name' => ['required', 'string', 'max:500'],
                 'article' => ['present', 'string', 'max:100'],
                 'unit' => ['required', Rule::in(config('sto.part_units'))],
-                'supplierId' => ['required', 'uuid'],
+                'supplierId' => Input::uuidOrEmpty(),
                 'qty' => ['required', 'numeric', 'min:0.001', 'max:1000000', Input::numeric(3)],
                 'price' => ['required', 'numeric', 'min:0', 'max:1000000000', Input::numeric(2)],
                 'comment' => ['sometimes', 'nullable', 'string', 'max:2000'],
@@ -50,17 +53,28 @@ final class RequestPartService
             if (!$part->exists && (!$catalog || !$catalog->active)) {
                 Input::fail('Выберите активную запчасть из справочника', 'parts.' . $index . '.catalogPartId');
             }
-            $supplier = Supplier::query()->where('tenant_id', $request->tenant_id)->where('uuid', $row['supplierId'])->firstOrFail();
+            // Поставщик в форме ЗР больше не выбирается: берётся из партии склада
+            // (по методу списания), у прежних строк сохраняется.
+            $sameCatalog = $part->exists && $part->catalog_part_id === $catalog?->id;
+            $stockPrice = !$sameCatalog && $catalog !== null && $stockOrganizationId !== null
+                ? ($stockPrices[$catalog->id] ??= $stock->nextPrices($stockOrganizationId, [$catalog->id])[$catalog->id] ?? [])
+                : [];
+            $supplierUuid = (string) ($row['supplierId'] ?? '');
+            $supplier = $supplierUuid !== ''
+                ? Supplier::query()->where('tenant_id', $request->tenant_id)->where('uuid', $supplierUuid)->firstOrFail()
+                : null;
+            $supplierId = $supplier?->id ?? ($sameCatalog ? $part->supplier_id : ($stockPrice['supplierDbId'] ?? null));
             $attributes = [
                 'catalog_part_id' => $catalog?->id,
                 'name' => $catalog?->name ?? trim($row['name']),
                 'article' => $catalog?->article ?? $row['article'],
                 'unit' => $catalog?->unit ?? $row['unit'],
-                'supplier_id' => $supplier->id,
+                'supplier_id' => $supplierId,
                 'quantity' => $row['qty'],
                 'price' => $row['price'],
                 'manufacturer_snapshot' => $part->exists && $part->catalog_part_id === $catalog?->id ? $part->manufacturer_snapshot : $catalog?->manufacturer,
-                'purchase_price' => $part->exists && $part->catalog_part_id === $catalog?->id ? $part->purchase_price : $catalog?->purchase_price,
+                // Цена закупа — по остаткам склада СТО с учётом метода списания.
+                'purchase_price' => $sameCatalog ? $part->purchase_price : ($stockPrice['purchasePrice'] ?? null),
             ];
             $part->fill($attributes);
             $lineChanged = $part->isDirty();
@@ -71,7 +85,7 @@ final class RequestPartService
             }
             if ($lineChanged) {
                 $this->assertEditable($part);
-                if (!$supplier->active) {
+                if ($supplier !== null && $part->isDirty('supplier_id') && !$supplier->active) {
                     Input::fail('Поставщик неактивен', 'parts.' . $index . '.supplierId');
                 }
                 $part->status = RequestPartStatus::Proposed;

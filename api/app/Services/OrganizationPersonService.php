@@ -296,7 +296,7 @@ final class OrganizationPersonService
 
             if ($phone === null) {
                 Input::fail(
-                    'Телефон должен быть в формате +7 (ххх) ххх хх хх',
+                    'Телефон должен быть в формате ' . RussianPhone::HINT,
                     'phone',
                 );
             }
@@ -320,7 +320,7 @@ final class OrganizationPersonService
             'lastName'       => [$create ? 'required' : 'sometimes', 'required', 'string', 'max:100'],
             'firstName'      => [$create ? 'required' : 'sometimes', 'required', 'string', 'max:100'],
             'middleName'     => ['sometimes', 'string', 'max:100'],
-            'phone'          => [$create ? 'required' : 'sometimes', 'string', 'regex:/^\\+7[0-9]{10}$/'],
+            'phone'          => [$create ? 'required' : 'sometimes', 'string', 'regex:' . RussianPhone::PATTERN],
         ]);
     }
 

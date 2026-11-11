@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import { workflow } from '../../data/workflow.js';
 
 /* ─── Константы ─── */
@@ -37,6 +38,11 @@ const props = defineProps({
     default: false,
   },
 });
+
+/* ЛК СТО: нехватка ЗЧ на складе при переходе с этапов 4 и 5 (с этапа 5 сервер переход не пустит). */
+const stockShortage = computed(() =>
+  props.action === 'next' && [4, 5].includes(props.request.stage) ? props.request.stockShortage || [] : [],
+);
 
 const emit = defineEmits(['close']);
 
@@ -119,7 +125,16 @@ onMounted(() => {
   >
     <form @submit.prevent="submit">
       <h2>{{ title }}</h2>
+      <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
       <p>{{ request.number }}</p>
+      <div v-if="stockShortage.length" class="stock-shortage-banner" role="alert">
+        <strong>Недостаточно ЗЧ на складе СТО:</strong>
+        <ul>
+          <li v-for="line in stockShortage" :key="line">{{ line }}</li>
+        </ul>
+        <span v-if="request.stage === 4">Переход на этап «В работе» не блокируется, но до выдачи ТС эти ЗЧ нужно оприходовать.</span>
+        <span v-else>Перевести ЗР на этап «ТС готово к выдаче Заказчику» можно только после оприходования этих ЗЧ.</span>
+      </div>
 
       <label>
         Комментарий к решению{{ isOptional ? ' (необязательно)' : '' }}
@@ -154,7 +169,6 @@ onMounted(() => {
         </label>
       </fieldset>
 
-      <p v-if="error" class="error-message">{{ error }}</p>
 
       <div class="action-buttons">
         <button

@@ -10,6 +10,7 @@ use App\Enums\RequestDocumentType;
 use App\Enums\UserRole;
 use App\Models\RepairRequest;
 use App\Models\RequestStatusPeriod;
+use App\Services\CashFlowReportService;
 use App\Services\RepairRequestCalculator;
 use App\Support\AgentDiscount;
 use Illuminate\Http\JsonResponse;
@@ -101,5 +102,11 @@ final class ReportController
                 RepairStage::reportStages()
             ),
         ]);
+    }
+
+    /** Движение денежных средств организации пользователя (см. CashFlowReportService). */
+    public function cashFlow(Request $request, CashFlowReportService $report): JsonResponse
+    {
+        return response()->json($report->build($request->user()));
     }
 }

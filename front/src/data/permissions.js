@@ -84,7 +84,7 @@ export function total(request) {
     const partsTotal = (request?.parts || []).reduce(
         (sum, part) =>
             sum +
-            (Number(part.qty) - Number(part.returnedQty)) * Number(part.price),
+            (Number(part.qty || 0) - Number(part.returnedQty || 0)) * Number(part.price || 0),
         0,
     );
 
@@ -167,7 +167,7 @@ export const catalogNames = {
     regulations: "Регламенты ТО",
     suppliers: "Поставщики",
     parts: "Справочник запчастей",
-    partManufacturers: "Производитель ЗЧ",
+    partManufacturers: "Производители",
 };
 
 /** @type {Record<string, Record<string, string>>} */
@@ -387,9 +387,6 @@ export const catalogFields = {
         article: "Артикул",
         manufacturer: "Производитель",
         createdByOrganization: "Кто добавил",
-        supplierId: "Поставщик",
-        purchasePrice: "Цена закупа, ₽",
-        salePrice: "Цена реализации, ₽",
         unit: "Единица",
         active: "Активна",
     },

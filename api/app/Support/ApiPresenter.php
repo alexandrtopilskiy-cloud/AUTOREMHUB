@@ -198,6 +198,11 @@ final class ApiPresenter
             'invoice'                => $this->presentInvoice($request),
             'acceptanceAct'          => $this->presentAcceptanceAct($request),
             'closing'                => app(ClosingDocumentService::class)->present($request, $dto),
+            // ЛК СТО, этапы «Ожидание ТС на СТО» и «В работе»: каких ЗЧ не хватает на складе СТО.
+            'stockShortage'          => $dto->role === UserRole::Station
+                && in_array($request->stage, [RepairStage::WaitingVehicle, RepairStage::RepairInProgress], true)
+                ? app(\App\Services\StockService::class)->missingForRequest($request)
+                : [],
             'permissions' => array_merge(Workflow::permissions($request, $dto), [
                 'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
                     || $request->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
@@ -260,7 +265,7 @@ final class ApiPresenter
         if (is_array($snapshot)) {
             return implode(' · ', array_filter([
                 $snapshot['fullName'] ?? '',
-                $snapshot['phone'] ?? '',
+                RussianPhone::format($snapshot['phone'] ?? ''),
             ]));
         }
 
@@ -277,7 +282,7 @@ final class ApiPresenter
 
         return implode(' · ', array_filter([
             $snapshot['fullName'] ?? '',
-            $snapshot['phone'] ?? '',
+            RussianPhone::format($snapshot['phone'] ?? ''),
         ]));
     }
 

@@ -22,7 +22,7 @@ final class SeedTestUsers extends Command
         {--reset-password : Сбросить пароль уже существующих тестовых логинов}';
 
     protected $description = 'Создать по 3 тестовых пользователя для ЛК УК, '
-        . 'Заказчика (ООО «Альфа») и СТО (ООО «КУБ»)';
+        . 'Заказчика (ООО «Альфа») и СТО (ООО «КУБ»), и 3 — для второй СТО (ООО «Овал»)';
 
     public const PASSWORD = '123456789123456789';
 
@@ -32,15 +32,19 @@ final class SeedTestUsers extends Command
      * @var array<int, array{login: string, organization: string|null, first: string, phone: string}>
      */
     public const USERS = [
-        ['login' => 'UK', 'organization' => null, 'first' => 'УК', 'phone' => '+79990000001'],
-        ['login' => 'UK1', 'organization' => null, 'first' => 'УК 1', 'phone' => '+79990000002'],
-        ['login' => 'UK2', 'organization' => null, 'first' => 'УК 2', 'phone' => '+79990000003'],
-        ['login' => 'Zakaz', 'organization' => 'ООО "Альфа"', 'first' => 'Заказчик', 'phone' => '+79990000011'],
-        ['login' => 'Zakaz1', 'organization' => 'ООО "Альфа"', 'first' => 'Заказчик 1', 'phone' => '+79990000012'],
-        ['login' => 'Zakaz2', 'organization' => 'ООО "Альфа"', 'first' => 'Заказчик 2', 'phone' => '+79990000013'],
-        ['login' => 'STO', 'organization' => 'ООО "КУБ"', 'first' => 'СТО', 'phone' => '+79990000021'],
-        ['login' => 'STO1', 'organization' => 'ООО "КУБ"', 'first' => 'СТО 1', 'phone' => '+79990000022'],
-        ['login' => 'STO2', 'organization' => 'ООО "КУБ"', 'first' => 'СТО 2', 'phone' => '+79990000023'],
+        ['login' => 'UK', 'organization' => null, 'first' => 'УК', 'phone' => '+7 999 000 00 01'],
+        ['login' => 'UK1', 'organization' => null, 'first' => 'УК 1', 'phone' => '+7 999 000 00 02'],
+        ['login' => 'UK2', 'organization' => null, 'first' => 'УК 2', 'phone' => '+7 999 000 00 03'],
+        ['login' => 'Zakaz', 'organization' => 'ООО "Альфа"', 'first' => 'Заказчик', 'phone' => '+7 999 000 00 11'],
+        ['login' => 'Zakaz1', 'organization' => 'ООО "Альфа"', 'first' => 'Заказчик 1', 'phone' => '+7 999 000 00 12'],
+        ['login' => 'Zakaz2', 'organization' => 'ООО "Альфа"', 'first' => 'Заказчик 2', 'phone' => '+7 999 000 00 13'],
+        ['login' => 'STO', 'organization' => 'ООО "КУБ"', 'first' => 'СТО', 'phone' => '+7 999 000 00 21'],
+        ['login' => 'STO1', 'organization' => 'ООО "КУБ"', 'first' => 'СТО 1', 'phone' => '+7 999 000 00 22'],
+        ['login' => 'STO2', 'organization' => 'ООО "КУБ"', 'first' => 'СТО 2', 'phone' => '+7 999 000 00 23'],
+        // Вторая СТО — со своим складом и складским учётом.
+        ['login' => 'STO3', 'organization' => 'ООО "Овал"', 'first' => 'СТО 3', 'phone' => '+7 999 000 00 31'],
+        ['login' => 'STO4', 'organization' => 'ООО "Овал"', 'first' => 'СТО 4', 'phone' => '+7 999 000 00 32'],
+        ['login' => 'STO5', 'organization' => 'ООО "Овал"', 'first' => 'СТО 5', 'phone' => '+7 999 000 00 33'],
     ];
 
     /**

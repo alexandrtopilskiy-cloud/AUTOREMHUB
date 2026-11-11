@@ -4231,3 +4231,79 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 .handover-facts dt { font-size: 12px; color: var(--muted); }
 .handover-facts dd { margin: 2px 0 0; font-weight: 600; }
 .handover-note { margin: 0; font-size: 13px; }
+
+/* ─── Склад (0.42.001) ─── */
+.manufacturer-search {
+  display: block;
+  max-width: 484px;
+  margin: 0 24px 10px;
+}
+.manufacturer-search input {
+  width: 100%;
+}
+.excel-grid tr.part-missing-stock > td {
+  background: #fde4e4;
+  color: #a11d1d;
+}
+.excel-grid tr.part-missing-stock > td input {
+  color: #a11d1d;
+}
+.part-stock-badge,
+.table-wrap td > span.part-stock-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  background: #dcf1e8;
+  color: #267353;
+  white-space: normal;
+  line-height: 1.25;
+  overflow: visible;
+}
+.part-stock-badge.missing,
+.table-wrap td > span.part-stock-badge.missing {
+  background: #f9caca;
+  color: #a11d1d;
+}
+.part-stock-badge.written,
+.table-wrap td > span.part-stock-badge.written {
+  background: #e7ebf1;
+  color: #4b5b70;
+}
+.parts-stock-note {
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid #c62828;
+  border-radius: 4px;
+  background: #fdecec;
+  color: #a11d1d;
+  font-size: 13px;
+}
+.stock-shortage-banner {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-left: 4px solid #c62828;
+  border-radius: 6px;
+  background: #fdecec;
+  color: #8f1b1b;
+  font-size: 14px;
+}
+.stock-shortage-banner ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+/* ─── Карточка ЗЧ (0.42.002) ─── */
+.part-line-dialog__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; grid-column: 1 / -1; }
+.parts-grid td.part-sum-cell { font-weight: 600; }
+.parts-grid .part-draft-row { cursor: default; }
+/* Колонки ЗЧ по ширине содержимого; самая широкая — «Наименование». */
+.parts-panel .parts-grid { min-width: 780px !important; }
+.parts-panel .parts-grid.with-change-notes { min-width: 920px !important; }
+
+/* Сервисное сообщение формы — вверху формы сразу под шапкой (FormAlert.vue) */
+.form-top-alert {
+  margin: 8px 0 12px;
+  grid-column: 1 / -1;
+  scroll-margin: 16px;
+}

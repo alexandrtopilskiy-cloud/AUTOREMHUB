@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { http } from "../../api/client.js";
 import { marketplaceApi } from "../../api/marketplace.js";
 
@@ -164,6 +165,7 @@ function fileStatus(file) {
 <template>
     <section class="feature-card">
         <h3 v-if="!hideTitle">Фото, видео и документы</h3>
+        <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
         <div v-if="request.permissions?.canUpload" class="inline-form">
             <label>
@@ -196,7 +198,6 @@ function fileStatus(file) {
             перехода между кабинетами.
         </p>
 
-        <p v-if="error" class="error-message">{{ error }}</p>
 
         <ul class="attachment-list">
             <li v-for="file in request.attachments" :key="file.id">

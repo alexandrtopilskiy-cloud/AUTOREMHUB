@@ -19,13 +19,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property-read Organization|null $creatorOrganization
  * @property-read PartManufacturer|null $manufacturerRecord
- * @property-read Supplier|null $supplierRecord
  */
 final class CatalogPart extends Entity
 {
     protected $with = [
         'manufacturerRecord',
-        'supplierRecord',
         'creatorOrganization',
     ];
 
@@ -36,8 +34,6 @@ final class CatalogPart extends Entity
     {
         return [
             'active' => 'boolean',
-            'purchase_price' => 'decimal:2',
-            'sale_price' => 'decimal:2',
             'created_by_organization_id' => 'integer',
         ];
     }
@@ -54,9 +50,4 @@ final class CatalogPart extends Entity
         return $this->belongsTo(PartManufacturer::class, 'part_manufacturer_id');
     }
 
-    /** @return BelongsTo<Supplier, $this> */
-    public function supplierRecord(): BelongsTo
-    {
-        return $this->belongsTo(Supplier::class, 'supplier_id');
-    }
 }

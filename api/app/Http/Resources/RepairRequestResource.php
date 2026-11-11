@@ -166,6 +166,11 @@ final class RepairRequestResource extends JsonResource
             'invoice'                => $this->invoice ? (new InvoiceResource($this->invoice))->toArray($request) : null,
             'acceptanceAct'          => $this->acceptanceAct ? (new AcceptanceActResource($this->acceptanceAct))->toArray($request) : null,
             'closing'                => app(ClosingDocumentService::class)->present($this->resource, $dto),
+            // ЛК СТО, этапы «Ожидание ТС на СТО» и «В работе»: каких ЗЧ не хватает на складе СТО.
+            'stockShortage'          => $dto->role === UserRole::Station
+                && in_array($this->stage, [RepairStage::WaitingVehicle, RepairStage::RepairInProgress], true)
+                ? app(\App\Services\StockService::class)->missingForRequest($this->resource)
+                : [],
 
             // Permissions
             'permissions' => array_merge(Workflow::permissions($this->resource, $dto), [

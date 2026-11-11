@@ -1463,7 +1463,11 @@ final class RepairRequestService
         // Закрытие ЗР: акт передачи ТС при готовности ТС к выдаче,
         // комплект документов УК после выдачи ТС.
         if ($dto->action === TransitionAction::Next && $to === RepairStage::Ready) {
+            app(StockService::class)->writeOffRequest($request);
             $this->closingDocuments->generateTransferAct($request, $user);
+        }
+        if ($dto->action === TransitionAction::Return && $to->isBefore(RepairStage::Ready)) {
+            app(StockService::class)->cancelRequestWriteOff($request);
         }
         if ($dto->action === TransitionAction::Next && $to === RepairStage::Issued) {
             $this->closingDocuments->generateClosingDocuments($request, $user);
@@ -2320,8 +2324,8 @@ final class RepairRequestService
         }
 
         foreach ($request->parts()->get() as $part) {
-            if (!$part->supplier_id || trim((string) $part->name) === '' || $part->quantity <= 0) {
-                Input::fail('Укажите поставщика, название и количество каждой запчасти');
+            if (trim((string) $part->name) === '' || $part->quantity <= 0) {
+                Input::fail('Укажите название и количество каждой запчасти');
             }
         }
     }
@@ -2383,13 +2387,15 @@ final class RepairRequestService
 
         foreach ($request->parts()->get() as $part) {
             $needsReceive = $part->quantity > $part->returned_quantity;
-            $notReady = $part->approved_version !== $request->estimate_version
-                || !$part->status->isReadyForRepair();
 
-            if ($needsReceive && $notReady) {
-                Input::fail('Подтвердите получение согласованных запчастей');
+            if ($needsReceive && $part->approved_version !== $request->estimate_version) {
+                Input::fail('Запчасти текущей сметы должны быть согласованы');
             }
         }
+
+        // Складской учёт: ЗЧ ЗР списываются со склада СТО на этапе «ТС готово
+        // к выдаче Заказчику», поэтому их должно хватать на складе.
+        app(StockService::class)->assertRequestCovered($request);
     }
 
     /* ─────────────────── Заказ-наряд ─────────────────── */

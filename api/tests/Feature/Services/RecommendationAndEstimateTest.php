@@ -108,8 +108,6 @@ final class RecommendationAndEstimateTest extends TestCase
             'article'       => 'F-1',
             'unit'          => 'шт.',
             'manufacturer'  => 'Test',
-            'supplier_id'   => $this->supplier->id,
-            'sale_price'    => 200,
             'active'        => true,
         ]);
     }
@@ -169,7 +167,6 @@ final class RecommendationAndEstimateTest extends TestCase
         $this->assertSame(1, $result->revision);
         $this->assertSame('test', $result->data['routeComment']);
         $this->assertSame('300.00', $result->parts()->first()->price);
-        $this->assertSame('200.00', $this->catalog->fresh()->sale_price);
     }
 
     public function test_invalid_part_rolls_back_entire_common_save(): void

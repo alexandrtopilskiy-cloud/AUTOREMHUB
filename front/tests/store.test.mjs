@@ -68,3 +68,56 @@ test('request status depends on current role action and closure', () => {
     assert.equal(statusClass(2, {canStationDecide: true}), 'red');
     assert.equal(statusClass(10, {requiresAction: false}), 'green');
 });
+
+test('stale request list does not roll back a revision saved while it was loading', async () => {
+    const api = fixture();
+    const store = createRequestStore(api);
+    const request = await store.create();
+    const list = api.listRequests;
+    let release;
+    api.listRequests = async () => {
+        const rows = await list();
+        await new Promise((resolve) => { release = resolve; });
+        return rows;
+    };
+    const refresh = store.refreshLive();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    request.description = 'Первое сохранение';
+    store.touch(request.id);
+    await store.save(request.id);
+    assert.equal(store.get(request.id).revision, 1);
+    release();
+    await refresh;
+    assert.equal(store.get(request.id).revision, 1);
+    assert.equal(store.get(request.id).description, 'Первое сохранение');
+    api.listRequests = list;
+    store.get(request.id).description = 'Второе сохранение';
+    store.touch(request.id);
+    await store.save(request.id);
+    assert.equal(store.get(request.id).revision, 2);
+    store.reset();
+});
+
+test('request created while the list was loading is kept in the store', async () => {
+    const api = fixture();
+    const store = createRequestStore(api);
+    const list = api.listRequests;
+    let release;
+    api.listRequests = async () => {
+        const rows = await list();
+        await new Promise((resolve) => { release = resolve; });
+        return rows;
+    };
+    const refresh = store.refreshLive();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = await store.create();
+    release();
+    await refresh;
+    assert.equal(store.get(request.id)?.id, request.id);
+    api.listRequests = list;
+    request.description = 'Новая ЗР';
+    store.touch(request.id);
+    await store.save(request.id);
+    assert.equal(store.get(request.id).revision, 1);
+    store.reset();
+});

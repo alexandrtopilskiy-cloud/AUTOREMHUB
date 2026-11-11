@@ -7,6 +7,10 @@
 
 import { requestFields } from "../data/permissions.js";
 
+/* Фоновое обновление справочников и references (ЗЧ, поставщики…), мс. */
+const CATALOG_REFRESH_MS = 60_000;
+let catalogsRefreshedAt = 0;
+
 /**
  * Глубокое клонирование значения. `undefined` остаётся `undefined`.
  *
@@ -103,28 +107,57 @@ export function createRequestStore(api) {
     const saves = new Map();
 
     /**
-     * Обновляет заявки с сервера, не затирая несохранённые поля формы.
+     * Порядковый номер последнего применённого ответа API по каждой заявке.
+     * Нужен, чтобы ответ списка, запрошенный до сохранения или действия,
+     * не откатил заявку к прежней ревизии.
+     *
+     * @type {Map<string, number>}
+     */
+    const acceptedAt = new Map();
+    let acceptSeq = 0;
+
+    /**
+     * Обновляет заявки с сервера, не затирая несохранённые поля формы и
+     * более свежие ответы, полученные, пока шёл запрос списка.
+     *
+     * Список ЗР тяжёлый и может отвечать несколько секунд. Если за это время
+     * пользователь сохранил заявку (ревизия n → n + 1), устаревший список с
+     * ревизией n не должен её перезаписать: иначе следующее сохранение уходит
+     * со старой ревизией и сервер отвечает «Заявка уже изменена другим
+     * пользователем», хотя заявка открыта в одном кабинете.
      *
      * @param {RequestStore} store
      * @param {Array<object>} remote
+     * @param {number} since значение acceptSeq на момент запроса списка
      */
-    function applyRemoteRequests(store, remote) {
+    function applyRemoteRequests(store, remote, since) {
         const previous = store.requests;
+        const keepLocal = (id) =>
+            store.pending[id] || saves.has(id) || (acceptedAt.get(id) || 0) > since;
+        const remoteIds = new Set(remote.map((request) => request.id));
 
-        store.requests = remote.map((request) =>
-            store.pending[request.id]
-                ? previous.find((item) => item.id === request.id) || request
-                : request,
-        );
+        store.requests = remote.map((request) => {
+            const local = previous.find((item) => item.id === request.id);
+
+            if (!local) {
+                return request;
+            }
+
+            if (keepLocal(request.id) || local.revision > request.revision) {
+                return local;
+            }
+
+            return request;
+        });
 
         for (const request of previous) {
-            if (store.pending[request.id] && !store.get(request.id)) {
+            if (!remoteIds.has(request.id) && keepLocal(request.id)) {
                 store.requests.push(request);
             }
         }
 
         for (const request of remote) {
-            if (!store.pending[request.id]) {
+            if (store.get(request.id) === request) {
                 baselines.set(request.id, clone(request));
             }
         }
@@ -199,6 +232,7 @@ export function createRequestStore(api) {
             }
 
             baselines.set(server.id, clone(server));
+            acceptedAt.set(server.id, ++acceptSeq);
 
             this.pending[server.id] = Object.keys(unsent).length > 0;
         },
@@ -207,6 +241,8 @@ export function createRequestStore(api) {
 
         async refresh() {
             const version = this.generation;
+            const since = acceptSeq;
+            catalogsRefreshedAt = Date.now();
 
             this.loading = true;
 
@@ -223,7 +259,7 @@ export function createRequestStore(api) {
                     return;
                 }
 
-                applyRemoteRequests(this, remote);
+                applyRemoteRequests(this, remote, since);
 
                 this.records = records;
                 this.references = refs;
@@ -243,6 +279,7 @@ export function createRequestStore(api) {
          */
         async refreshLive() {
             const version = this.generation;
+            const since = acceptSeq;
             const [remote, notifications, chats] = await Promise.all([
                 api.listRequests(),
                 api.listNotifications(),
@@ -253,7 +290,7 @@ export function createRequestStore(api) {
                 return;
             }
 
-            applyRemoteRequests(this, remote);
+            applyRemoteRequests(this, remote, since);
             const knownNotifications = new Set(this.notifications.map((item) => item.id),
             );
             const manufacturerChanged = notifications.some((item) => item.kind === "manufacturer_reviewed" && !knownNotifications.has(item.id),
@@ -261,7 +298,11 @@ export function createRequestStore(api) {
             this.notifications = notifications;
             this.chatSummaries = chats.chats;
             this.chatUnreadTotal = chats.unreadTotal;
-            if (manufacturerChanged) await this.refreshCatalogs(true);
+            // Справочники (ЗЧ, поставщики и т.д.) общие для УК и СТО: то, что добавил
+            // другой кабинет, подтягивается без перезагрузки страницы.
+            if (manufacturerChanged || Date.now() - catalogsRefreshedAt >= CATALOG_REFRESH_MS) {
+                await this.refreshCatalogs(true);
+            }
         },
 
         /**
@@ -272,6 +313,7 @@ export function createRequestStore(api) {
          */
         async refreshCatalogs(includeReferences = false) {
             const version = this.generation;
+            if (includeReferences) catalogsRefreshedAt = Date.now();
             const tasks = [api.listCatalogs()];
 
             if (includeReferences) {
@@ -611,6 +653,7 @@ export function createRequestStore(api) {
         reset() {
             this.generation++;
             baselines.clear();
+            acceptedAt.clear();
 
             this.requests = [];
             this.records = [];

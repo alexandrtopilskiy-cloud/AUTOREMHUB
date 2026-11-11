@@ -1008,11 +1008,8 @@ final class CatalogService
             'article'      => $part->article,
             'manufacturer' => $part->manufacturer,
             'manufacturerId' => $part->manufacturerRecord?->uuid ?? '',
-            'supplierId' => $part->supplierRecord?->uuid ?? '',
-            'purchasePrice' => $part->purchase_price === null ? null : (float) $part->purchase_price,
             'createdByOrganizationId' => $part->creatorOrganization?->uuid ?? '',
             'createdByOrganization' => $part->created_by_organization_name ?? 'Не зафиксировано',
-            'salePrice' => $part->sale_price === null ? null : (float) $part->sale_price,
             'unit'         => $part->unit,
             'active'       => $part->active,
         ];
@@ -1115,7 +1112,7 @@ final class CatalogService
      */
     private function presentSupplier(Model $supplier): array
     {
-        return array_merge($supplier->requisites ?? [], [
+        return array_merge(array_diff_key($supplier->requisites ?? [], array_flip(['registrationDate', 'treasuryAccount'])), [
             'name' => $supplier->name, 'contact' => $supplier->contact,
             'taxId' => $supplier->tax_id, 'active' => $supplier->active,
             'legalForm' => $supplier->legal_form ?? '',
@@ -1323,6 +1320,15 @@ final class CatalogService
             if (($payload[$field] ?? null) === '') {
                 $payload[$field] = null;
             }
+        }
+
+        // Телефон организации хранится в формате «+7 ххх ххх хх хх».
+        if (is_string($payload['phone'] ?? null) && trim($payload['phone']) !== '') {
+            $phone = \App\Support\RussianPhone::normalize($payload['phone']);
+            if ($phone === null) {
+                Input::fail('Телефон должен быть в формате ' . \App\Support\RussianPhone::HINT, 'phone');
+            }
+            $payload['phone'] = $phone;
         }
 
         $text = ['sometimes', 'string', 'max:1000'];
@@ -1589,9 +1595,6 @@ final class CatalogService
             ],
             CatalogKind::Parts => [
                 'manufacturerId' => ['required', 'uuid'],
-                'supplierId' => ['required', 'uuid'],
-                'purchasePrice' => ['required', 'numeric', 'min:0', 'max:1000000000', Input::numeric(2)],
-                'salePrice' => ['required', 'numeric', 'min:0', 'max:1000000000', Input::numeric(2)],
                 'name' => ['required', 'string', 'max:500'],
                 'article'      => ['required', 'string', 'max:100'],
                 'manufacturer' => $text,
@@ -1748,18 +1751,11 @@ final class CatalogService
         if (!$manufacturer) {
             Input::fail('Выберите производителя, согласованного УК', 'manufacturerId');
         }
-        $supplier = Supplier::query()->where('tenant_id', $user->tenantId())->where('uuid', $payload['supplierId'])->where('active', true)->first();
-        if (!$supplier) {
-            Input::fail('Выберите действующего поставщика', 'supplierId');
-        }
         if (trim((string) ($payload['article'] ?? '')) === '') {
             Input::fail('Укажите артикул', 'article');
         }
         $model->part_manufacturer_id = $manufacturer->id;
         $model->manufacturer = $manufacturer->name;
-        $model->supplier_id = $supplier->id;
-        $model->purchase_price = $payload['purchasePrice'];
-        $model->sale_price = $payload['salePrice'];
     }
 
     private function fillVehicle(Model $model): void

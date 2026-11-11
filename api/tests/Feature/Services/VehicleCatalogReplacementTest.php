@@ -113,7 +113,7 @@ final class VehicleCatalogReplacementTest extends TestCase
         ]);
         \App\Models\VehicleContact::query()->create([
             'vehicle_id' => $vehicle->id, 'last_name' => 'Петров',
-            'first_name' => 'Пётр', 'phone' => '+79991234567',
+            'first_name' => 'Пётр', 'phone' => '+7 999 123 45 67',
         ]);
         $work = \App\Models\WorkType::query()->create([
             'tenant_id' => $this->customerOrganization->tenant_id, 'name' => 'Работа',

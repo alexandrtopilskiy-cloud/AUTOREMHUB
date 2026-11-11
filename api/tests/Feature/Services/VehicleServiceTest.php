@@ -140,8 +140,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_present_includes_contact_and_driver_names(): void
     {
-        $this->makeContact($this->vehicle, 'contact', 'Иванов', 'Иван', '+79991111111');
-        $this->makeContact($this->vehicle, 'driver', 'Петров', 'Пётр', '+79992222222');
+        $this->makeContact($this->vehicle, 'contact', 'Иванов', 'Иван', '+7 999 111 11 11');
+        $this->makeContact($this->vehicle, 'driver', 'Петров', 'Пётр', '+7 999 222 22 22');
 
         $dto = UserDto::fromUserModel($this->manager);
         $result = $this->service()->present($this->vehicle->refresh(), $dto);
@@ -166,9 +166,9 @@ final class VehicleServiceTest extends TestCase
 
     public function test_contacts_returns_only_active_contacts_sorted(): void
     {
-        $this->makeContact($this->vehicle, 'contact', 'Яковлев', 'Антон', '+79991111111');
-        $this->makeContact($this->vehicle, 'contact', 'Абрамов', 'Борис', '+79992222222');
-        $this->makeContact($this->vehicle, 'contact', 'Скрытый', 'Иван', '+79993333333', false);
+        $this->makeContact($this->vehicle, 'contact', 'Яковлев', 'Антон', '+7 999 111 11 11');
+        $this->makeContact($this->vehicle, 'contact', 'Абрамов', 'Борис', '+7 999 222 22 22');
+        $this->makeContact($this->vehicle, 'contact', 'Скрытый', 'Иван', '+7 999 333 33 33', false);
 
         $result = $this->service()->contacts($this->vehicle->refresh());
 
@@ -179,8 +179,8 @@ final class VehicleServiceTest extends TestCase
 
     public function test_drivers_returns_only_active_drivers(): void
     {
-        $this->makeContact($this->vehicle, 'driver', 'Петров', 'Пётр', '+79991111111');
-        $this->makeContact($this->vehicle, 'driver', 'Скрытый', 'Иван', '+79992222222', false);
+        $this->makeContact($this->vehicle, 'driver', 'Петров', 'Пётр', '+7 999 111 11 11');
+        $this->makeContact($this->vehicle, 'driver', 'Скрытый', 'Иван', '+7 999 222 22 22', false);
 
         $result = $this->service()->drivers($this->vehicle->refresh());
 
@@ -192,11 +192,11 @@ final class VehicleServiceTest extends TestCase
 
     public function test_present_contact_formats_phone(): void
     {
-        $contact = $this->makeContact($this->vehicle, 'contact', 'Иванов', 'Иван', '+79991234567');
+        $contact = $this->makeContact($this->vehicle, 'contact', 'Иванов', 'Иван', '+7 999 123 45 67');
 
         $result = $this->service()->presentContact($contact);
 
-        $this->assertSame('+7 (999) 123 45 67', $result['phone']);
+        $this->assertSame('+7 999 123 45 67', $result['phone']);
         $this->assertSame('contact', $result['kind']);
         $this->assertSame('Иванов Иван', $result['fullName']);
     }

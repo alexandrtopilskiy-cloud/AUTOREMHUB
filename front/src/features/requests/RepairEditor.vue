@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 import {
   applyVehicleSelection,
@@ -923,6 +924,13 @@ function workAgentDiscount(work) {
   return agentDiscountAmount(workAmount(work), lineAgentPercent(work));
 }
 
+/** Стоимость работы в таблице: Заказчику — полная, в ЛК УК и ЛК СТО — за вычетом агентской скидки. */
+function workNetAmount(work) {
+  const amount = workAmount(work);
+  if (amount == null || !showAgentDiscount.value) return amount;
+  return Math.round((amount - (workAgentDiscount(work) ?? 0)) * 100) / 100;
+}
+
 const agentDiscountTotals = computed(() => {
   let discount = 0;
   let sum = 0;
@@ -1021,7 +1029,7 @@ const worksTotals = computed(() => {
       hours += norm * qty;
     }
 
-    const line = workAmount(work);
+    const line = workNetAmount(work);
 
     if (line != null) {
       amount += line;
@@ -1202,6 +1210,17 @@ onMounted(() => {
         @click="selectTab(tab.key)"
       >{{ tab.label }}</button>
     </nav>
+
+    <!-- ЛК СТО: нехватка ЗЧ на складе (этапы «Ожидание ТС на СТО» и «В работе») -->
+    <div v-if="isStation && request.stockShortage?.length" class="stock-shortage-banner" role="alert">
+      <strong>Недостаточно ЗЧ на складе СТО:</strong>
+      <ul>
+        <li v-for="line in request.stockShortage" :key="line">{{ line }}</li>
+      </ul>
+      <span>
+        Оприходуйте эти ЗЧ на склад: без них ЗР нельзя перевести на этап «ТС готово к выдаче Заказчику».
+      </span>
+    </div>
 
     <div v-show="activeTab === 'vehicle'" id="zr-tab-vehicle" class="zr-tab-panel" role="tabpanel">
       <!-- Автомобиль -->
@@ -1738,7 +1757,7 @@ onMounted(() => {
                 </td>
 
                 <td v-if="!customerDraftWorks" class="num-cell">
-                  {{ workAmount(work) == null ? '—' : money(workAmount(work)) }}
+                  {{ workNetAmount(work) == null ? '—' : money(workNetAmount(work)) }}
                 </td>
 
                 <td class="row-command-column">
@@ -1831,6 +1850,7 @@ onMounted(() => {
         :class="{ 'draft-disabled-section': isCustomer && request.stage === 0 }"
       >
         <h3>Заключение диагностики СТО <small class="muted">(необязательно)</small></h3>
+        <FormAlert v-if="diagnosisError" class="error-message">{{ diagnosisError }}</FormAlert>
 
         <article
           v-for="report in request.diagnosticReports"
@@ -1857,9 +1877,6 @@ onMounted(() => {
             Сохранить заключение
           </button>
 
-          <p v-if="diagnosisError" class="error-message">
-            {{ diagnosisError }}
-          </p>
         </form>
       </section>
     </div>

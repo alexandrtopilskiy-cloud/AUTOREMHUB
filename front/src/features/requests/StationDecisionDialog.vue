@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import ConfirmedDateTimeInput from '../../components/ConfirmedDateTimeInput.vue';
 import { formatDateTime } from '../../data/permissions.js';
 import { VISIT_TIME_END, VISIT_TIME_START } from '../../data/schedule.js';
@@ -117,6 +118,7 @@ onMounted(() => {
   >
     <form @submit.prevent="submit">
       <h2>{{ copy.title }}</h2>
+      <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
       <p>{{ request.number }}</p>
 
       <p v-if="decision === 'rescheduled'" class="requested-visit-time">
@@ -140,7 +142,6 @@ onMounted(() => {
         />
       </label>
 
-      <p v-if="error" class="error-message">{{ error }}</p>
 
       <div class="action-buttons">
         <button

@@ -131,8 +131,6 @@ final class SupplierAndRecommendationsTest extends TestCase
             'article' => 'F-1',
             'unit' => 'шт.',
             'manufacturer' => 'Test',
-            'supplier_id' => $this->supplier->id,
-            'sale_price' => 200,
             'active' => true,
         ];
         $this->catalog = CatalogPart::query()->create($catalogData);
@@ -281,9 +279,6 @@ final class SupplierAndRecommendationsTest extends TestCase
             'name' => 'Фильтр',
             'article' => 'NEW-1',
             'manufacturerId' => $maker->uuid,
-            'supplierId' => $this->supplier->uuid,
-            'purchasePrice' => 100.5,
-            'salePrice' => 200.0,
             'unit' => 'шт.',
             'active' => true,
         ];
@@ -294,9 +289,11 @@ final class SupplierAndRecommendationsTest extends TestCase
         $this->assertSame($this->station->organization->name, $part['createdByOrganization']);
         $this->assertTrue($part['permissions']['canEdit']);
 
-        $updated = $service->update($this->manager, $part['id'], ['salePrice' => 350.0]);
+        $updated = $service->update($this->manager, $part['id'], ['name' => 'Фильтр 2']);
 
-        $this->assertSame(350.0, $updated['salePrice']);
+        $this->assertSame('Фильтр 2', $updated['name']);
+        $this->assertArrayNotHasKey('salePrice', $updated);
+        $this->assertArrayNotHasKey('supplierId', $updated);
         $this->assertSame($part['createdByOrganization'], $updated['createdByOrganization']);
         $this->assertContains($part['id'], array_column($service->reference($this->station)['parts'], 'id'));
         $this->actingAs($this->manager)
@@ -454,10 +451,7 @@ final class SupplierAndRecommendationsTest extends TestCase
     public function test_part_snapshot_keeps_original_values_after_catalog_edit(): void
     {
         $service = app(RepairRequestService::class);
-        $this->catalog->update([
-            'manufacturer' => 'Original',
-            'purchase_price' => 100,
-        ]);
+        $this->catalog->update(['manufacturer' => 'Original']);
 
         $dto = new UpdateRepairRequestDto(
             requestKey: $this->request->uuid,
@@ -467,14 +461,11 @@ final class SupplierAndRecommendationsTest extends TestCase
         );
         $service->update($this->manager, $dto);
 
-        $this->catalog->update([
-            'manufacturer' => 'Changed',
-            'purchase_price' => 500,
-        ]);
+        $this->catalog->update(['manufacturer' => 'Changed']);
         $shown = app(ApiPresenter::class)->document($this->request->fresh(), $this->manager);
 
         $this->assertSame('Original', $shown['parts'][0]['manufacturer']);
-        $this->assertSame(100.0, $shown['parts'][0]['purchasePrice']);
+        $this->assertNull($shown['parts'][0]['purchasePrice']);
         $this->assertSame(300.0, $shown['parts'][0]['price']);
     }
 

@@ -393,7 +393,7 @@ test("Options API component rendering and interactive methods", async (context) 
 
                 assert.match(html, /aria-label="Добавить строку работы"/);
                 assert.match(html, /class="excel-grid works-grid compact-works-grid"/);
-                assert.match(html, /Запчасти и поставщики/);
+                assert.match(html, /<h3>Запчасти<\/h3>/);
                 assert.match(html, /class="excel-grid parts-grid"/);
                 assert.match(html, /Начните вводить запчасть/);
                 assert.match(html, /Комментарий к решению необязателен/);
@@ -445,7 +445,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 const foot = html.match(/<tfoot>([\s\S]*?)<\/tfoot>/)[1];
                 assert.match(foot, /Итого по работам/);
                 assert.match(foot, />2,25</);
-                assert.match(foot, />3\s?375</);
+                assert.match(foot, />3\s?037,5</);
                 assert.match(foot, />337,5</);
                 assert.match(html, /💬 Масло клиента/);
                 assert.match(html, /ООО «КУБ»/);
@@ -847,7 +847,7 @@ test("Options API component rendering and interactive methods", async (context) 
 
                 assert.match(html, /Новое: водитель/);
                 assert.match(html, /ООО «Тест»/);
-                assert.match(html, /\+7 \(ххх\) ххх хх хх/);
+                assert.match(html, /\+7 ххх ххх хх хх/);
                 assert.match(html, /Сохранить и выйти/);
             },
         );
@@ -1801,26 +1801,40 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
-            "side menu: report item and catalogs as a popup list",
+            "side menu: Склад, Справочники и Настройки as popup lists",
             async () => {
                 const { default: SidebarMenu } = await server.ssrLoadModule(
                     "/src/components/SidebarMenu.vue",
                 );
-                const render = async (role, catalogKeys, active = null, open = false) => {
+                const warehouse = {
+                    key: "warehouse",
+                    title: "Склад",
+                    icon: "▣",
+                    items: [
+                        { key: "stockReceipts", label: "Приход" },
+                        { key: "stockSales", label: "Реализация" },
+                        { key: "stockBalance", label: "Остатки на складе" },
+                        { key: "parts", label: "Справочник запчастей", caption: "Справочники" },
+                        { key: "partManufacturers", label: "Производители" },
+                        { key: "suppliers", label: "Поставщики" },
+                    ],
+                };
+                const settings = { key: "settings", title: "Настройки", icon: "⚙", items: [{ key: "warehouseSettings", label: "Складской учёт" }] };
+                const render = async (menuGroups, active = null, openGroup = "") => {
                     const ctx = {};
-                    const component = open
+                    const component = openGroup
                         ? {
                               ...SidebarMenu,
                               data() {
-                                  return { ...SidebarMenu.data.call(this), catalogsOpen: true };
+                                  return { ...SidebarMenu.data.call(this), openGroup };
                               },
                           }
                         : SidebarMenu;
                     const html = await renderToString(
                         createSSRApp(component, {
-                            user: { role, organization: "Org", label: "User" },
+                            user: { organization: "Org", label: "User" },
                             panel: { menu: true },
-                            catalogKeys,
+                            menuGroups,
                             active,
                         }),
                         ctx,
@@ -1828,37 +1842,45 @@ test("Options API component rendering and interactive methods", async (context) 
                     return { html, popup: ctx.teleports?.body || "" };
                 };
 
-                const closed = await render("station", ["parts", "suppliers"]);
-                assert.match(closed.html, /Отчёт/);
-                assert.match(closed.html, /Справочники/);
+                const closed = await render([warehouse, settings]);
+                assert.match(closed.html, /Отчёты/);
+                assert.match(closed.html, /▣ Склад/);
+                assert.match(closed.html, /⚙ Настройки/);
                 assert.match(closed.html, /aria-haspopup="menu"/);
                 assert.doesNotMatch(closed.html + closed.popup, /Справочник запчастей/);
 
-                // Активный справочник не разворачивает список внутри меню
-                const activeClosed = await render("station", ["parts", "suppliers"], {
-                    kind: "list",
-                    key: "parts",
-                });
+                // Активный пункт подсвечивает группу, но не разворачивает список
+                const activeClosed = await render([warehouse, settings], { kind: "list", key: "parts" });
                 assert.match(activeClosed.html, /class="active nav-item nav-group"/);
                 assert.doesNotMatch(activeClosed.html + activeClosed.popup, /Справочник запчастей/);
 
                 // Открытый список рендерится всплывающим окном вне меню
-                const opened = await render(
-                    "station",
-                    ["parts", "suppliers"],
-                    { kind: "list", key: "parts" },
-                    true,
-                );
-                assert.doesNotMatch(opened.html, /Справочник запчастей/);
+                const opened = await render([warehouse, settings], { kind: "stock-list", menuKey: "stockReceipts" }, "warehouse");
+                assert.doesNotMatch(opened.html, /Остатки на складе/);
                 assert.match(opened.popup, /class="catalog-popup"/);
                 assert.match(opened.popup, /role="menu"/);
-                assert.match(opened.popup, /Справочник запчастей/);
-                assert.match(opened.popup, /Поставщики/);
-                assert.match(opened.popup, /class="[^"]*active[^"]*catalog-popup-item|class="catalog-popup-item active/);
+                assert.match(opened.popup, /Приход/);
+                assert.match(opened.popup, /Остатки на складе/);
+                assert.match(opened.popup, /Производители/);
+                assert.match(opened.popup, /class="active catalog-popup-item"/);
 
-                const customer = await render("customer", []);
-                assert.match(customer.html, /Отчёт/);
-                assert.doesNotMatch(customer.html, /☷ Справочники/);
+                const settingsOpened = await render([warehouse, settings], null, "settings");
+                assert.match(settingsOpened.popup, /Складской учёт/);
+
+                const customer = await render([]);
+                assert.match(customer.html, /Отчёты/);
+                assert.doesNotMatch(customer.html, /▣ Склад|☷ Справочники|⚙ Настройки/);
+
+                // Порядок сверху вниз: Ремонт, Склад, Документы ЭДО, Отчёты, Справочники, Настройки
+                const catalogs = { key: "catalogs", title: "Справочники", icon: "☷", items: [{ key: "vehicles", label: "ТС" }] };
+                const full = (await render([warehouse, catalogs, settings])).html;
+                const order = ["▤ Ремонт", "▣ Склад", "⇄ Документы ЭДО", "▦ Отчёты", "☷ Справочники", "⚙ Настройки"]
+                    .map((label) => full.indexOf(label));
+                assert.ok(order.every((pos) => pos > -1), String(order));
+                assert.deepEqual([...order].sort((a, b) => a - b), order);
+                const customerOrder = ["▤ Ремонт", "⇄ Документы ЭДО", "▦ Отчёты"].map((label) => customer.html.indexOf(label));
+                assert.ok(customerOrder.every((pos) => pos > -1));
+                assert.deepEqual([...customerOrder].sort((a, b) => a - b), customerOrder);
             },
         );
 
@@ -1957,7 +1979,53 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
-            "side menu: EDO documents right after recommendations, not in the top bar",
+            "side menu: «Отчёты» popup with request report and cash flow (ДДС)",
+            async () => {
+                const { default: SidebarMenu } = await server.ssrLoadModule(
+                    "/src/components/SidebarMenu.vue",
+                );
+                const component = {
+                    ...SidebarMenu,
+                    data() {
+                        return { ...SidebarMenu.data.call(this), openGroup: "reports" };
+                    },
+                };
+                const ctx = {};
+                const html = await renderToString(
+                    createSSRApp(component, {
+                        user: { role: "customer", organization: "Org", label: "User" },
+                        panel: { menu: true },
+                        active: { kind: "cash-flow" },
+                    }),
+                    ctx,
+                );
+                const popup = ctx.teleports?.body || "";
+                assert.match(html, /class="active open nav-item nav-group" data-menu-group="reports"/);
+                assert.match(popup, /Отчёт по заявкам на ремонт/);
+                assert.match(popup, /class="active catalog-popup-item"[^>]*>\s*Движение денежных средств \(ДДС\)/);
+            },
+        );
+
+        await context.test(
+            "cash flow report: saldo summary cards and columns",
+            async () => {
+                const { default: CashFlowReport } = await server.ssrLoadModule(
+                    "/src/features/reports/CashFlowReport.vue",
+                );
+                const html = await renderToString(
+                    createSSRApp(CashFlowReport, { user: { role: "manager" } }),
+                );
+                for (const label of ["Сальдо на начало", "Поступление", "Расход", "Сальдо на конец", "Текущий месяц", "Период с"]) {
+                    assert.match(html, new RegExp(label));
+                }
+                const head = html.slice(html.indexOf("cash-table"));
+                const headers = [...head.slice(0, head.indexOf("</thead>")).matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
+                assert.deepEqual(headers, ["Дата", "Статья", "Документ", "Контрагент", "Способ", "Поступление, ₽", "Расход, ₽", "Остаток, ₽"]);
+            },
+        );
+
+        await context.test(
+            "side menu: Заявки, Рекомендации и Ожидают действия inside «Ремонт», EDO not in the top bar",
             async () => {
                 const { default: SidebarMenu } = await server.ssrLoadModule(
                     "/src/components/SidebarMenu.vue",
@@ -1965,18 +2033,39 @@ test("Options API component rendering and interactive methods", async (context) 
                 const { default: TopBar } = await server.ssrLoadModule(
                     "/src/components/TopBar.vue",
                 );
+                const props = {
+                    user: { role: "customer", organization: "Org", label: "User" },
+                    panel: { menu: true },
+                    requests: [{ id: 1 }, { id: 2 }],
+                    awaiting: 1,
+                };
                 const menu = await renderToString(
-                    createSSRApp(SidebarMenu, {
-                        user: { role: "customer", organization: "Org", label: "User" },
-                        panel: { menu: true },
-                        active: { kind: "edo" },
-                    }),
+                    createSSRApp(SidebarMenu, { ...props, active: { kind: "edo" } }),
                 );
-                const rec = menu.indexOf("Рекомендации");
-                const edo = menu.indexOf("Документы ЭДО");
-                const awaiting = menu.indexOf("Ожидают действия");
-                assert.ok(rec > -1 && edo > rec && awaiting > edo);
                 assert.match(menu, /class="active nav-item"[^>]*>\s*⇄ Документы ЭДО/);
+                assert.match(menu, /▤ Ремонт/);
+                assert.doesNotMatch(menu, /Заявки на ремонт|Рекомендации|Ожидают действия/);
+
+                const ctx = {};
+                const opened = await renderToString(
+                    createSSRApp(
+                        {
+                            ...SidebarMenu,
+                            data() {
+                                return { ...SidebarMenu.data.call(this), openGroup: "repair" };
+                            },
+                        },
+                        { ...props, active: { kind: "list", key: "action" } },
+                    ),
+                    ctx,
+                );
+                assert.match(opened, /class="active open nav-item nav-group"[^>]*>\s*▤ Ремонт/);
+                const popup = ctx.teleports?.body || "";
+                const rec = popup.indexOf("Рекомендации");
+                const requests = popup.indexOf("Заявки на ремонт");
+                const awaiting = popup.indexOf("Ожидают действия");
+                assert.ok(requests > -1 && rec > requests && awaiting > rec);
+                assert.match(popup, /class="active catalog-popup-item"[^>]*>\s*Ожидают действия/);
                 const top = await renderToString(
                     createSSRApp(TopBar, { user: { login: "uk", label: "УК" } }),
                 );

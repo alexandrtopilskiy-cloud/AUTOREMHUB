@@ -117,7 +117,7 @@ final class RepairRequestValidateNextTest extends TestCase
             'kind'        => 'contact',
             'last_name'   => 'Иванов',
             'first_name'  => 'Иван',
-            'phone'       => '+79990000000',
+            'phone'       => '+7 999 000 00 00',
         ]);
 
         $this->station = Station::query()->create([
@@ -246,10 +246,11 @@ final class RepairRequestValidateNextTest extends TestCase
                 ['acceptance', 'diagnosis', 'planned', 'work_empty_name'],
                 'Заполните названия и положительное количество работ',
             ],
-            'EstimateReview: part без supplier' => [
+            // Поставщик в ЗР не обязателен (берётся из партии склада), имя — обязательно.
+            'EstimateReview: part без названия' => [
                 self::STAGE_ESTIMATE_REVIEW,
-                ['acceptance', 'diagnosis', 'planned', 'work_valid', 'part_no_supplier'],
-                'Укажите поставщика, название и количество каждой запчасти',
+                ['acceptance', 'diagnosis', 'planned', 'work_valid', 'part_no_name'],
+                'Укажите название и количество каждой запчасти',
             ],
             'EstimateReview: ок' => [
                 self::STAGE_ESTIMATE_REVIEW,
@@ -263,10 +264,16 @@ final class RepairRequestValidateNextTest extends TestCase
                 ['acceptance', 'diagnosis', 'planned', 'work_valid', 'approval_stage3_wrong_version'],
                 'Текущая смета должна быть согласована Заказчиком',
             ],
-            'ReadyToRepair: part не получен' => [
+            'ReadyToRepair: part не согласован' => [
                 self::STAGE_READY_TO_REPAIR,
                 ['acceptance', 'diagnosis', 'planned', 'work_valid', 'approval_stage3_ok', 'part_proposed'],
-                'Подтвердите получение согласованных запчастей',
+                'Запчасти текущей сметы должны быть согласованы',
+            ],
+            // Складской учёт (10.11.2026): ЗЧ должно хватать на складе СТО.
+            'ReadyToRepair: ЗЧ нет на складе' => [
+                self::STAGE_READY_TO_REPAIR,
+                ['acceptance', 'diagnosis', 'planned', 'work_valid', 'approval_stage3_ok', 'part_not_stocked'],
+                'Недостаточно ЗЧ на складе для их реализации через ЗР',
             ],
             'ReadyToRepair: ок' => [
                 self::STAGE_READY_TO_REPAIR,
@@ -388,11 +395,8 @@ final class RepairRequestValidateNextTest extends TestCase
                 'acceptance'       => $this->createAcceptanceAct($request),
                 'work_valid'       => $this->createWork($request, ['name' => 'Работа', 'quantity' => 1, 'price' => 100]),
                 'work_empty_name'  => $this->createWork($request, ['name' => '', 'quantity' => 1, 'price' => 100]),
-                'part_no_supplier' => $this->createPart($request, ['supplier_id' => null]),
-                'part_ok'          => $this->createPart($request, [
-                    'supplier_id' => $this->supplier->id,
-                    'status'      => 'received',
-                ]),
+                'part_no_name'     => $this->createPart($request, ['name' => '']),
+                'part_ok'          => $this->createStockedPart($request),
                 'work_order'       => $this->createWorkOrder($request),
                 'transfer_act'        => $this->createDocument($request, RequestDocumentType::TransferAct),
                 'transfer_act_signed' => $this->createDocument($request, RequestDocumentType::TransferAct, [
@@ -414,10 +418,8 @@ final class RepairRequestValidateNextTest extends TestCase
                     ->update(['paid_at' => now()->toDateString(), 'paid_amount' => 90]),
                 'approval_stage3_ok'            => $this->createApproval($request, 3, 'accepted'),
                 'approval_stage3_wrong_version' => $this->createApproval($request, 3, 'accepted', 999),
-                'part_received_ok'              => $this->createPart($request, [
-                    'supplier_id' => $this->supplier->id,
-                    'status'      => 'received',
-                ]),
+                'part_received_ok'              => $this->createStockedPart($request),
+                'part_not_stocked'              => $this->createStockedPart($request, 0),
                 'part_proposed'                 => $this->createPart($request, [
                     'supplier_id'     => $this->supplier->id,
                     'status'           => 'proposed',
@@ -511,6 +513,29 @@ final class RepairRequestValidateNextTest extends TestCase
             'line_amount'       => 100,
             'is_maintenance'    => false,
         ], $overrides));
+    }
+
+    /** Строка ЗЧ из справочника, оприходованная на склад СТО в количестве $stock. */
+    private function createStockedPart(RepairRequest $request, float $stock = 5): RequestPart
+    {
+        $catalog = \App\Models\CatalogPart::query()->create([
+            'tenant_id' => $this->tenant->id, 'name' => 'Фильтр', 'article' => 'F-' . Str::random(4),
+            'unit' => 'шт.', 'manufacturer' => 'Test', 'active' => true,
+        ]);
+        if ($stock > 0) {
+            $warehouse = \App\Models\Warehouse::query()->create([
+                'tenant_id' => $this->tenant->id, 'organization_id' => $this->station->organization_id, 'name' => 'Склад ' . Str::random(4),
+            ]);
+            app(\App\Services\StockService::class)->move($this->tenant->id, $this->station->organization_id, $warehouse->id, $catalog->id, $stock, 50, now()->toImmutable(), 'receipt', 0, null);
+        }
+        $request->assigned_station_id = $this->station->id;
+        $request->save();
+
+        return $this->createPart($request, [
+            'catalog_part_id' => $catalog->id,
+            'supplier_id' => $this->supplier->id,
+            'status'      => 'received',
+        ]);
     }
 
     private function createPart(RepairRequest $request, array $overrides = []): RequestPart

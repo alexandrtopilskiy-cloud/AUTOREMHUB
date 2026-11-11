@@ -27,6 +27,11 @@ export default {
             type: String,
             default: "Добавить работу",
         },
+        /** Пункт «Добавить…» всегда внизу списка, даже без введённого текста. */
+        alwaysCreate: {
+            type: Boolean,
+            default: false,
+        },
     },
     emits: ["update:modelValue", "select", "create", "edit"],
     data() {
@@ -77,8 +82,7 @@ export default {
         canCreate() {
             return Boolean(
                 this.createLabel
-                && this.normalize(this.query)
-                && !this.exactMatch,
+                && (this.alwaysCreate || (this.normalize(this.query) && !this.exactMatch)),
             );
         },
     },
@@ -181,7 +185,7 @@ export default {
         createWork() {
             const name = this.query.trim();
 
-            if (!name) {
+            if (!name && !this.alwaysCreate) {
                 return;
             }
 
