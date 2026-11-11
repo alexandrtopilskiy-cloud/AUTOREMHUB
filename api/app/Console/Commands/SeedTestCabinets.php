@@ -20,7 +20,7 @@ final class SeedTestCabinets extends Command
         {--tenant= : Integer ID контура УК}';
 
     protected $description = 'Создать тестовые кабинеты ООО «Альфа», '
-        . '«Бетта», «КУБ» и «Овал»';
+        . '«Бетта», «КУБ» и ИП Топильский АВ';
 
     /**
      * @var array<int, array{name: string, kind: OrganizationKind}>
@@ -39,7 +39,7 @@ final class SeedTestCabinets extends Command
             'kind'     => OrganizationKind::Station,
         ],
         [
-            'name'     => 'ООО "Овал"',
+            'name'     => 'ИП Топильский АВ',
             'kind'     => OrganizationKind::Station,
         ],
     ];

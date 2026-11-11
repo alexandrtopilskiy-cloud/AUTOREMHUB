@@ -11,7 +11,8 @@ use App\Models\User;
 
 /**
  * Полные (вымышленные) реквизиты тестовых участников: УК, Заказчиков
- * (ООО «Альфа», «Бетта», «Тест») и СТО (ООО «КУБ», «Овал», «СТО-партнёр»).
+ * (ООО «Альфа», «Бетта», «Тест») и СТО (ООО «КУБ», ИП Топильский АВ,
+ * «СТО-партнёр»).
  *
  * ИНН, ОГРН и расчётные счета проходят контрольные суммы, БИК и
  * корреспондентские счета — реальные банковские. Заполняются только
@@ -169,32 +170,33 @@ final class TestParticipantRequisites
                 'yearsOperating'              => 12,
             ],
         ],
-        'ООО "Овал"' => [
+        'ИП Топильский АВ' => [
             'organization' => [
-                'short_name'            => 'ООО «Овал»',
-                'inn'                   => '5087101225',
-                'kpp'                   => '508701001',
-                'ogrn'                  => '1195069166973',
-                'legal_address'         => '143005, Московская обл., г. Одинцово, Минское ш., д. 7',
-                'actual_address'        => '143005, Московская обл., г. Одинцово, Минское ш., д. 7',
-                'postal_address'        => '143005, Московская обл., г. Одинцово, Минское ш., д. 7',
-                'director_name'         => 'Тихонов Роман Андреевич',
-                'contact'               => 'Лебедева Анна Викторовна, администратор',
-                'phone'                 => '+7 495 444 55 66',
-                'email'                 => 'zakaz@oval.example.ru',
-                'bank_name'             => 'АО «Райффайзенбанк»',
-                'bik'                   => '044525700',
-                'settlement_account'    => '40702810838849696532',
-                'correspondent_account' => '30101810200000000700',
+                'short_name'            => 'ИП Топильский А. В.',
+                'inn'                   => '540550232075',
+                'kpp'                   => '',
+                'ogrn'                  => '325784700159761',
+                'legal_address'         => 'г. Санкт-Петербург, ул. Парашютная, д. 34, стр. 1, кв. 439',
+                'actual_address'        => 'г. Санкт-Петербург, Коломяжский пр-кт, д. 10, лит. Щ',
+                'postal_address'        => 'г. Санкт-Петербург, ул. Парашютная, д. 34, стр. 1, кв. 439',
+                'director_name'         => 'Топильский Александр Викторович',
+                'contact'               => 'Топильский Александр Викторович',
+                'phone'                 => '+7 960 241 73 87',
+                'email'                 => '',
+                'bank_name'             => 'АО «ТБанк»',
+                'bik'                   => '044525974',
+                'settlement_account'    => '40802810200008289817',
+                'correspondent_account' => '30101810145250000974',
                 'tax_regime'            => 'УСН «доходы»',
                 'vat_rate'              => 0,
             ],
             'station' => [
-                'address'                => 'Московская обл., г. Одинцово, Минское ш., д. 7',
-                'contact'                => 'Лебедева Анна Викторовна, +74954445566',
+                'address'                => 'г. Санкт-Петербург, Коломяжский пр-кт, д. 10, лит. Щ',
+                'contact'                => 'Топильский Александр Викторович, +7 960 241 73 87',
                 'rating'                 => 4.4,
                 'agent_discount_percent' => 10,
             ],
+            // Полный спектр услуг: отмечены все виды работ и все типы ТС карточки СТО.
             'profile' => [
                 'mechanicalBays'              => 4,
                 'lifts'                       => 4,
@@ -203,33 +205,33 @@ final class TestParticipantRequisites
                 'electricianBays'             => 1,
                 'alignmentBays'               => 1,
                 'engineBays'                  => 1,
-                'paintBooths'                 => 0,
-                'frameRacks'                  => 0,
-                'bodyworkBays'                => 0,
+                'paintBooths'                 => 1,
+                'frameRacks'                  => 1,
+                'bodyworkBays'                => 1,
                 'engineRepair'                => true,
-                'automaticTransmissionRepair' => false,
+                'automaticTransmissionRepair' => true,
                 'manualTransmissionRepair'    => true,
-                'steeringRackRepair'          => false,
-                'bodyRepair'                  => false,
+                'steeringRackRepair'          => true,
+                'bodyRepair'                  => true,
                 'brakeDiscSkimming'           => true,
                 'wheelAlignment'              => true,
                 'tireService'                 => true,
-                'tireStorage'                 => false,
+                'tireStorage'                 => true,
                 'evacuation'                  => true,
-                'warrantyService'             => false,
+                'warrantyService'             => true,
                 'reception'                   => true,
-                'waitingArea'                 => false,
+                'waitingArea'                 => true,
                 'photoVideoFixation'          => true,
-                'itAccounting'                => false,
-                'insuranceFleetExperience'    => false,
+                'itAccounting'                => true,
+                'insuranceFleetExperience'    => true,
                 'trainingCertificates'        => true,
                 'passengerCars'               => true,
                 'lcv'                         => true,
                 'trucks'                      => true,
                 'slaDescription'              => 'Запись на следующий рабочий день, срочный ремонт — по согласованию.',
-                'vehicleRestrictions'         => 'Грузовые ТС до 7,5 т только на шиномонтаж.',
+                'vehicleRestrictions'         => 'Без ограничений по типу ТС.',
                 'customerAmenities'           => 'Бесплатная парковка.',
-                'uniqueServices'              => 'Эвакуатор собственный, выезд по Одинцовскому району.',
+                'uniqueServices'              => 'Полный спектр услуг: слесарный и кузовной ремонт, покраска, ремонт двигателя и КПП, шиномонтаж, эвакуация.',
                 'yearsOperating'              => 6,
             ],
         ],
@@ -374,6 +376,34 @@ final class TestParticipantRequisites
         }
 
         return $changed;
+    }
+
+    /**
+     * Переименовывает тестовую СТО и записывает её реквизиты и карточку из
+     * справочника заново (с перезаписью, а не только пустых полей).
+     * Ничего не делает, если СТО с прежним названием нет или новое название
+     * уже занято.
+     */
+    public static function renameStation(int $tenantId, string $from, string $to): bool
+    {
+        $spec = self::STATIONS[$to] ?? null;
+        $organization = self::organization($tenantId, OrganizationKind::Station, $from);
+
+        if ($spec === null || $organization === null
+            || self::organization($tenantId, OrganizationKind::Station, $to) !== null) {
+            return false;
+        }
+
+        $organization->forceFill(['name' => $to, ...$spec['organization']])->save();
+
+        $station = Station::query()->where('organization_id', $organization->id)->first();
+        if ($station !== null) {
+            $station->forceFill(['name' => $to, ...$spec['station']]);
+            $station->profile = [...($station->profile ?? []), ...$spec['profile']];
+            $station->save();
+        }
+
+        return true;
     }
 
     private static function organization(int $tenantId, OrganizationKind $kind, string $name): ?Organization

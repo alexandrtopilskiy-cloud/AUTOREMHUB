@@ -141,6 +141,43 @@ final class AgentDiscountTest extends TestCase
         $this->assertSame('7790996039', $partnerOrganization->refresh()->inn);
     }
 
+    public function test_oval_station_is_renamed_to_individual_entrepreneur(): void
+    {
+        $organization = Organization::create([
+            'tenant_id' => $this->tenant->id, 'kind' => OrganizationKind::Station,
+            'name' => 'ООО "Овал"', 'inn' => '5087101225', 'kpp' => '508701001', 'email' => 'zakaz@oval.example.ru',
+        ]);
+        $station = Station::create([
+            'tenant_id' => $this->tenant->id, 'organization_id' => $organization->id,
+            'name' => 'ООО "Овал"', 'profile' => ['lifts' => 4, 'bodyRepair' => false, 'trucks' => false],
+        ]);
+
+        $this->assertTrue(TestParticipantRequisites::renameStation($this->tenant->id, 'ООО "Овал"', 'ИП Топильский АВ'));
+
+        $organization->refresh();
+        $this->assertSame('ИП Топильский АВ', $organization->name);
+        $this->assertSame('540550232075', $organization->inn);
+        $this->assertSame('', (string) $organization->kpp);
+        $this->assertSame('325784700159761', $organization->ogrn);
+        $this->assertSame('40802810200008289817', $organization->settlement_account);
+        $this->assertSame('+7 960 241 73 87', $organization->phone);
+        $this->assertSame('', (string) $organization->email);
+        $this->assertStringContainsString('Коломяжский', $organization->actual_address);
+        $this->assertStringContainsString('Парашютная', $organization->legal_address);
+
+        $station->refresh();
+        $this->assertSame('ИП Топильский АВ', $station->name);
+        $this->assertTrue($station->profile['bodyRepair']);
+        $this->assertTrue($station->profile['trucks']);
+        $this->assertStringContainsString('Коломяжский', $station->address);
+
+        $this->assertFalse(
+            TestParticipantRequisites::renameStation($this->tenant->id, 'ООО "Овал"', 'ИП Топильский АВ'),
+            'повторный запуск ничего не делает',
+        );
+        $this->assertSame([], TestParticipantRequisites::apply($this->tenant->id));
+    }
+
     /** Front не отправляет служебную подпись применимости (см. stripClientMetadata). */
     private function asSent(array $works): array
     {

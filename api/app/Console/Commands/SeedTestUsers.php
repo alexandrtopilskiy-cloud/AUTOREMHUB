@@ -22,7 +22,7 @@ final class SeedTestUsers extends Command
         {--reset-password : Сбросить пароль уже существующих тестовых логинов}';
 
     protected $description = 'Создать по 3 тестовых пользователя для ЛК УК, '
-        . 'Заказчика (ООО «Альфа») и СТО (ООО «КУБ»), и 3 — для второй СТО (ООО «Овал»)';
+        . 'Заказчика (ООО «Альфа») и СТО (ООО «КУБ»), и 3 — для второй СТО (ИП Топильский АВ)';
 
     public const PASSWORD = '123456789123456789';
 
@@ -42,9 +42,9 @@ final class SeedTestUsers extends Command
         ['login' => 'STO1', 'organization' => 'ООО "КУБ"', 'first' => 'СТО 1', 'phone' => '+7 999 000 00 22'],
         ['login' => 'STO2', 'organization' => 'ООО "КУБ"', 'first' => 'СТО 2', 'phone' => '+7 999 000 00 23'],
         // Вторая СТО — со своим складом и складским учётом.
-        ['login' => 'STO3', 'organization' => 'ООО "Овал"', 'first' => 'СТО 3', 'phone' => '+7 999 000 00 31'],
-        ['login' => 'STO4', 'organization' => 'ООО "Овал"', 'first' => 'СТО 4', 'phone' => '+7 999 000 00 32'],
-        ['login' => 'STO5', 'organization' => 'ООО "Овал"', 'first' => 'СТО 5', 'phone' => '+7 999 000 00 33'],
+        ['login' => 'STO3', 'organization' => 'ИП Топильский АВ', 'first' => 'СТО 3', 'phone' => '+7 999 000 00 31'],
+        ['login' => 'STO4', 'organization' => 'ИП Топильский АВ', 'first' => 'СТО 4', 'phone' => '+7 999 000 00 32'],
+        ['login' => 'STO5', 'organization' => 'ИП Топильский АВ', 'first' => 'СТО 5', 'phone' => '+7 999 000 00 33'],
     ];
 
     /**
