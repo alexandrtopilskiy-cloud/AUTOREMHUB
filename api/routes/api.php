@@ -87,6 +87,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::post('/{id}/station-decision', [RepairRequestController::class, 'stationDecision'])->name('station-decision');
         Route::post('/{id}/customer-slot-decision', [RepairRequestController::class, 'customerSlotDecision'])->name('customer-slot-decision');
         Route::post('/{id}/acceptance-act', [RepairRequestController::class, 'acceptVehicle'])->name('acceptance-act');
+        Route::post('/{id}/manager-parts/accept', [RepairRequestController::class, 'acceptManagerParts'])->name('manager-parts.accept');
         Route::post('/{id}/work-change/submit', [WorkChangeController::class, 'submit'])->name('work-change.submit');
         Route::post('/{id}/work-change/decision', [WorkChangeController::class, 'decide'])->name('work-change.decision');
         Route::post('/{id}/work-change/discard', [WorkChangeController::class, 'discard'])->name('work-change.discard');

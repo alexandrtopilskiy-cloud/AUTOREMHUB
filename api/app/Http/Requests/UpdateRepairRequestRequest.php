@@ -35,6 +35,7 @@ final class UpdateRepairRequestRequest extends ApiValidationRequest
         $rules['laborRateType'] = ['sometimes', 'in:general,official,other'];
         $rules['works'] = ['sometimes', 'array', 'list', 'max:200'];
         $rules['parts'] = ['sometimes', 'array', 'list', 'max:200'];
+        $rules['partsFromManager'] = ['sometimes', 'boolean'];
         $rules['revision'] = ['required', 'integer']; // Обязательно для optimistic locking
 
         return $rules;

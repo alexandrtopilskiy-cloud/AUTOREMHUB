@@ -60,20 +60,38 @@ final class WarehouseService
         return (string) (WarehouseSetting::query()->where('organization_id', $organizationId)->value('cost_method') ?? 'average');
     }
 
+    /**
+     * Системный «Склад от УК» СТО: сюда приходуются ЗЧ, перемещённые со
+     * склада УК («ЗЧ от УК» в ЗР). Создаётся автоматически.
+     */
+    public static function fromManagerWarehouse(int $organizationId, int $tenantId): Warehouse
+    {
+        return DB::transaction(fn (): Warehouse => Warehouse::query()->firstOrCreate(
+            ['organization_id' => $organizationId, 'system_code' => Warehouse::FROM_MANAGER],
+            ['tenant_id' => $tenantId, 'name' => Warehouse::FROM_MANAGER_NAME],
+        ));
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function warehouses(User $user): array
     {
         self::assertAccess($user);
+        if ($user->role === UserRole::Station) {
+            self::fromManagerWarehouse((int) $user->organization_id, (int) $user->tenantId());
+        }
         $used = StockDocument::query()->where('organization_id', $user->organization_id)->distinct()->pluck('warehouse_id')->all();
 
         return Warehouse::query()
             ->where('organization_id', $user->organization_id)
+            ->orderByRaw('system_code IS NOT NULL')
             ->orderBy('name')
             ->get()
             ->map(fn (Warehouse $warehouse): array => [
                 'id' => $warehouse->uuid,
                 'name' => $warehouse->name,
                 'used' => in_array($warehouse->id, $used, true),
+                // «Склад от УК»: создаётся по умолчанию, не редактируется.
+                'system' => $warehouse->isSystem(),
             ])
             ->all();
     }
@@ -95,6 +113,9 @@ final class WarehouseService
         if ($duplicate) {
             Input::fail('Склад с таким наименованием уже есть', 'name');
         }
+        if ($id !== null && $this->find($user, $id)->isSystem()) {
+            Input::fail('«' . Warehouse::FROM_MANAGER_NAME . '» создаётся автоматически и не редактируется');
+        }
         $warehouse = $id !== null ? $this->find($user, $id) : new Warehouse([
             'tenant_id' => $user->tenantId(),
             'organization_id' => $user->organization_id,
@@ -110,6 +131,9 @@ final class WarehouseService
     {
         self::assertAccess($user);
         $warehouse = $this->find($user, $id);
+        if ($warehouse->isSystem()) {
+            Input::fail('«' . Warehouse::FROM_MANAGER_NAME . '» создаётся автоматически, удалить его нельзя');
+        }
         $used = StockDocument::query()->where('warehouse_id', $warehouse->id)->exists()
             || StockMovement::query()->where('warehouse_id', $warehouse->id)->exists();
         if ($used) {

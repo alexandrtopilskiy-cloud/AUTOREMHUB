@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Models\CatalogPart;
+use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\StockDocument;
+use App\Models\StockDocumentItem;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use App\Models\User;
 use App\Models\Warehouse;
 use App\Support\DomainInput as Input;
 use Carbon\CarbonImmutable;
@@ -23,6 +27,9 @@ use Illuminate\Support\Facades\DB;
  * «Создан». Резервы покрываются остатком по очереди создания строк: ранний
  * резерв не может «перехватить» более поздний документ. Строка без покрытия
  * — «нет на складе» (в ЗР синяя, в Реализации красная).
+ *
+ * «ЗЧ от УК»: пока СТО не приняла ЗЧ, строки такой ЗР резервируют склад УК;
+ * после Перемещения (PRM-) — склад СТО (ЗЧ лежат на «Складе от УК»).
  */
 final class StockService
 {
@@ -52,10 +59,22 @@ final class StockService
      */
     public function demands(int $organizationId, array $partIds = []): array
     {
+        $manager = Organization::query()->whereKey($organizationId)->where('kind', OrganizationKind::Manager->value)->first(['id', 'tenant_id']);
         $requestRows = DB::table('request_parts as rp')
             ->join('repair_requests as r', 'r.id', '=', 'rp.repair_request_id')
-            ->join('stations as s', 's.id', '=', 'r.assigned_station_id')
-            ->where('s.organization_id', $organizationId)
+            ->leftJoin('stations as s', 's.id', '=', 'r.assigned_station_id')
+            ->where(function ($q) use ($organizationId, $manager): void {
+                $q->where(fn ($own) => $own
+                    ->where('s.organization_id', $organizationId)
+                    ->where(fn ($flag) => $flag->where('r.parts_from_manager', false)->orWhereNotNull('r.parts_transfer_document_id')));
+                if ($manager !== null) {
+                    // «ЗЧ от УК», ещё не принятые СТО: резерв на складе УК.
+                    $q->orWhere(fn ($uk) => $uk
+                        ->where('r.tenant_id', $manager->tenant_id)
+                        ->where('r.parts_from_manager', true)
+                        ->whereNull('r.parts_transfer_document_id'));
+                }
+            })
             ->whereBetween('r.stage', [RepairStage::ManagerRouting->value, RepairStage::RepairInProgress->value])
             ->whereNotNull('rp.catalog_part_id')
             ->whereRaw('rp.quantity - rp.returned_quantity > 0')
@@ -116,14 +135,32 @@ final class StockService
         return ['onHand' => $onHand, 'reserved' => $reserved, 'rows' => $rows];
     }
 
-    /** Организация склада, с которого ЗР получает ЗЧ: организация назначенной СТО. */
+    /**
+     * Организация склада, с которого ЗР получает ЗЧ: организация назначенной
+     * СТО, а для «ЗЧ от УК» до их приёма СТО — УК.
+     */
     public function requestOrganizationId(RepairRequest $request): ?int
     {
+        if ($request->awaitsManagerParts()) {
+            return self::managerOrganizationId((int) $request->tenant_id);
+        }
         if (!$request->assigned_station_id) {
             return null;
         }
 
         return $request->stationRecord?->organization_id;
+    }
+
+    /** Организация УК контура. */
+    public static function managerOrganizationId(int $tenantId): ?int
+    {
+        $id = Organization::query()
+            ->where('tenant_id', $tenantId)
+            ->where('kind', OrganizationKind::Manager->value)
+            ->orderBy('id')
+            ->value('id');
+
+        return $id !== null ? (int) $id : null;
     }
 
     /**
@@ -133,7 +170,7 @@ final class StockService
      */
     public function requestStock(RepairRequest $request): array
     {
-        return $this->stockFor($request, $this->requestOrganizationId($request));
+        return $this->stockFor($request, $this->requestOrganizationId($request), $request->awaitsManagerParts());
     }
 
     /**
@@ -143,11 +180,12 @@ final class StockService
      *
      * @return array<string, mixed>
      */
-    public function stockFor(RepairRequest $request, ?int $organizationId): array
+    public function stockFor(RepairRequest $request, ?int $organizationId, bool $fromManager = false): array
     {
         if ($organizationId === null) {
             return ['available' => false, 'parts' => [], 'rows' => []];
         }
+        $managerMarkup = $fromManager ? app(WarehouseService::class) : null;
         $allocation = $this->allocate($organizationId);
         $ownKeys = $request->parts->mapWithKeys(fn ($part) => ['rp:' . $part->id => $part])->all();
         $otherReserved = [];
@@ -166,10 +204,15 @@ final class StockService
                 continue;
             }
             $onHand = $allocation['onHand'][$partId] ?? 0.0;
+            $salePrice = $prices[$partId]['salePrice'] ?? null;
+            // «ЗЧ от УК»: цена реализации = закуп УК + наценка из Настроек УК.
+            if ($managerMarkup !== null && ($prices[$partId]['purchasePrice'] ?? null) !== null) {
+                $salePrice = $managerMarkup->salePrice($organizationId, (float) $prices[$partId]['purchasePrice']) ?? $salePrice;
+            }
             $parts[$model->uuid] = [
                 'onHand' => $onHand,
                 'free' => round(max(0, $onHand - ($otherReserved[$partId] ?? 0)), 3),
-                'salePrice' => $prices[$partId]['salePrice'] ?? null,
+                'salePrice' => $salePrice,
                 'purchasePrice' => $prices[$partId]['purchasePrice'] ?? null,
                 'supplierId' => $prices[$partId]['supplierId'] ?? '',
             ];
@@ -186,7 +229,7 @@ final class StockService
             };
         }
 
-        return ['available' => true, 'reserving' => $request->stage->value >= RepairStage::ManagerRouting->value && $request->stage->value <= RepairStage::RepairInProgress->value, 'parts' => $parts, 'rows' => $rows];
+        return ['available' => true, 'source' => $fromManager ? 'manager' : 'station', 'reserving' => $request->stage->value >= RepairStage::ManagerRouting->value && $request->stage->value <= RepairStage::RepairInProgress->value, 'parts' => $parts, 'rows' => $rows];
     }
 
     /**
@@ -231,6 +274,10 @@ final class StockService
             return;
         }
         $warehouses = Warehouse::query()->where('organization_id', $organizationId)->orderBy('id')->pluck('id')->all();
+        // «ЗЧ от УК» списываются в первую очередь с «Склада от УК».
+        $preferred = $request->parts_from_manager
+            ? (int) (Warehouse::query()->where('organization_id', $organizationId)->where('system_code', Warehouse::FROM_MANAGER)->value('id') ?? 0)
+            : 0;
         foreach ($request->parts()->orderBy('id')->get() as $part) {
             $need = round((float) $part->quantity - (float) $part->returned_quantity, 3);
             if ($need <= 0 || $part->catalog_part_id === null) {
@@ -242,6 +289,7 @@ final class StockService
                 ->whereIn('warehouse_id', $warehouses)
                 ->selectRaw('warehouse_id, SUM(quantity) AS qty')
                 ->groupBy('warehouse_id')
+                ->orderByRaw('(warehouse_id = ?) DESC', [$preferred])
                 ->orderByRaw('SUM(quantity) DESC')
                 ->orderBy('warehouse_id')
                 ->get();
@@ -261,6 +309,146 @@ final class StockService
                 Input::fail('Недостаточно ЗЧ на складе для их реализации через ЗР: ' . $part->name, 'parts');
             }
         }
+    }
+
+    /**
+     * Поля ответа ЗР о складе: stockShortage (ЛК СТО, этапы «Ожидание ТС на
+     * СТО» и «В работе»), partsFromManager и partsTransfer (не для Заказчика).
+     *
+     * @return array<string, mixed>
+     */
+    public function presentRequest(RepairRequest $request, \App\Enums\UserRole $role): array
+    {
+        $isCustomer = $role === \App\Enums\UserRole::Customer;
+        $transfer = !$isCustomer && $request->parts_transfer_document_id !== null ? $request->partsTransfer : null;
+
+        return [
+            'stockShortage' => $role === \App\Enums\UserRole::Station
+                && in_array($request->stage, [RepairStage::WaitingVehicle, RepairStage::RepairInProgress], true)
+                && !$request->awaitsManagerParts()
+                ? $this->missingForRequest($request)
+                : [],
+            'partsFromManager' => !$isCustomer && (bool) $request->parts_from_manager,
+            'partsTransfer' => $transfer === null ? null : [
+                'id' => $transfer->uuid,
+                'number' => $transfer->number,
+                'date' => $transfer->document_date?->format('Y-m-d'),
+                'acceptedAt' => $transfer->posted_at?->toISOString(),
+                'warehouse' => Warehouse::FROM_MANAGER_NAME,
+            ],
+        ];
+    }
+
+    /** ЗР ждёт приёма «ЗЧ от УК»: есть ЗЧ, которые нужно переместить на склад СТО. */
+    public function requiresManagerParts(RepairRequest $request): bool
+    {
+        return $request->awaitsManagerParts()
+            && $request->parts()->whereRaw('quantity - returned_quantity > 0')->exists();
+    }
+
+    /**
+     * «Принять ЗЧ от УК» (СТО, этап «Ожидание ТС на СТО»): документ
+     * Перемещение PRM- списывает ЗЧ ЗР со складов УК и приходует их на
+     * «Склад от УК» СТО. Себестоимость УК — по её методу списания, цена
+     * прихода на СТО — цена ЗР (закуп УК + наценка УК), без наценки СТО.
+     */
+    public function transferFromManager(RepairRequest $request, User $user): StockDocument
+    {
+        if (!$request->awaitsManagerParts()) {
+            Input::fail('ЗЧ от УК по этой ЗР уже приняты');
+        }
+        $managerId = self::managerOrganizationId((int) $request->tenant_id);
+        $stationOrganizationId = $request->stationRecord?->organization_id;
+        if ($managerId === null || $stationOrganizationId === null) {
+            Input::fail('Для перемещения ЗЧ нужны организации УК и СТО');
+        }
+        $missing = $this->missingForRequest($request);
+        if ($missing !== []) {
+            Input::fail('Недостаточно ЗЧ на складе УК: ' . implode('; ', $missing) . '. Обратитесь в УК.', 'parts');
+        }
+        $target = WarehouseService::fromManagerWarehouse((int) $stationOrganizationId, (int) $request->tenant_id);
+        $sources = Warehouse::query()->where('organization_id', $managerId)->orderBy('id')->pluck('id')->all();
+        if ($sources === []) {
+            Input::fail('У УК нет складов');
+        }
+        $now = now()->toImmutable();
+        $sequence = (int) StockDocument::query()->where('organization_id', $managerId)->where('type', StockDocument::TRANSFER)->max('sequence') + 1;
+        $doc = new StockDocument([
+            'tenant_id' => $request->tenant_id,
+            'organization_id' => $managerId,
+            'type' => StockDocument::TRANSFER,
+            'status' => StockDocument::POSTED,
+            'document_date' => $now->setTimezone(config('sto.service_timezone'))->format('Y-m-d'),
+            'warehouse_id' => $sources[0],
+            'target_organization_id' => $stationOrganizationId,
+            'target_warehouse_id' => $target->id,
+            'repair_request_id' => $request->id,
+            'vehicle_id' => $request->vehicle_id,
+            'comment' => 'ЗЧ от УК по ' . $request->number,
+            'created_by' => $user->id,
+            'posted_at' => $now,
+            'posted_by' => $user->id,
+        ]);
+        $doc->sequence = $sequence;
+        $doc->number = StockDocument::prefix(StockDocument::TRANSFER) . str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
+        $doc->save();
+
+        $line = 0;
+        $firstSource = null;
+        foreach ($request->parts()->orderBy('id')->get() as $part) {
+            $need = round((float) $part->quantity - (float) $part->returned_quantity, 3);
+            if ($need <= 0 || $part->catalog_part_id === null) {
+                continue;
+            }
+            $price = round((float) $part->price, 2);
+            $byWarehouse = StockMovement::query()
+                ->where('organization_id', $managerId)
+                ->where('catalog_part_id', $part->catalog_part_id)
+                ->whereIn('warehouse_id', $sources)
+                ->selectRaw('warehouse_id, SUM(quantity) AS qty')
+                ->groupBy('warehouse_id')
+                ->orderByRaw('SUM(quantity) DESC')
+                ->orderBy('warehouse_id')
+                ->get();
+            foreach ($byWarehouse as $row) {
+                if ($need <= self::EPS) {
+                    break;
+                }
+                $take = round(min($need, (float) $row->qty), 3);
+                if ($take <= 0) {
+                    continue;
+                }
+                $cost = $this->issueCost($managerId, (int) $part->catalog_part_id, (int) $row->warehouse_id, $take);
+                $item = StockDocumentItem::query()->create([
+                    'stock_document_id' => $doc->id,
+                    'line_no' => ++$line,
+                    'catalog_part_id' => $part->catalog_part_id,
+                    'quantity' => $take,
+                    'purchase_price' => $cost,
+                    'sale_price' => $price,
+                ]);
+                $this->move((int) $request->tenant_id, $managerId, (int) $row->warehouse_id, (int) $part->catalog_part_id, -$take, $cost, $now, StockMovement::SOURCE_TRANSFER, $doc->id, $item->id);
+                $this->move((int) $request->tenant_id, (int) $stationOrganizationId, $target->id, (int) $part->catalog_part_id, $take, $price, $now, StockMovement::SOURCE_TRANSFER, $doc->id, $item->id);
+                $firstSource ??= (int) $row->warehouse_id;
+                $need = round($need - $take, 3);
+            }
+            if ($need > self::EPS) {
+                Input::fail('Недостаточно ЗЧ на складе УК: ' . $part->name, 'parts');
+            }
+            // Для СТО цена закупа этих ЗЧ — цена Перемещения.
+            $part->purchase_price = $price;
+            $part->save();
+        }
+        if ($line === 0) {
+            Input::fail('В ЗР нет ЗЧ из справочника для приёма от УК');
+        }
+        if ($firstSource !== null && $firstSource !== $doc->warehouse_id) {
+            $doc->warehouse_id = $firstSource;
+            $doc->save();
+        }
+        $request->parts_transfer_document_id = $doc->id;
+
+        return $doc;
     }
 
     /** Возврат ЗР на этап «В работе»: списание отменяется, ЗЧ снова в резерве. */
@@ -309,7 +497,7 @@ final class StockService
             ->leftJoin('stock_documents as d', 'd.id', '=', 'm.source_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'd.supplier_id')
             ->where('m.organization_id', $organizationId)
-            ->where('m.source_type', StockMovement::SOURCE_RECEIPT)
+            ->whereIn('m.source_type', [StockMovement::SOURCE_RECEIPT, StockMovement::SOURCE_TRANSFER])
             ->where('m.quantity', '>', 0)
             ->when($partIds !== [], fn ($q) => $q->whereIn('m.catalog_part_id', $partIds))
             ->when($warehouseId !== null, fn ($q) => $q->where('m.warehouse_id', $warehouseId))
@@ -471,7 +659,8 @@ final class StockService
         $row = StockMovement::query()
             ->where('organization_id', $organizationId)
             ->where('catalog_part_id', $partId)
-            ->where('source_type', StockMovement::SOURCE_RECEIPT)
+            ->whereIn('source_type', [StockMovement::SOURCE_RECEIPT, StockMovement::SOURCE_TRANSFER])
+            ->where('quantity', '>', 0)
             ->when($warehouseId !== null, fn ($q) => $q->where('warehouse_id', $warehouseId))
             ->when($until !== null, fn ($q) => $q->where('occurred_at', '<=', $until))
             ->selectRaw('SUM(quantity) AS qty, SUM(quantity * unit_cost) AS amount')
@@ -534,8 +723,8 @@ final class StockService
                 SUM(CASE WHEN m.quantity > 0 THEN m.quantity ELSE 0 END) AS incoming,
                 SUM(CASE WHEN m.quantity < 0 THEN -m.quantity ELSE 0 END) AS outgoing,
                 SUM(m.quantity) AS balance,
-                SUM(CASE WHEN m.source_type = ? THEN m.quantity ELSE 0 END) AS receipt_qty,
-                SUM(CASE WHEN m.source_type = ? THEN m.quantity * m.unit_cost ELSE 0 END) AS receipt_amount', [StockMovement::SOURCE_RECEIPT, StockMovement::SOURCE_RECEIPT])
+                SUM(CASE WHEN m.source_type IN (?, ?) AND m.quantity > 0 THEN m.quantity ELSE 0 END) AS receipt_qty,
+                SUM(CASE WHEN m.source_type IN (?, ?) AND m.quantity > 0 THEN m.quantity * m.unit_cost ELSE 0 END) AS receipt_amount', [StockMovement::SOURCE_RECEIPT, StockMovement::SOURCE_TRANSFER, StockMovement::SOURCE_RECEIPT, StockMovement::SOURCE_TRANSFER])
             ->get();
 
         $method = WarehouseService::costMethod($organizationId);

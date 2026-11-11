@@ -8,7 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Складской документ: Приход (receipt, PRH-) или Реализация (sale, RLZ-).
+ * Складской документ: Приход (receipt, PRH-), Реализация (sale, RLZ-) или
+ * внутреннее Перемещение ЗЧ со склада УК на «Склад от УК» СТО (transfer, PRM-).
  *
  * @property int $tenant_id
  * @property int $organization_id
@@ -27,6 +28,7 @@ final class StockDocument extends Entity
 {
     public const RECEIPT = 'receipt';
     public const SALE = 'sale';
+    public const TRANSFER = 'transfer';
     public const CREATED = 'created';
     public const POSTED = 'posted';
 
@@ -42,7 +44,11 @@ final class StockDocument extends Entity
 
     public static function prefix(string $type): string
     {
-        return $type === self::RECEIPT ? 'PRH-' : 'RLZ-';
+        return match ($type) {
+            self::RECEIPT => 'PRH-',
+            self::TRANSFER => 'PRM-',
+            default => 'RLZ-',
+        };
     }
 
     public function isPosted(): bool

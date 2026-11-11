@@ -144,6 +144,16 @@ final class RepairRequestController
         return new RepairRequestResource($document);
     }
 
+    /** «Принять ЗЧ от УК» (СТО, этап «Ожидание ТС на СТО»). */
+    public function acceptManagerParts(Request $request, string $id): RepairRequestResource
+    {
+        \App\Support\ApiInput::only($request, ['revision']);
+
+        return new RepairRequestResource(
+            $this->service->acceptManagerParts($request->user(), $id, \App\Support\ApiInput::revision($request)),
+        );
+    }
+
     public function history(Request $request, string $id): RepairRequestHistoryResource
     {
         $dto = UserDto::fromUserModel($request->user());

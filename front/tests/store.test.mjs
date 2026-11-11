@@ -121,3 +121,23 @@ test('request created while the list was loading is kept in the store', async ()
     assert.equal(store.get(request.id).revision, 1);
     store.reset();
 });
+
+test('request opened from the list of a reactive store saves only changed fields', async () => {
+    const { reactive } = await import('vue');
+    const api = fixture();
+    const seed = createRequestStore(api);
+    await seed.create();
+    seed.reset();
+    // Как в App.data(): хранилище реактивно, get() возвращает Proxy.
+    const store = reactive(createRequestStore(api));
+    await store.refresh();
+    const id = store.requests[0].id;
+    let patch;
+    const update = api.updateRequest;
+    api.updateRequest = async (key, revision, body) => { patch = body; return update(key, revision, body); };
+    store.get(id).description = 'Только описание';
+    store.touch(id);
+    await store.save(id);
+    assert.deepEqual(Object.keys(patch), ['description']);
+    store.reset();
+});

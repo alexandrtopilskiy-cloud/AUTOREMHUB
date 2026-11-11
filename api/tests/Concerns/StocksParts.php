@@ -15,9 +15,11 @@ trait StocksParts
 {
     protected function stockPart(User $user, CatalogPart $part, float $qty, Supplier $supplier, float $purchasePrice = 100, ?float $salePrice = null): array
     {
-        $warehouses = app(WarehouseService::class)->warehouses($user);
+        // Системный «Склад от УК» — только для Перемещений от УК.
+        $own = fn (array $rows): array => array_values(array_filter($rows, fn (array $row): bool => !($row['system'] ?? false)));
+        $warehouses = $own(app(WarehouseService::class)->warehouses($user));
         if ($warehouses === []) {
-            $warehouses = app(WarehouseService::class)->saveWarehouse($user, null, ['name' => 'Основной склад']);
+            $warehouses = $own(app(WarehouseService::class)->saveWarehouse($user, null, ['name' => 'Основной склад']));
         }
         $documents = app(StockDocumentService::class);
         $doc = $documents->save($user, null, [

@@ -130,6 +130,17 @@ final class WarehouseController
             $document = RepairRequest::resolveFor(UserDto::fromUserModel($user), $id);
             $document->loadMissing(['parts', 'stationRecord']);
         }
+        // «ЗЧ от УК» (галочка в форме, ещё не сохранённая или сохранённая):
+        // наличие и цены — по складам УК, пока СТО не приняла ЗЧ.
+        if ($request->has('fromManager')) {
+            $fromManager = filter_var($request->query('fromManager'), FILTER_VALIDATE_BOOLEAN);
+            if ($fromManager && $document->parts_transfer_document_id === null) {
+                return response()->json($stock->stockFor($document, StockService::managerOrganizationId($user->tenantId()), true));
+            }
+            if (!$fromManager && $document->parts_from_manager && $document->parts_transfer_document_id === null) {
+                $document->parts_from_manager = false;
+            }
+        }
         if (!$request->has('stationId')) {
             return response()->json($id === 'new' ? $stock->stockFor($document, null) : $stock->requestStock($document));
         }
