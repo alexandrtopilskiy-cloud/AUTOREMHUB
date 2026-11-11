@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from '../../api/marketplace.js';
 import { formatDateTime, money } from '../../data/permissions.js';
 
@@ -206,6 +207,7 @@ onMounted(load);
       </div>
       <button type="button" class="ghost-btn" :disabled="loading" @click="load">Обновить</button>
     </header>
+    <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
     <form class="report-filters" @submit.prevent>
       <label>№ ЗР<input v-model="filters.number" placeholder="ZR-000001" /></label>
@@ -255,7 +257,6 @@ onMounted(load);
       </div>
     </form>
 
-    <p v-if="error" class="error-message">{{ error }}</p>
 
     <div class="registry-wrap">
       <table class="registry report-table">

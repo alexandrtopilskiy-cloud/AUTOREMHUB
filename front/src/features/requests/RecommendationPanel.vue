@@ -1,8 +1,10 @@
 <script>
 import { marketplaceApi } from "../../api/marketplace.js";
+import FormAlert from "../../components/FormAlert.vue";
 import { money, formatDateTime } from "../../data/permissions.js";
 
 export default {
+    components: { FormAlert },
     name: "RecommendationPanel",
     props: {
         // Пустой vehicleId — общий перечень рекомендаций по всем доступным ТС.
@@ -340,6 +342,7 @@ export default {
                 </p>
             </div>
         </div>
+        <FormAlert v-if="error" class="error-banner">{{ error }}</FormAlert>
         <template v-if="allVehicles">
             <div class="registry-wrap">
                 <table class="registry recommendation-registry">
@@ -564,7 +567,6 @@ export default {
             </p>
         </section>
         </section>
-        <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
         <div
             v-if="!allVehicles && document"
             class="record-editor-footer action-buttons"

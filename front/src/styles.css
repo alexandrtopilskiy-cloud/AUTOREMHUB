@@ -4300,3 +4300,10 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
 /* Колонки ЗЧ по ширине содержимого; самая широкая — «Наименование». */
 .parts-panel .parts-grid { min-width: 780px !important; }
 .parts-panel .parts-grid.with-change-notes { min-width: 920px !important; }
+
+/* Сервисное сообщение формы — вверху формы сразу под шапкой (FormAlert.vue) */
+.form-top-alert {
+  margin: 8px 0 12px;
+  grid-column: 1 / -1;
+  scroll-margin: 16px;
+}

@@ -1,10 +1,11 @@
 <script>
 import ConfirmedDateTimeInput from "../../components/ConfirmedDateTimeInput.vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { VISIT_TIME_END, VISIT_TIME_START } from "../../data/schedule.js";
 
 export default {
     name: "CustomerSlotDecisionDialog",
-    components: { ConfirmedDateTimeInput },
+    components: { FormAlert, ConfirmedDateTimeInput },
     props: {
         request: {
             type: Object,
@@ -66,6 +67,7 @@ export default {
     >
         <form @submit.prevent="submit">
             <h2>Предложить другую дату и время</h2>
+            <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
             <p>{{ request.number }}</p>
 
             <ConfirmedDateTimeInput
@@ -81,7 +83,6 @@ export default {
                 <textarea v-model="comment" :disabled="busy" />
             </label>
 
-            <p v-if="error" class="error-message">{{ error }}</p>
 
             <div class="action-buttons">
                 <button

@@ -445,7 +445,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 const foot = html.match(/<tfoot>([\s\S]*?)<\/tfoot>/)[1];
                 assert.match(foot, /Итого по работам/);
                 assert.match(foot, />2,25</);
-                assert.match(foot, />3\s?375</);
+                assert.match(foot, />3\s?037,5</);
                 assert.match(foot, />337,5</);
                 assert.match(html, /💬 Масло клиента/);
                 assert.match(html, /ООО «КУБ»/);

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import FormAlert from "../../components/FormAlert.vue";
 import { formatDateTime } from "../../data/permissions.js";
 
 /**
@@ -105,6 +106,7 @@ function reject() {
       <strong>Изменение работ / з/ч в ходе ремонта</strong>
       <span class="work-change-status">{{ change.statusLabel }}</span>
     </div>
+    <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
 
     <p v-if="change.rejection" class="work-change-rejection">
       Не согласовано ({{ change.rejection.by }}<template v-if="change.rejection.actor">, {{ change.rejection.actor }}</template><template v-if="change.rejection.at">, {{ formatDateTime(change.rejection.at) }}</template>):
@@ -189,6 +191,5 @@ function reject() {
       </div>
     </div>
 
-    <p v-if="error" class="error-message">{{ error }}</p>
   </div>
 </template>

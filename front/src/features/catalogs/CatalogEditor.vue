@@ -1,5 +1,6 @@
 <script>
 import { catalogNames, formatDateTime } from "../../data/permissions.js";
+import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 import SupplierCreateDialog from "./SupplierCreateDialog.vue";
 import InfoHint from "../../components/InfoHint.vue";
@@ -266,7 +267,7 @@ const WORK_HELP = {
 
 export default {
     name: "CatalogEditor",
-    components: { FormatHint, InfoHint, PhoneInput, ReferencePicker, SupplierCreateDialog },
+    components: { FormAlert, FormatHint, InfoHint, PhoneInput, ReferencePicker, SupplierCreateDialog },
     props: {
         record: {
             type: Object,
@@ -1087,6 +1088,7 @@ export default {
         </p>
         <span class="eyebrow">{{ record.kind === "parts" ? "Общий справочник ЗЧ" : "Справочник УК" }}</span>
         <h1>{{ title }}</h1>
+        <FormAlert v-if="error" class="error-message full">{{ error }}</FormAlert>
         <p>{{ record.name || record.vehicle || "Новая запись" }}</p>
 
         <form class="form-grid" @submit.prevent="save()">
@@ -1739,7 +1741,6 @@ export default {
                 </button>
             </div>
 
-            <p v-if="error" class="error-message full">{{ error }}</p>
         </form>
 
         <dialog
