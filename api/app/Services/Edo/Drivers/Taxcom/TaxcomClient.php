@@ -30,8 +30,7 @@ final class TaxcomClient
         private readonly ?string $integratorId,
         private readonly int $timeout = 30,
         private readonly int $connectTimeout = 10,
-    ) {
-    }
+    ) {}
 
     public static function fromConfig(array $config): self
     {
@@ -92,12 +91,12 @@ final class TaxcomClient
         $response = Http::withHeaders([
             'Integrator-Id' => $this->integratorId ?? '',
         ])
-        ->timeout($this->timeout)
+            ->timeout($this->timeout)
             ->connectTimeout($this->connectTimeout)
             ->get($this->baseUrl . '/API/Login', [
-            'login' => $this->login,
-            'password' => $this->password,
-        ]);
+                'login' => $this->login,
+                'password' => $this->password,
+            ]);
 
         if ($response->status() !== 200) {
             throw EdoException::remoteError(
@@ -169,7 +168,7 @@ final class TaxcomClient
             'Accept' => 'application/xml, application/json',
             'Content-Type' => 'application/json; charset=utf-8',
         ])
-        ->timeout($this->timeout)
+            ->timeout($this->timeout)
             ->connectTimeout($this->connectTimeout)
             ->withOptions(['http_errors' => false]);
     }

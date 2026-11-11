@@ -18,56 +18,42 @@ use App\Services\Edo\Drivers\Null\NullEdoProvider;
 use App\Services\Edo\Drivers\Taxcom\TaxcomClientFactory;
 use App\Services\Edo\Drivers\Taxcom\TaxcomMapper;
 use App\Services\Edo\Drivers\Taxcom\TaxcomProvider;
+use App\Services\Edo\Drivers\Sbis\SbisProvider;
+use App\Services\Edo\Drivers\Sbis\SbisClientFactory;
 
 final class EdoDispatcher
 {
     public function __construct(
-        private readonly EdoRuClientFactory $edoRuClientFactory,
-        private readonly Upd503Builder $upd503Builder,
         private readonly DiadocClientFactory $diadocClientFactory,
+        private readonly EdoRuClientFactory $edoRuClientFactory,
+        private readonly TaxcomClientFactory $taxcomClientFactory,
+        private readonly SbisClientFactory $sbisClientFactory,
+        private readonly Upd503Builder $upd503Builder,
     ) {}
 
     public function forOrganization(Organization $org): EdoOutboundProviderInterface
     {
-        // 👇 Если включен режим отладки в .env (EDO_MOCK=true), отдаем мок
         if (config('edo.mock', false)) {
             return new NullEdoProvider();
         }
 
-        return match ($org->edo_provider) {
-            EdoProvider::EdoRu => new EdoRuProvider(
-                $this->edoRuClientFactory->make($org),
-                new EdoRuMapper(),
-                $this->upd503Builder
+        return match (config('edo.default')) {
+            EdoProvider::EdoRu->value => new EdoRuProvider(
+                client: $this->edoRuClientFactory->make($org),
+                mapper: new EdoRuMapper(),
+                updBuilder: $this->upd503Builder
             ),
-             EdoProvider::Taxcom => new TaxcomProvider(
-                 app(TaxcomClientFactory::class)->make($org),
-                 new TaxcomMapper(),
+             EdoProvider::Taxcom->value => new TaxcomProvider(
+                 client: $this->taxcomClientFactory->make($org),
+                 mapper: new TaxcomMapper(),
              ),
-            EdoProvider::Diadoc => new DiadocProvider(
-                $this->diadocClientFactory->make($org),
-                new DiadocMapper(),
+            EdoProvider::Diadoc->value => new DiadocProvider(
+                client: $this->diadocClientFactory->make($org),
+                mapper: new DiadocMapper(),
             ),
-            default => throw new \RuntimeException("Оператор ЭДО не настроен: {$org->edo_provider}"),
+            EdoProvider::Sbis->value => new SbisProvider(
+                client: $this->sbisClientFactory->make($org)
+            ),
         };
-    }
-
-    /**
-     * Привязка организации к Диадоку (доступно только для провайдера Diadoc).
-     */
-    public function connectDiadocOrganization(Organization $org, string $refreshToken, string $boxId): void
-    {
-        // Проверяем, что организация действительно на Диадоке
-        if ($org->edo_provider !== EdoProvider::Diadoc) {
-            throw new \RuntimeException("Организация не использует Диадок. Текущий провайдер: {$org->edo_provider?->value}");
-        }
-
-        // Создаем провайдер (в обход мока, чтобы реально проверить токен)
-        $provider = new DiadocProvider(
-            $this->diadocClientFactory->make($org),
-            new DiadocMapper(),
-        );
-
-        $provider->connectOrganization($org, $refreshToken, $boxId);
     }
 }

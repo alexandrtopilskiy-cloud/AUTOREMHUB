@@ -19,6 +19,7 @@ final readonly class EdoSignerDto
         public string $firstName,
         public ?string $middleName = null,
         public string $title = '',
+        public string $inn = '',
         public string $authorityScope = '1',
         public string $signatureType = '1',
     ) {

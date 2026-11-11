@@ -131,23 +131,6 @@ final class DiadocClient
         return $accessToken;
     }
 
-    private function maskPassword(string $password, int $visibleChars = 15): string
-    {
-        // Если длина строки меньше или равна количеству видимых символов — возвращаем как есть
-        if (mb_strlen($password) <= $visibleChars) {
-            return $password;
-        }
-
-        // Берем первые $visibleChars символов (mb_substr корректно работает с UTF-8)
-        $visiblePart = mb_substr($password, 0, $visibleChars);
-
-        // Вычисляем, сколько символов нужно замаскировать
-        $hiddenLength = mb_strlen($password) - $visibleChars;
-
-        // Возвращаем видимую часть + нужное количество звездочек
-        return $visiblePart . str_repeat('*', $hiddenLength);
-    }
-
     public function get(string $path, array $query = [], ?string $token = null): array
     {
         $uri = $this->baseUrl . $path;
@@ -163,16 +146,16 @@ final class DiadocClient
             return $this->mockPost($path, $body);
         }
 
-        $uri = $this->baseUrl . $path;
-        $response = $this->http($token)->post($uri, $body);
+        $url = $this->baseUrl . $path;
+        $response = $this->http($token)->post($url, $body);
 
         return $this->decode($response);
     }
 
     public function getRaw(string $path, array $query = [], ?string $token = null): string
     {
-        $uri = $this->baseUrl . $path;
-        $response = $this->http($token)->get($uri, $query);
+        $url = $this->baseUrl . $path;
+        $response = $this->http($token)->get($url, $query);
 
         if ($response->status() !== 200) {
             throw EdoException::remoteError(

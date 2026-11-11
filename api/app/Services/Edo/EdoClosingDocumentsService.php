@@ -4,162 +4,114 @@ declare(strict_types=1);
 
 namespace App\Services\Edo;
 
-use App\Enums\AttachmentMime;
-use App\Enums\AttachmentPurpose;
-use App\Models\Attachment;
+use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\RepairRequest;
 use App\Services\Edo\Builders\UpdBuilder;
-use App\Services\Edo\Drivers\Sbis\SbisProvider;
+use App\Services\Edo\Builders\WorkOrderBuilder;
+use App\Services\Edo\Sender\EdoDocumentSenderService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
-use App\Models\RequestStatusPeriod;
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\Storage;
 
 final class EdoClosingDocumentsService
 {
     public function __construct(
         private readonly UpdBuilder $updBuilder,
-        private readonly EdoXmlValidator $validator,
-        private readonly SbisProvider $provider
+        private readonly WorkOrderBuilder $workOrderBuilder,
+        private readonly EdoDispatcher $dispatcher,
+        private readonly EdoDocumentSenderService $sender
     ) {}
 
-    public function generateAndSendUpd(RepairRequest $request, EdoDocument $document): void
+    public function generateAllClosingDocuments(RepairRequest $request, bool $validateOnly = false): void
     {
-        $logger = Log::channel('edo');
-        $logger->info("EdoService: Старт генерации УПД для заявки {$request->number}");
+        Log::channel('edo')->info("EdoService: Старт генерации для заявки {$request->number}");
 
-        // 1. Билдер генерирует XML + PDF
-        $updRequest = $this->updBuilder->build(
-            $request,
-            $document,
-            $request->customerOrganization,
-            $request->stationRecord->organization
-        );
-
-        // 2. Валидация XML по XSD
-        try {
-            $this->validator->validate(
-                $updRequest->meta['xml_content'],
-                'ON_NSCHFDOPPR_1_998_01_05_01_01.xsd'
-            );
-            $logger->info("EdoService: XML успешно прошел валидацию по XSD.");
-        } catch (\Throwable $e) {
-            $logger->error("EdoService: Ошибка валидации XML: " . $e->getMessage());
-            throw $e;
-        }
-
-        // 3. Отправка в провайдер
-        $dto = $this->provider->createStructuredDocument($updRequest);
-
-        $logger->info("EdoService: Документ обработан провайдером", [
-            'externalId' => $dto->externalId,
-            'status' => $dto->status
-        ]);
-
-        // Сохранение вложения в мок-режиме
-        $attachment = null;
-        if ($this->provider->isMock() && isset($updRequest->meta['file_content'])) {
-            $attachment = $this->saveMockAttachment($request, $updRequest->meta);
-        }
-
-        // Обновление записи документа
-        $document->update([
-            'external_id'             => $dto->externalId,
-            'external_uuid'           => $dto->externalUuid,
-            'status'                  => $dto->status->value,
-            'payload_attachment_id'   => $attachment?->id, // Если сохраняли PDF
-            'meta'                    => array_merge($document->meta ?? [], [
-                'raw_provider_response' => $dto->raw,
-            ]),
-        ]);
+        $this->generateAndSendUpdSto($request, $validateOnly);
+        $this->generateAndSendUpdManager($request, $validateOnly);
+        $this->generateAndSendZNSto($request, $validateOnly);
+        $this->generateAndSendZNManager($request, $validateOnly);
     }
 
-    private function saveMockAttachment(RepairRequest $request, array $meta): void
+    private function generateAndSendUpdSto(RepairRequest $req, bool $validateOnly): void
     {
-        $logger = Log::channel('edo');
+        Log::channel('edo')->info("EdoService: Подготовка УПД (СТО -> УК) для заявки {$req->number}");
 
-        $pdfContent = base64_decode($meta['file_content']);
-        $originalName = $meta['file_name'] ?? 'document.pdf';
-        $uniquePrefix = Str::uuid()->toString();
-        $fileName = $uniquePrefix . '_' . $originalName;
+        // Отправитель: СТО. Получатель: УК.
+        $sto = $req->stationRecord->organization;
+        $uk = $req->ukOrganization;
 
-        $disk = 'local';
-        $objectKey = 'edo/mock/' . $request->id . '_' . $fileName;
+        $document = $this->getEdoDocument($req, EdoDocumentType::UpdSfDop, '-УПД-СТО', $sto->id);
+        $provider = $this->dispatcher->forOrganization($sto);
 
-        Storage::disk($disk)->put($objectKey, $pdfContent);
+        $dto = $this->updBuilder->build($req, $document, $sto, $uk);
 
-        // 1. Сначала пытаемся найти период через обычный запрос
-        $statusPeriodId = DB::table('request_status_periods')
-            ->where('repair_request_id', $request->id)
-            ->orderByRaw('exited_at IS NULL DESC')
-            ->orderBy('id', 'desc')
-            ->value('id');
+        $this->sender->process($dto, $provider, $validateOnly);
+    }
 
-        // 2. Если не нашли (например, из-за транзакции), пробуем взять любой период по заявке
-        if (!$statusPeriodId) {
-            $logger->warning("EdoService: Период не найден запросом, пробуем найти через модель.");
+    private function generateAndSendUpdManager(RepairRequest $req, bool $validateOnly): void
+    {
+        Log::channel('edo')->info("EdoService: Подготовка УПД (УК -> Заказчик) для заявки {$req->number}");
 
-            // Используем Eloquent, чтобы обойти возможные кэши/транзакции
-            $period = RequestStatusPeriod::query()
-                ->where('repair_request_id', $request->id)
-                ->first();
+        // Отправитель: УК. Получатель: Заказчик.
+        $senderOrg = $req->ukOrganization ?? $req->tenant;
 
-            if ($period) {
-                $statusPeriodId = $period->id;
-            }
-        }
+        $document = $this->getEdoDocument($req, EdoDocumentType::UpdSfDop, '-УПД-УК', $senderOrg->id);
+        $provider = $this->dispatcher->forOrganization($senderOrg);
 
-        // 3. Если периодов вообще нет - создаем
-        if (!$statusPeriodId) {
-            $logger->warning("EdoService: В БД нет ни одного периода для заявки {$request->id}. Создаем.");
+        $dto = $this->updBuilder->build($req, $document);
 
-            try {
-                $statusPeriodId = DB::table('request_status_periods')->insertGetId([
-                    'uuid'              => (string) Str::uuid(),
-                    'repair_request_id' => $request->id,
-                    'stage'             => $request->stage->value,
-                    'entered_at'        => now(),
-                    'created_at'        => now(),
-                    'updated_at'        => now(),
-                ]);
-            } catch (QueryException $e) {
-                // Если упало на уникальности (значит, запись есть, но мы её не видим)
-                // Достаем ID принудительно
-                $logger->error("EdoService: Ошибка вставки периода. Пытаемся получить ID последнего.");
-                $statusPeriodId = DB::table('request_status_periods')
-                    ->where('repair_request_id', $request->id)
-                    ->max('id');
+        $this->sender->process($dto, $provider, $validateOnly);
+    }
 
-                if (!$statusPeriodId) {
-                    throw new \RuntimeException("Не удалось получить или создать request_status_period_id для заявки {$request->id}", 0, $e);
-                }
-            }
-        }
+    private function generateAndSendZNSto(RepairRequest $req, bool $validateOnly): void
+    {
+        Log::channel('edo')->info("EdoService: Подготовка Заказ-наряда (СТО -> УК) для заявки {$req->number}");
 
-        $uploadedBy = $meta['uploaded_by'] ?? User::query()->first()?->id;
+        $senderOrg = $req->stationRecord->organization;
 
-        // Создаем запись в БД
-        Attachment::create([
-            'uuid'                     => Str::uuid(),
-            'repair_request_id'        => $request->id,
-            'uploaded_by'              => $uploadedBy,
-            'request_status_period_id' => $statusPeriodId,
-            'purpose'                  => AttachmentPurpose::GeneratedDocument,
-            'disk'                     => $disk,
-            'object_key'               => $objectKey,
-            'original_name'            => $originalName,
-            'mime_type'                => AttachmentMime::Pdf,
-            'size'                     => strlen($pdfContent),
-            'sha256'                   => hash('sha256', $pdfContent),
-        ]);
+        $document = $this->getEdoDocument($req, EdoDocumentType::WorkOrder, '-ЗН-СТО', $senderOrg->id);
+        $provider = $this->dispatcher->forOrganization($senderOrg);
 
-        $logger->info("EdoService [MOCK]: PDF сохранен и привязан к заявке", [
-            'path' => $objectKey,
-            'repair_request_id' => $request->id
-        ]);
+        $dto = $this->workOrderBuilder->build($req, $document);
+
+        $this->sender->process($dto, $provider, $validateOnly);
+    }
+
+    private function generateAndSendZNManager(RepairRequest $req, bool $validateOnly): void
+    {
+        Log::channel('edo')->info("EdoService: Подготовка Заказ-наряда (УК -> Заказчик) для заявки {$req->number}");
+
+        $senderOrg = $req->ukOrganization ?? $req->tenant;
+
+        $document = $this->getEdoDocument($req, EdoDocumentType::WorkOrder, '-ЗН-УК', $senderOrg->id);
+        $provider = $this->dispatcher->forOrganization($senderOrg);
+
+        $dto = $this->workOrderBuilder->build($req, $document);
+
+        $this->sender->process($dto, $provider, $validateOnly);
+    }
+
+    private function getEdoDocument(
+        RepairRequest $req,
+        EdoDocumentType $type,
+        string $suffix,
+        int $organizationId
+    ): EdoDocument {
+        return EdoDocument::firstOrCreate(
+            [
+                'source_type'   => RepairRequest::class,
+                'source_id'     => $req->id,
+                'document_type' => $type->value,
+                'number'        => $req->number . $suffix, // Различаем по номеру
+            ],
+            [
+                'uuid'             => Str::uuid(),
+                'tenant_id'        => $req->tenant_id,
+                'organization_id'  => $organizationId, // Отправитель
+                'provider'         => config('edo.default'),
+                'document_date'    => now()->toDateString(),
+                'status'           => 'draft',
+            ]
+        );
     }
 }

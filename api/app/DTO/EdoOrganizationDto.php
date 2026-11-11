@@ -14,6 +14,12 @@ final readonly class EdoOrganizationDto
         public ?string $ogrn = '',
         public ?string $ediCode = null,
         public ?string $operatorCode = null,
+
+        // --- Поля для СБИС ---
+        public ?string $login = null,           // edo_client_id
+        public ?string $password = null,        // расшифрованный edo_refresh_token
+        public ?string $token = null,           // edo_token
+        public ?\DateTimeImmutable $tokenExpiresAt = null, // edo_token_expires_at
     ) {}
 
     public function hasEdiCode(): bool

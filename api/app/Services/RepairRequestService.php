@@ -25,7 +25,7 @@ use App\Enums\TransitionAction;
 use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
 use App\Events\RepairRequests\RepairRequestWaitingVehicle;
-use App\Events\RepairRequests\ReadyForIssue;
+use App\Events\RepairRequests\ClosingDocumentsRequested;
 use App\Events\RepairRequests\VehicleAccepted;
 use App\Events\RepairRequests\WorkOrderCompleted;
 use App\Exceptions\ApiException;
@@ -1753,7 +1753,7 @@ final class RepairRequestService
 
             if ($context->isReadyForIssue) {
                 DB::afterCommit(function () use ($request): void {
-                    ReadyForIssue::dispatch($request);
+                    ClosingDocumentsRequested::dispatch($request);
                 });
             }
         };

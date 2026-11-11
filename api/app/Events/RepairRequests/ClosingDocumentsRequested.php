@@ -6,10 +6,11 @@ namespace App\Events\RepairRequests;
 
 use App\Models\RepairRequest;
 use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\SerializesModels;
 
-final class ReadyForIssue
+final class ClosingDocumentsRequested
 {
-    use Dispatchable;
+    use Dispatchable, SerializesModels;
 
     public function __construct(public readonly RepairRequest $request) {}
 }

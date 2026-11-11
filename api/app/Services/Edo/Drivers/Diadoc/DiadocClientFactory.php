@@ -18,7 +18,7 @@ final class DiadocClientFactory
         $config = config('edo.providers.diadoc');
 
         return new DiadocClient(
-            baseUrl: $config['base_url'] ?? 'https://diadoc-api.kontur.ru',
+            baseUrl: $config['base_url'],
             clientId: $config['client_id'],
             clientSecret: $config['client_secret'],
             timeout: (int) ($config['http']['timeout'] ?? 30),

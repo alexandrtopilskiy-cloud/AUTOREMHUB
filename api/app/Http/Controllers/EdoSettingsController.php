@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Edo\EdoConnectRequest;
+use App\Models\Organization;
 use App\Services\Edo\Drivers\EdoRu\EdoRuClient;
 use App\Services\Edo\EdoActService;
 use App\Services\Edo\EdoDispatcher;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 final class EdoSettingsController
 {
@@ -17,18 +19,6 @@ final class EdoSettingsController
         private readonly EdoActService $actService,
         private readonly EdoDispatcher $dispatcher,
     ) {}
-
-    public function auth(): JsonResponse
-    {
-        // Проверяем, что клиент видит конфиг
-        $authResult = $this->client->authGlobal();
-
-        return response()->json([
-            'status' => 'ok',
-            'token' => $authResult['token'] ?? null,
-            'edoOrgId' => $authResult['edoOrgId'] ?? null,
-        ]);
-    }
 
     public function documents(): JsonResponse
     {
@@ -47,40 +37,35 @@ final class EdoSettingsController
      * Привязка организации к Диадоку.
      * POST /api/edo/test/connect
      */
-    public function connect(Request $request): JsonResponse
+    public function connect(EdoConnectRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'refresh_token' => 'required|string',
-            'client_id'     => 'required|string', // BoxId
-        ]);
-
+        /** @var Organization $org */
         $org = $request->user()->organization;
 
-        if (!$org) {
-            return response()->json(['error' => 'У пользователя нет организации'], 400);
-        }
+        $providerKey = config('edo.default');
+        $credentials = $request->validated();
 
+        // 1. Валидация в зависимости от провайдера
         try {
-            // Принудительно ставим провайдера (если еще не стоит)
-            $org->update(['edo_provider' => 'diadoc']);
+            // 2. Получаем провайдер через диспетчер
+            $provider = $this->dispatcher->forOrganization($org);
 
-            // Вызываем метод из Диспетчера
-            $this->dispatcher->connectDiadocOrganization(
-                $org,
-                $validated['refresh_token'],
-                $validated['client_id']
-            );
-
+            // 3. Вызываем единый метод connect
+            $provider->connect($org, $credentials);
 
             return response()->json([
-                'status' => 'ok',
-                'message' => 'Организация успешно подключена к Диадоку',
-                'box_id' => $org->fresh()->edo_client_id,
+                'status'  => 'ok',
+                'message' => "Организация успешно подключена к {$providerKey}",
             ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
-                'error' => $e->getMessage()
+                'error'  => $e->getMessage(),
             ], 422);
         }
     }

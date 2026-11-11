@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Edo\Drivers\Diadoc;
 
+use App\Contracts\Edo\EdoAccountProviderInterface;
 use App\Contracts\Edo\EdoOutboundProviderInterface;
 use App\Contracts\Edo\EdoProviderInterface;
 use App\Contracts\Edo\EdoReadProviderInterface;
@@ -24,12 +25,12 @@ use App\Models\RepairRequest;
 use App\Models\RequestStatusPeriod;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Log;
 
 final class DiadocProvider implements
     EdoProviderInterface,
     EdoOutboundProviderInterface,
-    EdoReadProviderInterface
+    EdoReadProviderInterface,
+    EdoAccountProviderInterface
 {
     public function __construct(
         private readonly DiadocClient $client,
@@ -235,7 +236,6 @@ final class DiadocProvider implements
 
     public function getDocumentContent(string $externalId): EdoFile
     {
-        // GET /V3/GetDocumentContent?documentId={id}
         $raw = $this->client->getRaw('/V3/GetDocumentContent', [
             'documentId' => $externalId,
         ]);
@@ -301,5 +301,21 @@ final class DiadocProvider implements
             fn (array $row) => $this->mapper->toDocument($row),
             $documents,
         );
+    }
+
+    public function connect(Organization $org, array $credentials): void
+    {
+        $clientId = $credentials['client_id']; // BoxId
+        $refreshToken = $credentials['refresh_token'];
+
+        // 1. Проверяем токен у Диадока (например, запросом за токеном)
+        $this->connectOrganization($org, $refreshToken, $clientId);
+
+        // 2. Сохраняем креды
+        $org->update([
+            'edo_provider'      => EdoProviderEnum::Diadoc->value,
+            'edo_client_id'     => $clientId,
+            'edo_refresh_token' => $refreshToken,
+        ]);
     }
 }

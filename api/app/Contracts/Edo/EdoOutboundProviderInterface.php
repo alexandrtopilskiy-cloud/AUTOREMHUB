@@ -11,7 +11,7 @@ use App\DTO\EdoStructuredRequest;
 
 interface EdoOutboundProviderInterface
 {
-    public function createStructuredDocument(EdoStructuredRequest $request): EdoDocumentDto;
+    public function createStructuredDocument(EdoStructuredRequest $dto): EdoDocumentDto;
 
     public function addAttachment(string $externalId, EdoFile $file): void;
 

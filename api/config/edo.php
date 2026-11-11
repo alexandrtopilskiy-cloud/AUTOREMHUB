@@ -44,9 +44,12 @@ return [
             'client_secret' => env('DIADOC_CLIENT_SECRET'),
         ],
         EdoProvider::Sbis->value => [
-            'base_url'   => env('SBIS_BASE_URL', 'https://online.sbis.ru/service/?srv=1'),
-            'session_id' => env('SBIS_SESSION_ID'),
-            'mock'       => env('EDO_MOCK', false),
+            'base_url'   => env('SBIS_BASE_URL'),
+            'auth_url'   => env('SBIS_AUTH_URL'),
+            'http' => [
+                'timeout' => 30,
+                'connect_timeout' => 10,
+            ],
         ],
     ],
 
