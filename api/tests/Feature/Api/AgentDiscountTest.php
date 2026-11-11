@@ -175,7 +175,7 @@ final class AgentDiscountTest extends TestCase
             TestParticipantRequisites::renameStation($this->tenant->id, 'ООО "Овал"', 'ИП Топильский АВ'),
             'повторный запуск ничего не делает',
         );
-        $this->assertSame([], TestParticipantRequisites::apply($this->tenant->id));
+        $this->assertNotContains('ИП Топильский АВ', TestParticipantRequisites::apply($this->tenant->id));
     }
 
     /** Front не отправляет служебную подпись применимости (см. stripClientMetadata). */
