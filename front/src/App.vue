@@ -338,6 +338,24 @@ export default {
                 }),
             );
         },
+        /** Подпись панели «Состояние документа» (см. RequestPreview). */
+        previewMode() {
+            if (this.current) {
+                return !this.active?.lockDenied &&
+                    this.requestNeedsLock(this.current)
+                    ? "edit"
+                    : "readonly";
+            }
+            if (this.active?.kind === "record") {
+                const permissions = this.activeRecordView?.permissions || {};
+                return this.active.record?.isNew ||
+                    permissions.canEdit ||
+                    permissions.canReview
+                    ? "edit"
+                    : "readonly";
+            }
+            return "preview";
+        },
         selected() {
             if (this.current) return this.current;
             if (this.active?.kind === "record") return this.active.record;
@@ -2560,6 +2578,7 @@ export default {
                         v-else
                         :item="selected"
                         :kind="current || isRequestList ? 'request' : 'record'"
+                        :mode="previewMode"
                     />
                 </div>
                 <button
