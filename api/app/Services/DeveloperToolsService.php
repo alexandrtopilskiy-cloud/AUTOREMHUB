@@ -87,6 +87,21 @@ final class DeveloperToolsService
     }
 
     /**
+     * Номер ЗР — это её id (ZR-000013 = id 13). После удаления счётчик ставится
+     * на «последняя оставшаяся ЗР + 1», чтобы новая ЗР продолжала нумерацию
+     * без пропуска удалённых номеров. Блокировка таблицы не даёт параллельно
+     * созданной ЗР получить уже выданный номер.
+     */
+    private static function resetRequestNumbering(): void
+    {
+        DB::statement('LOCK TABLE repair_requests IN EXCLUSIVE MODE');
+        DB::statement(
+            "SELECT setval(pg_get_serial_sequence('repair_requests', 'id'), "
+            . "coalesce((SELECT max(id) FROM repair_requests), 0) + 1, false)"
+        );
+    }
+
+    /**
      * Удаляет выбранные ЗР со всеми связанными записями и файлами.
      * Набор удаляется атомарно; файлы стираются после фиксации транзакции.
      *
@@ -225,6 +240,7 @@ final class DeveloperToolsService
 
             // Остальное (события, периоды, работы, ЗЧ, диагностика) — каскадом.
             DB::table('repair_requests')->whereIn('id', $ids)->delete();
+            self::resetRequestNumbering();
 
             return $requestUuids;
         });
