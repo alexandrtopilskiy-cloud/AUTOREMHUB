@@ -15,6 +15,8 @@ use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use App\DTO\UserDto;
+use App\Models\RepairRequest;
 
 final class DiagnosticController
 {
@@ -23,11 +25,10 @@ final class DiagnosticController
     ) {
     }
 
-    public function store(
-        StoreDiagnosticReportRequest $request,
-        string $id,
-        RepairRequestService $service,
-    ): JsonResponse {
+    public function store(StoreDiagnosticReportRequest $request, string $id, RepairRequestService $service): JsonResponse
+    {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         $conclusion = trim((string) $request->validated('conclusion'));
 
         if ($conclusion === '') {
@@ -37,24 +38,24 @@ final class DiagnosticController
         $attachmentIds = $request->validated('attachmentIds') ?? [];
 
         $repairRequest = $service->mutate(
-            $request->user(),
+            $user,
             $id,
             ApiInput::revision($request),
             'diagnosis',
-            function ($repairRequest) use ($service, $request, $conclusion, $attachmentIds): array {
-                $service->flag($repairRequest, $request->user(), 'canDiagnose');
+            function (RepairRequest $req) use ($service, $userDto, $conclusion, $attachmentIds): array {
+                $service->flag($req, $userDto, 'canDiagnose');
 
                 $files = $service->attachmentIds(
-                    $repairRequest,
+                    $req,
                     $attachmentIds,
                     AttachmentPurpose::Diagnostic,
                 );
 
                 $report = DiagnosticReport::create([
-                    'repair_request_id' => $repairRequest->id,
-                    'station_id'        => $repairRequest->assigned_station_id,
-                    'author_id'         => $request->user()->id,
-                    'mileage'           => $repairRequest->acceptanceAct?->mileage ?? (int)($repairRequest->data['mileage'] ?? 0),
+                    'repair_request_id' => $req->id,
+                    'station_id'        => $req->assigned_station_id,
+                    'author_id'         => $userDto->userId,
+                    'mileage'           => $req->acceptanceAct?->mileage ?? (int)($req->data['mileage'] ?? 0),
                     'conclusion'        => $conclusion,
                     'attachment_ids'    => $attachmentIds,
                 ]);
@@ -62,13 +63,13 @@ final class DiagnosticController
                 return [
                     'comment' => 'Сохранено заключение диагностики',
                     'details' => ['conclusion' => $conclusion],
-                    'after'   => function ($event) use ($files, $repairRequest, $report): void {
+                    'after'   => function ($event) use ($files, $req, $report): void {
                         Attachment::query()
                             ->whereIn('id', array_map(static fn ($file) => $file->id, $files))
                             ->update(['request_event_id' => $event->id]);
 
-                        DB::afterCommit(function () use ($repairRequest, $report): void {
-                            DiagnosticReportSaved::dispatch($repairRequest, $report);
+                        DB::afterCommit(function () use ($req, $report): void {
+                            DiagnosticReportSaved::dispatch($req, $report);
                         });
                     },
                 ];
@@ -76,7 +77,7 @@ final class DiagnosticController
         );
 
         return response()->json(
-            ['request' => $this->apiPresenter->document($repairRequest, $request->user())],
+            ['request' => $this->apiPresenter->document($repairRequest, $userDto)],
             201,
         );
     }

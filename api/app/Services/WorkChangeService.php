@@ -228,10 +228,16 @@ final class WorkChangeService
      */
     public function submit(User $user, string $key, int $revision, array $removedNotes): RepairRequest
     {
-        return $this->requests->mutate($user, $key, $revision, 'work_change_submitted', function (RepairRequest $request) use ($user, $removedNotes): array {
-            $this->requests->flag($request, $user, 'canSubmitWorkChange');
+        $userDto = UserDto::fromUserModel($user);
+        return $this->requests->mutate(
+            $user,
+            $key,
+            $revision,
+            'work_change_submitted',
+            function (RepairRequest $req) use ($userDto, $removedNotes): array {
+            $this->requests->flag($req, $userDto, 'canSubmitWorkChange');
 
-            $state = $request->work_change;
+            $state = $req->work_change;
             foreach ($removedNotes as $lineId => $note) {
                 if (!is_string($lineId) || !is_string($note)) {
                     Input::fail('Некорректные примечания к удалённым позициям', 'removedNotes');
@@ -241,9 +247,9 @@ final class WorkChangeService
                     $state['removedNotes'][$lineId] = mb_substr($note, 0, 2000);
                 }
             }
-            $request->work_change = $state;
+            $req->work_change = $state;
 
-            $items = $this->diff($request);
+            $items = $this->diff($req);
             if ($items === []) {
                 Input::fail('Работы и запчасти не изменены. Отмените изменения, чтобы продолжить работу.');
             }
@@ -258,27 +264,27 @@ final class WorkChangeService
                 }
             }
 
-            $this->validateEstimate($request);
+            $this->validateEstimate($req);
 
             $state['status'] = WorkChangeStatus::ManagerReview->value;
             $state['submittedAt'] = now()->toISOString();
-            $state['submittedBy'] = $user->id;
+            $state['submittedBy'] = $userDto->userId;
             $state['rejection'] = null;
             $state['managerApproval'] = null;
-            $request->work_change = $state;
+            $req->work_change = $state;
             $changes = $this->describe($items);
 
             return [
                 'comment' => 'СТО отправила изменения работ / з/ч на согласование',
                 'details' => ['changes' => $changes],
-                'after'   => function (RequestEvent $event) use ($request, $changes): void {
+                'after'   => function (RequestEvent $event) use ($req, $changes): void {
                     $this->requests->notifyUsers(NotificationDto::fromRequest(
-                        $this->requests->managerUsers($request->tenant_id),
-                        $request->id,
+                        $this->requests->managerUsers($req->tenant_id),
+                        $req->id,
                         $event->id,
                         'manager_review_required',
                         'Согласование работ / з/ч',
-                        "СТО изменила работы или запчасти по заявке {$request->number} в ходе ремонта. "
+                        "СТО изменила работы или запчасти по заявке {$req->number} в ходе ремонта. "
                         . 'Изменения: ' . implode('; ', $changes),
                     ));
                 },
@@ -291,51 +297,57 @@ final class WorkChangeService
      */
     public function decide(User $user, string $key, int $revision, bool $approved, string $comment): RepairRequest
     {
+        $userDto = UserDto::fromUserModel($user);
         $comment = trim($comment);
         $action = $approved ? 'work_change_approved' : 'work_change_rejected';
 
-        return $this->requests->mutate($user, $key, $revision, $action, function (RepairRequest $request) use ($user, $approved, $comment): array {
-            $this->requests->flag($request, $user, 'canDecideWorkChange');
+        return $this->requests->mutate(
+            $user,
+            $key,
+            $revision,
+            $action,
+            function (RepairRequest $req) use ($userDto, $user, $approved, $comment): array {
+            $this->requests->flag($req, $userDto, 'canDecideWorkChange');
 
             if (!$approved && $comment === '') {
                 Input::fail('Укажите, почему изменения не согласованы', 'comment');
             }
 
-            $status = WorkChangeStatus::forRequest($request);
-            $state = $request->work_change;
-            $changes = $this->describe($this->diff($request));
-            $who = $user->role === UserRole::Manager ? 'УК' : 'Заказчик';
+            $status = WorkChangeStatus::forRequest($req);
+            $state = $req->work_change;
+            $changes = $this->describe($this->diff($req));
+            $who = $userDto->role === UserRole::Manager ? 'УК' : 'Заказчик';
             $snapshot = ['changes' => $changes];
 
             if (!$approved) {
                 $state['status'] = WorkChangeStatus::Rejected->value;
                 $state['rejection'] = [
-                    'role'    => $user->role->value,
+                    'role'    => $userDto->role->value,
                     'by'      => $who,
                     'actor'   => $user->display_name,
                     'comment' => $comment,
                     'at'      => now()->toISOString(),
                 ];
-                $request->work_change = $state;
+                $req->work_change = $state;
 
                 return [
                     'comment' => "$who не согласовал(а) изменения работ / з/ч: $comment",
                     'details' => ['changes' => $changes],
-                    'after'   => function (RequestEvent $event) use ($request, $user, $comment, $who, $snapshot): void {
-                        $this->approval($request, $event, $user, RepairStage::RepairInProgress, ApprovalDecision::Returned, $comment, $snapshot);
+                    'after'   => function (RequestEvent $event) use ($req, $user, $comment, $who, $snapshot): void {
+                        $this->approval($req, $event, $user, RepairStage::RepairInProgress, ApprovalDecision::Returned, $comment, $snapshot);
                         $this->requests->notifyUsers(NotificationDto::fromRequest(
-                            $this->requests->stationUsers($request),
-                            $request->id,
+                            $this->requests->stationUsers($req),
+                            $req->id,
                             $event->id,
                             'work_change_rejected',
                             'Изменения работ / з/ч не согласованы',
-                            "$who не согласовал(а) изменения по заявке {$request->number}: $comment",
+                            "$who не согласовал(а) изменения по заявке {$req->number}: $comment",
                         ));
                     },
                 ];
             }
 
-            $this->requests->assertHasWorks($request);
+            $this->requests->assertHasWorks($req);
 
             if ($status === WorkChangeStatus::ManagerReview) {
                 $state['status'] = WorkChangeStatus::CustomerReview->value;
@@ -344,52 +356,54 @@ final class WorkChangeService
                     'comment' => $comment,
                     'at'      => now()->toISOString(),
                 ];
-                $request->work_change = $state;
+                $req->work_change = $state;
 
                 return [
                     'comment' => 'УК согласовала изменения работ / з/ч' . ($comment !== '' ? ": $comment" : ''),
                     'details' => ['changes' => $changes],
-                    'after'   => function (RequestEvent $event) use ($request, $user, $comment, $snapshot): void {
-                        $this->approval($request, $event, $user, RepairStage::RepairInProgress, ApprovalDecision::Approved, $comment, $snapshot);
+                    'after'   => function (RequestEvent $event) use ($req, $user, $comment, $snapshot): void {
+                        $this->approval($req, $event, $user, RepairStage::RepairInProgress, ApprovalDecision::Approved, $comment, $snapshot);
                         $this->requests->notifyUsers(NotificationDto::fromRequest(
-                            $this->requests->customerUsers($request),
-                            $request->id,
+                            $this->requests->customerUsers($req),
+                            $req->id,
                             $event->id,
                             'customer_work_change_approval',
                             'Согласование работ / з/ч',
-                            "По заявке {$request->number} в ходе ремонта изменены работы или запчасти. Согласуйте изменения.",
+                            "По заявке {$req->number} в ходе ремонта изменены работы или запчасти. Согласуйте изменения.",
                         ));
                     },
                 ];
             }
 
             // Заказчик согласовал: изменения становятся согласованной сметой.
-            $request->estimate_version++;
-            foreach ($request->parts()->get() as $part) {
-                $part->approved_version = $request->estimate_version;
+            $req->estimate_version++;
+            foreach ($req->parts()->get() as $part) {
+                $part->approved_version = $req->estimate_version;
                 if ($part->status === RequestPartStatus::Proposed) {
                     $part->status = RequestPartStatus::Approved;
                 }
                 $part->change_note = null;
                 $part->save();
             }
-            RequestWork::query()->where('repair_request_id', $request->id)->update(['change_note' => null]);
-            $request->work_change = null;
+            RequestWork::query()
+                ->where('repair_request_id', $req->id)
+                ->update(['change_note' => null]);
+            $req->work_change = null;
 
             return [
                 'comment' => 'Заказчик согласовал изменения работ / з/ч' . ($comment !== '' ? ": $comment" : ''),
                 'details' => ['changes' => $changes],
-                'after'   => function (RequestEvent $event) use ($request, $user, $comment, $snapshot): void {
+                'after'   => function (RequestEvent $event) use ($req, $user, $comment, $snapshot): void {
                     // Запись «Принято Заказчиком» для текущей версии сметы нужна
                     // для завершения работ (проверка согласованной сметы).
-                    $this->approval($request, $event, $user, RepairStage::CustomerApproval, ApprovalDecision::Accepted, $comment, $snapshot);
+                    $this->approval($req, $event, $user, RepairStage::CustomerApproval, ApprovalDecision::Accepted, $comment, $snapshot);
                     $this->requests->notifyUsers(NotificationDto::fromRequest(
-                        $this->requests->stationUsers($request),
-                        $request->id,
+                        $this->requests->stationUsers($req),
+                        $req->id,
                         $event->id,
                         'work_change_approved',
                         'Изменения работ / з/ч согласованы',
-                        "УК и Заказчик согласовали изменения работ и запчастей по заявке {$request->number}.",
+                        "УК и Заказчик согласовали изменения работ и запчастей по заявке {$req->number}.",
                     ));
                 },
             ];
@@ -401,14 +415,22 @@ final class WorkChangeService
      */
     public function discard(User $user, string $key, int $revision): RepairRequest
     {
-        return $this->requests->mutate($user, $key, $revision, 'work_change_discarded', function (RepairRequest $request) use ($user): array {
-            $this->requests->flag($request, $user, 'canDiscardWorkChange');
-            $this->restoreBaseline($request);
-            $request->work_change = null;
-            $this->requests->recalculatePlannedCompletion($request);
+        $userDto = UserDto::fromUserModel($user);
 
-            return ['comment' => 'СТО отменила изменения работ / з/ч, восстановлена согласованная смета'];
-        });
+        return $this->requests->mutate(
+            $user,
+            $key,
+            $revision,
+            'work_change_discarded',
+            function (RepairRequest $req) use ($userDto): array {
+                $this->requests->flag($req, $userDto, 'canDiscardWorkChange');
+                $this->restoreBaseline($req);
+                $req->work_change = null;
+                $this->requests->recalculatePlannedCompletion($req);
+
+                return ['comment' => 'СТО отменила изменения работ / з/ч, восстановлена согласованная смета'];
+            }
+        );
     }
 
     /**

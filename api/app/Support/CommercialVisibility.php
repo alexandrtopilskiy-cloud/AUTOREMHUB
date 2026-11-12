@@ -5,18 +5,23 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Enums\UserRole;
-use App\Models\User;
 
 final class CommercialVisibility
 {
     private const PRIVATE_KEYS = [
-        'supplier', 'supplierId', 'supplierName', 'supplier_id', 'supplier_name',
-        'purchasePrice', 'purchase_price', 'supplier_name_snapshot',
+        'supplier',
+        'supplierId',
+        'supplierName',
+        'supplier_id',
+        'supplier_name',
+        'purchasePrice',
+        'purchase_price',
+        'supplier_name_snapshot',
     ];
 
-    public static function forUser(array $data, User $user): array
+    public static function forUser(array $data, UserRole $role): array
     {
-        if ($user->role !== UserRole::Customer) {
+        if ($role !== UserRole::Customer) {
             return $data;
         }
         return self::redact($data);

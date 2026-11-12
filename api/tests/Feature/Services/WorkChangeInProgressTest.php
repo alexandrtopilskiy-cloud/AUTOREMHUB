@@ -31,6 +31,7 @@ use App\Support\ApiPresenter;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
+use App\DTO\UserDto;
 
 /**
  * Комментарии к строкам ЗР и изменение работ/ЗЧ на стадии «В работе»
@@ -140,9 +141,10 @@ final class WorkChangeInProgressTest extends TestCase
 
     private function document(User $user): array
     {
+        $userDto = UserDto::fromUserModel($user);
         $this->actingAs($user);
 
-        return app(ApiPresenter::class)->document($this->request->fresh(), $user);
+        return app(ApiPresenter::class)->document($this->request->fresh(), $userDto);
     }
 
     private function patchLines(User $user, array $patch): array

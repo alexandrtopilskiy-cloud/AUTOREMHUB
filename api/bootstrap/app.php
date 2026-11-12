@@ -68,8 +68,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontReport([ApiException::class]);
 
         $exceptions->shouldRenderJsonWhen(
-            static fn (Request $request, Throwable $e): bool =>
-            $request->is('api/*') || $request->expectsJson(),
+            static fn (Request $request, Throwable $e): bool => $request->is('api/*') || $request->expectsJson(),
         );
 
         $exceptions->render(function (Throwable $e, Request $request) {
@@ -77,7 +76,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
-            return ApiErrorRenderer::render($e, $request);
+            return ApiErrorRenderer::render($e);
         });
 
         $exceptions->respond(function ($response) {
@@ -89,9 +88,6 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
 
-    ->withSchedule(function (Schedule $schedule): void {
-        $schedule->command('edo:sync-status')->everyFiveMinutes()->withoutOverlapping();
-        $schedule->command('edo:pull-events')->everyMinute()->withoutOverlapping();
-    })
+    ->withSchedule(function (Schedule $schedule): void {})
 
     ->create();

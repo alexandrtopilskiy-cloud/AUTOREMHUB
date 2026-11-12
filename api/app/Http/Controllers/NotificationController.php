@@ -10,10 +10,10 @@ use Illuminate\Http\Request;
 
 final class NotificationController
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $req): JsonResponse
     {
         $notifications = RequestNotification::query()
-            ->where('user_id', $request->user()->id)
+            ->where('user_id', $req->user()->id)
             ->whereNull('read_at')
             ->with([
                 'repairRequest:id,uuid,number',
@@ -29,11 +29,11 @@ final class NotificationController
         ]);
     }
 
-    public function read(Request $request, string $id): JsonResponse
+    public function read(Request $req, string $id): JsonResponse
     {
         $notification = RequestNotification::query()
             ->where('uuid', $id)
-            ->where('user_id', $request->user()->id)
+            ->where('user_id', $req->user()->id)
             ->with([
                 'repairRequest:id,uuid,number',
                 'vehicleChangeRequest:id,uuid',

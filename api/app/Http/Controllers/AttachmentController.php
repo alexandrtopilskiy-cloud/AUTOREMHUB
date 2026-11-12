@@ -35,25 +35,25 @@ final class AttachmentController
     public function store(StoreAttachmentRequest $request, string $id): JsonResponse
     {
         $user = $request->user();
-        $dto = UserDto::fromUserModel($user);
-        $repairRequest = RepairRequest::resolveFor($dto, $id);
+        $userDto = UserDto::fromUserModel($user);
+        $req = RepairRequest::resolveFor($userDto, $id);
 
-        $this->service->flag($repairRequest, $user, 'canUpload');
+        $this->service->flag($req, $userDto, 'canUpload');
 
         $file = $request->file('file');
         $mime = $file->getMimeType();
         $purpose = AttachmentPurpose::from((string) $request->input('purpose'));
         $extension = $this->extensionFor($mime, $purpose);
 
-        $this->assertPurposeAllowedForRole($user->role, $purpose);
-        $this->assertPurposeMatchesStage($repairRequest, $purpose);
+        $this->assertPurposeAllowedForRole($userDto->role, $purpose);
+        $this->assertPurposeMatchesStage($req, $purpose);
 
         $this->media->assertConfigured();
 
         $key = sprintf(
             'tenant-%d/requests/%s/%s.%s',
-            $repairRequest->tenant_id,
-            $repairRequest->uuid,
+            $req->tenant_id,
+            $req->uuid,
             Str::uuid(),
             $extension,
         );
@@ -61,14 +61,14 @@ final class AttachmentController
         $this->putToStorage($key, $file, $mime);
 
         try {
-            $updated = $this->attachAndMutate($repairRequest, $request, $file, $mime, $purpose, $key);
+            $updated = $this->attachAndMutate($req, $request, $file, $mime, $purpose, $key);
         } catch (Throwable $e) {
             $this->safeDelete($key);
             throw $e;
         }
 
         return response()->json(
-            ['request' => $this->apiPresenter->document($updated, $user)],
+            ['request' => $this->apiPresenter->document($updated, $userDto)],
             201,
         );
     }
@@ -90,27 +90,28 @@ final class AttachmentController
     }
 
     private function attachAndMutate(
-        RepairRequest $repairRequest,
+        RepairRequest $req,
         StoreAttachmentRequest $request,
         $file,
         string $mime,
         AttachmentPurpose $purpose,
         string $key,
-    ): RepairRequest
-    {
+    ): RepairRequest {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         return $this->service->mutate(
-            $request->user(),
-            (string) $repairRequest->uuid,
+            $user,
+            (string) $req->uuid,
             (int) $request->input('revision'),
             'attachment',
-            function (RepairRequest $r) use ($request, $key, $file, $mime, $purpose): array {
-                $this->service->flag($r, $request->user(), 'canUpload');
-                $this->assertPurposeAllowedForRole($request->user()->role, $purpose);
+            function (RepairRequest $r) use ($userDto,  $key, $file, $mime, $purpose): array {
+                $this->service->flag($r, $userDto, 'canUpload');
+                $this->assertPurposeAllowedForRole($userDto->role, $purpose);
                 $this->assertPurposeMatchesStage($r, $purpose);
 
                 Attachment::create([
                     'repair_request_id'         => $r->id,
-                    'uploaded_by'               => $request->user()->id,
+                    'uploaded_by'               => $userDto->userId,
                     'request_status_period_id'  => $r->periods()->whereNull('exited_at')->firstOrFail()->id,
                     'purpose'                   => $purpose,
                     'disk'                      => 'media',

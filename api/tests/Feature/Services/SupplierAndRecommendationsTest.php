@@ -35,6 +35,7 @@ use App\Support\TimeNormDescription;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
+use App\DTO\UserDto;
 
 final class SupplierAndRecommendationsTest extends TestCase
 {
@@ -303,9 +304,10 @@ final class SupplierAndRecommendationsTest extends TestCase
 
     public function test_customer_document_and_recommendations_hide_supplier_and_purchase_price(): void
     {
+        $userDto = UserDto::fromUserModel($this->customer);
         $part = $this->part();
         $part->update(['purchase_price' => 120.0]);
-        $shown = app(ApiPresenter::class)->document($this->request, $this->customer);
+        $shown = app(ApiPresenter::class)->document($this->request, $userDto);
 
         $this->assertArrayNotHasKey('supplierId', $shown['parts'][0]);
         $this->assertArrayNotHasKey('supplierName', $shown['parts'][0]);
@@ -334,22 +336,43 @@ final class SupplierAndRecommendationsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('recommendations.0.id', $doc['id']);
 
-        $otherOrg = Organization::query()->create(['tenant_id' => $this->customer->tenantId(), 'kind' => 'customer', 'name' => 'Другой заказчик']);
-        $other = User::query()->create(['organization_id' => $otherOrg->id, 'login' => 'other' . Str::random(8), 'display_name' => 'Другой', 'password' => bcrypt('test'), 'role' => 'customer', 'active' => true]);
+        $otherOrg = Organization::query()->create([
+            'tenant_id' => $this->customer->tenantId(),
+            'kind' => 'customer',
+            'name' => 'Другой заказчик',
+        ]);
+        $other = User::query()->create([
+            'organization_id' => $otherOrg->id,
+            'login' => 'other' . Str::random(8),
+            'display_name' => 'Другой',
+            'password' => bcrypt('test'),
+            'role' => 'customer',
+            'active' => true,
+        ]);
         $this->assertSame([], app(RecommendationService::class)->all($other));
         $this->actingAs($other)->getJson('/api/recommendations?vehicleId=not-a-uuid')->assertUnprocessable();
     }
 
     public function test_estimate_visibility_survives_return_from_customer_to_manager(): void
     {
+        $userDto = UserDto::fromUserModel($this->customer);
         $presenter = app(ApiPresenter::class);
-        $this->assertFalse($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
+
+        $this->assertFalse($presenter->document($this->request, $userDto)['permissions']['canViewRepairEstimate']);
         $this->request->update(['stage' => RepairStage::CustomerApproval]);
-        $this->assertTrue($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
-        RequestStatusPeriod::query()->where('repair_request_id', $this->request->id)->update(['exited_at' => now()]);
-        RequestStatusPeriod::query()->create(['repair_request_id' => $this->request->id, 'stage' => 3, 'entered_at' => now(), 'actor_id' => $this->customer->id]);
+        $this->assertTrue($presenter->document($this->request, $userDto)['permissions']['canViewRepairEstimate']);
+
+        RequestStatusPeriod::query()
+            ->where('repair_request_id', $this->request->id)
+            ->update(['exited_at' => now()]);
+        RequestStatusPeriod::query()->create([
+            'repair_request_id' => $this->request->id,
+            'stage' => RepairStage::CustomerApproval,
+            'entered_at' => now(),
+            'actor_id' => $userDto->userId,
+        ]);
         $this->request->update(['stage' => RepairStage::ManagerRouting]);
-        $this->assertTrue($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
+        $this->assertTrue($presenter->document($this->request, $userDto)['permissions']['canViewRepairEstimate']);
     }
 
     /** Два переноса из ЗР по одному ТС попадают в один документ рекомендаций. */
@@ -450,6 +473,7 @@ final class SupplierAndRecommendationsTest extends TestCase
 
     public function test_part_snapshot_keeps_original_values_after_catalog_edit(): void
     {
+        $userDto = UserDto::fromUserModel($this->manager);
         $service = app(RepairRequestService::class);
         $this->catalog->update(['manufacturer' => 'Original']);
 
@@ -462,7 +486,7 @@ final class SupplierAndRecommendationsTest extends TestCase
         $service->update($this->manager, $dto);
 
         $this->catalog->update(['manufacturer' => 'Changed']);
-        $shown = app(ApiPresenter::class)->document($this->request->fresh(), $this->manager);
+        $shown = app(ApiPresenter::class)->document($this->request->fresh(), $userDto);
 
         $this->assertSame('Original', $shown['parts'][0]['manufacturer']);
         $this->assertNull($shown['parts'][0]['purchasePrice']);

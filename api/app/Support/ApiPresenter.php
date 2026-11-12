@@ -14,7 +14,6 @@ use App\Models\RepairRequest;
 use App\Models\RequestStatusPeriod;
 use App\Models\Supplier;
 use App\Models\TimeNorm;
-use App\Models\User;
 use App\Models\WorkOrder;
 use App\Models\WorkType;
 use App\Services\RepairRequestCalculator;
@@ -22,6 +21,8 @@ use App\Services\RepairRequestService;
 use App\Services\Workflow;
 use App\Services\WorkChangeService;
 use App\Services\ClosingDocumentService;
+use App\Services\StockService;
+use App\Enums\AttachmentPurpose;
 
 final class ApiPresenter
 {
@@ -63,20 +64,20 @@ final class ApiPresenter
         ];
     }
 
-    public function recommendationSummary(RepairRequest $request, UserDto $dto): array
+    public function recommendationSummary(RepairRequest $req, UserDto $dto): array
     {
-        if ($request->vehicle_id === null) {
+        if ($req->vehicle_id === null) {
             return [];
         }
 
         // 1. Проверяем кэш (in-memory)
-        if (isset($this->recommendationSummaries[$request->vehicle_id])) {
-            return $this->recommendationSummaries[$request->vehicle_id];
+        if (isset($this->recommendationSummaries[$req->vehicle_id])) {
+            return $this->recommendationSummaries[$req->vehicle_id];
         }
 
         // 2. Если в кэше нет — идем в базу
         $recommendations = Recommendation::forUser($dto)
-            ->where('vehicle_id', $request->vehicle_id)
+            ->where('vehicle_id', $req->vehicle_id)
             ->withCount(['items as open_items_count' => fn ($query) => $query->whereNull('moved_at')->whereNull('deleted_at')])
             ->orderByDesc('id')
             ->get(['id', 'uuid', 'number'])
@@ -84,7 +85,7 @@ final class ApiPresenter
             ->all();
 
         // 3. Сохраняем в кэш (если вы это делаете где-то еще, иначе смысла нет)
-         $this->recommendationSummaries[$request->vehicle_id] = $recommendations;
+         $this->recommendationSummaries[$req->vehicle_id] = $recommendations;
 
         return $recommendations;
     }
@@ -92,10 +93,9 @@ final class ApiPresenter
     /**
      * @return array<string, mixed>
      */
-    public function document(RepairRequest $request, User $user): array
+    public function document(RepairRequest $req, UserDto $dto): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $request->load([
+        $req->load([
             'vehicleRecord.organization',
             'vehicleRecord.modelReference',
             'contactRecord',
@@ -117,30 +117,30 @@ final class ApiPresenter
             'documents.signedAttachment',
         ]);
 
-        $data = $this->resolveData($request);
-        $vehicle = $request->vehicleRecord;
-        $contact = $request->contactRecord;
-        $driver = $request->driverRecord;
-        $station = $request->stationRecord;
+        $data = $this->resolveData($req);
+        $vehicle = $req->vehicleRecord;
+        $contact = $req->contactRecord;
+        $driver = $req->driverRecord;
+        $station = $req->stationRecord;
         $timezone = (string) config('sto.service_timezone');
 
         return CommercialVisibility::forUser(array_merge($data, [
-            'id'                     => $request->uuid,
-            'uuid'                   => $request->uuid,
-            'systemId'               => $request->id,
-            'number'                 => $request->number,
-            'revision'               => $request->revision,
-            'stage'                  => $request->stage->value,
-            'createdAt'              => $request->created_at->toISOString(),
-            'updatedAt'              => $request->updated_at->toISOString(),
-            'estimateVersion'        => $request->estimate_version,
-            'reviewContext'          => $request->review_context,
+            'id'                     => $req->uuid,
+            'uuid'                   => $req->uuid,
+            'systemId'               => $req->id,
+            'number'                 => $req->number,
+            'revision'               => $req->revision,
+            'stage'                  => $req->stage->value,
+            'createdAt'              => $req->created_at->toISOString(),
+            'updatedAt'              => $req->updated_at->toISOString(),
+            'estimateVersion'        => $req->estimate_version,
+            'reviewContext'          => $req->review_context,
             'declinedStationIds' => $request->data['declinedStationIds'] ?? [],
-            'statusLabel' => Workflow::statusLabel($request),
-            'ownerLabel' => Workflow::ownerLabel($request),
-            'workChange' => app(WorkChangeService::class)->present($request, $dto),
-            'reviewBaselineVersion'  => $request->review_baseline_version,
-            'estimateChangedSinceReview' => app(RepairRequestService::class)->estimateChangedSinceReview($request),
+            'statusLabel' => Workflow::statusLabel($req),
+            'ownerLabel' => Workflow::ownerLabel($req),
+            'workChange' => app(WorkChangeService::class)->present($req, $dto),
+            'reviewBaselineVersion'  => $req->review_baseline_version,
+            'estimateChangedSinceReview' => app(RepairRequestService::class)->estimateChangedSinceReview($req),
             'vehicleId'              => $vehicle?->uuid ?? '',
             'vehicle'                => $vehicle?->name ?? '',
             'make'                   => $vehicle?->make ?? '',
@@ -152,8 +152,8 @@ final class ApiPresenter
             'company'                => $dto->role === UserRole::Station
                 ? ''
                 : ($vehicle?->organization?->name ?? ''),
-            'previousServiceMileage' => $request->previous_service_mileage,
-            'previousServiceAt'      => $request->previous_service_at?->toISOString(),
+            'previousServiceMileage' => $req->previous_service_mileage,
+            'previousServiceAt'      => $req->previous_service_at?->toISOString(),
             'laborRateType' => ($data['laborRateType'] ?? '') ?: 'general',
             'laborRates' => $dto->role === UserRole::Manager ? [
                 'general' => $vehicle?->laborRate('general'),
@@ -165,10 +165,10 @@ final class ApiPresenter
                     ? (float) $vehicle->laborRate($data['laborRateType'] ?? 'general') : null)
                 : null,
             'contactId'              => $contact?->uuid ?? '',
-            'contact'                => $this->formatContact($request, $data),
+            'contact'                => $this->formatContact($req, $data),
             'contactDetails'         => $request->contact_snapshot ?? $contact?->snapshot(),
             'driverId'               => $driver?->uuid ?? '',
-            'driver'                 => $this->formatDriver($request),
+            'driver'                 => $this->formatDriver($req),
             'driverDetails'          => $request->driver_snapshot ?? $driver?->snapshot(),
             'stationId'              => $station?->uuid ?? '',
             'station'                => $this->formatStation($station),
@@ -177,43 +177,41 @@ final class ApiPresenter
             'reasonSubtypeId'        => $request->reasonSubtype?->uuid ?? '',
             'reason'                 => $request->reasonRecord?->name ?? '',
             'diagnostics'            => $request->reasonSubtype?->name ?? '',
-            'plannedCompletionAt'    => $this->formatPlannedCompletionAt($request, $timezone),
-            'repairCompletedAt'      => $request->repair_completed_at?->toISOString(),
-            'overdueSeconds'         => $this->calculateOverdueSeconds($request),
-            'statusPeriods'          => $this->presentStatusPeriods($request),
-            'recommendations'        => $this->recommendationSummary($request, $dto),
-            'works'                  => $this->presentWorks($request, $dto),
-            'partMovements'          => $this->presentPartMovements($request),
-            'parts'                  => $this->presentParts($request, $dto),
-            'total'                  => (float) $this->repairRequestCalculator->total($request),
+            'plannedCompletionAt'    => $this->formatPlannedCompletionAt($req, $timezone),
+            'repairCompletedAt'      => $req->repair_completed_at?->toISOString(),
+            'overdueSeconds'         => $this->calculateOverdueSeconds($req),
+            'statusPeriods'          => $this->presentStatusPeriods($req),
+            'recommendations'        => $this->recommendationSummary($req, $dto),
+            'works'                  => $this->presentWorks($req, $dto),
+            'partMovements'          => $this->presentPartMovements($req),
+            'parts'                  => $this->presentParts($req, $dto),
+            'total'                  => (float) $this->repairRequestCalculator->total($req),
             ...(AgentDiscount::visibleTo($dto->role)
-                ? ['agentDiscount' => AgentDiscount::summary($request)]
+                ? ['agentDiscount' => AgentDiscount::summary($req)]
                 : []),
-            'history'                => $this->presentHistory($request, $timezone),
-            'attachments'            => $this->presentAttachments($request),
-            'currentPeriodId'        => $this->currentPeriodId($request),
-            'diagnosticReports'      => $this->presentDiagnosticReports($request),
-            'approvals'              => $this->presentApprovals($request),
-            'workOrder'              => $this->workOrder($request),
-            'invoice'                => $this->presentInvoice($request),
-            'acceptanceAct'          => $this->presentAcceptanceAct($request),
-            'closing'                => app(ClosingDocumentService::class)->present($request, $dto),
+            'history'                => $this->presentHistory($req, $timezone),
+            'attachments'            => $this->presentAttachments($req),
+            'currentPeriodId'        => $this->currentPeriodId($req),
+            'diagnosticReports'      => $this->presentDiagnosticReports($req),
+            'approvals'              => $this->presentApprovals($req),
+            'workOrder'              => $this->workOrder($req->workOrder),
+            'invoice'                => $this->presentInvoice($req),
+            'acceptanceAct'          => $this->presentAcceptanceAct($req),
+            'closing'                => app(ClosingDocumentService::class)->present($req, $dto),
             // Склад: нехватка ЗЧ у СТО (этапы 4/5) и «ЗЧ от УК» (галочка, Перемещение).
-            ...app(\App\Services\StockService::class)->presentRequest($request, $dto->role),
-            'permissions' => array_merge(Workflow::permissions($request, $dto), [
-                'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
-                    || $request->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
+            ...app(StockService::class)->presentRequest($req, $dto->role),
+            'permissions' => array_merge(Workflow::permissions($req, $dto), [
+                'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $req->stage->value >= RepairStage::CustomerApproval->value
+                    || $req->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
             ]),
-        ]), $user);
+        ]), $dto->role);
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    public function workOrder(RepairRequest $request): ?array
+    public function workOrder(?WorkOrder $order): ?array
     {
-        $order = $request->workOrder;
-
         if ($order === null) {
             return null;
         }
@@ -235,11 +233,11 @@ final class ApiPresenter
     /**
      * @return array<string, mixed>
      */
-    private function resolveData(RepairRequest $request): array
+    private function resolveData(RepairRequest $req): array
     {
         return array_replace(
             array_fill_keys(Workflow::TEXT_FIELDS, ''),
-            array_intersect_key($request->data, array_flip(Workflow::TEXT_FIELDS)),
+            array_intersect_key($req->data, array_flip(Workflow::TEXT_FIELDS)),
         );
     }
 
@@ -255,9 +253,9 @@ final class ApiPresenter
     /**
      * @param array<string, mixed> $data
      */
-    private function formatContact(RepairRequest $request, array $data): string
+    private function formatContact(RepairRequest $req, array $data): string
     {
-        $snapshot = $request->contact_snapshot;
+        $snapshot = $req->contact_snapshot;
 
         if (is_array($snapshot)) {
             return implode(' · ', array_filter([
@@ -269,9 +267,9 @@ final class ApiPresenter
         return (string) ($data['contact'] ?? '');
     }
 
-    private function formatDriver(RepairRequest $request): string
+    private function formatDriver(RepairRequest $req): string
     {
-        $snapshot = $request->driver_snapshot;
+        $snapshot = $req->driver_snapshot;
 
         if (!is_array($snapshot)) {
             return '';
@@ -283,33 +281,33 @@ final class ApiPresenter
         ]));
     }
 
-    private function formatPlannedCompletionAt(RepairRequest $request, string $timezone): string
+    private function formatPlannedCompletionAt(RepairRequest $req, string $timezone): string
     {
-        if ($request->planned_completion_at === null) {
+        if ($req->planned_completion_at === null) {
             return '';
         }
 
-        return $request->planned_completion_at
+        return $req->planned_completion_at
             ->setTimezone($timezone)
             ->format('Y-m-d\TH:i');
     }
 
-    private function calculateOverdueSeconds(RepairRequest $request): int
+    private function calculateOverdueSeconds(RepairRequest $req): int
     {
         if (
-            $request->planned_completion_at === null
-            || $request->stage->value < RepairStage::RepairInProgress->value
+            $req->planned_completion_at === null
+            || $req->stage->value < RepairStage::RepairInProgress->value
         ) {
             return 0;
         }
 
         $end = $request->repair_completed_at ?? now();
 
-        if (!$end->greaterThan($request->planned_completion_at)) {
+        if (!$end->greaterThan($req->planned_completion_at)) {
             return 0;
         }
 
-        return (int) $request->planned_completion_at->diffInSeconds($end);
+        return (int) $req->planned_completion_at->diffInSeconds($end);
     }
 
     /* ─────────────────── Секции: workLines, parts, movements ─────────────────── */
@@ -317,10 +315,10 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentWorks(RepairRequest $request, UserDto $dto): array
+    private function presentWorks(RepairRequest $req, UserDto $dto): array
     {
-        $workTypeIds = $request->workLines->pluck('work_type_id')->filter()->unique()->all();
-        $timeNormIds = $request->workLines->pluck('time_norm_id')->filter()->unique()->all();
+        $workTypeIds = $req->workLines->pluck('work_type_id')->filter()->unique()->all();
+        $timeNormIds = $req->workLines->pluck('time_norm_id')->filter()->unique()->all();
 
         $workTypes = WorkType::query()
             ->whereIn('id', $workTypeIds)
@@ -332,7 +330,7 @@ final class ApiPresenter
             ->get()
             ->keyBy('id');
 
-        return $request->workLines
+        return $req->workLines
             ->map(fn ($work) => array_merge([
                 'id'          => $work->uuid,
                 'name'        => $work->name,
@@ -367,12 +365,12 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentParts(RepairRequest $request, UserDto $dto): array
+    private function presentParts(RepairRequest $req, UserDto $dto): array
     {
-        $supplierIds = $request->parts->pluck('supplier_id')->filter()->unique()->all();
+        $supplierIds = $req->parts->pluck('supplier_id')->filter()->unique()->all();
         $suppliers = Supplier::query()->whereIn('id', $supplierIds)->get()->keyBy('id');
 
-        return $request->parts
+        return $req->parts
             ->map(function ($part) use ($suppliers, $dto): array {
                 $supplier = $suppliers->get($part->supplier_id);
 
@@ -405,9 +403,9 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentPartMovements(RepairRequest $request): array
+    private function presentPartMovements(RepairRequest $req): array
     {
-        $partIds = $request->parts->pluck('id')->all();
+        $partIds = $req->parts->pluck('id')->all();
 
         return PartMovement::query()
             ->whereIn('request_part_id', $partIds)
@@ -428,9 +426,9 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentStatusPeriods(RepairRequest $request): array
+    private function presentStatusPeriods(RepairRequest $req): array
     {
-        return $request->periods
+        return $req->periods
             ->map(fn ($period) => [
                 'id'        => $period->uuid,
                 'stage'     => $period->stage->value,
@@ -448,9 +446,9 @@ final class ApiPresenter
         return max(0, (int) $period->entered_at->diffInSeconds($end));
     }
 
-    private function currentPeriodId(RepairRequest $request): ?string
+    private function currentPeriodId(RepairRequest $req): ?string
     {
-        foreach ($request->periods as $period) {
+        foreach ($req->periods as $period) {
             if ($period->exited_at === null) {
                 return $period->uuid;
             }
@@ -462,9 +460,9 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentHistory(RepairRequest $request, string $timezone): array
+    private function presentHistory(RepairRequest $req, string $timezone): array
     {
-        return $request->events
+        return $req->events
             ->map(fn ($event) => [
                 'id'     => $event->uuid,
                 'time'   => $event->occurred_at->setTimezone($timezone)->format('d.m.Y H:i'),
@@ -479,13 +477,20 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentAttachments(RepairRequest $request): array
+    private function presentAttachments(RepairRequest $req): array
     {
-        $periodIds = $request->attachments->pluck('request_status_period_id')->filter()->unique()->all();
-        $periods = RequestStatusPeriod::query()->whereIn('id', $periodIds)->get()->keyBy('id');
+        $periodIds = $req->attachments
+            ->pluck('request_status_period_id')
+            ->filter()
+            ->unique()
+            ->all();
+        $periods = RequestStatusPeriod::query()
+            ->whereIn('id', $periodIds)
+            ->get()
+            ->keyBy('id');
 
-        return $request->attachments
-            ->reject(fn ($attachment) => $attachment->purpose === \App\Enums\AttachmentPurpose::GeneratedDocument)
+        return $req->attachments
+            ->reject(fn ($attachment) => $attachment->purpose === AttachmentPurpose::GeneratedDocument)
             ->values()
             ->map(fn ($attachment) => [
                 'id'       => $attachment->uuid,
@@ -504,9 +509,9 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentDiagnosticReports(RepairRequest $request): array
+    private function presentDiagnosticReports(RepairRequest $req): array
     {
-        return $request->diagnoses
+        return $req->diagnoses
             ->map(fn ($report) => [
                 'id'            => $report->uuid,
                 'conclusion'    => $report->conclusion,
@@ -520,9 +525,9 @@ final class ApiPresenter
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function presentApprovals(RepairRequest $request): array
+    private function presentApprovals(RepairRequest $req): array
     {
-        return $request->approvals
+        return $req->approvals
             ->map(fn ($approval) => [
                 'id'              => $approval->uuid,
                 'stage'           => $approval->stage->value,
@@ -537,9 +542,9 @@ final class ApiPresenter
     /**
      * @return array<string, mixed>|null
      */
-    private function presentAcceptanceAct(RepairRequest $request): ?array
+    private function presentAcceptanceAct(RepairRequest $req): ?array
     {
-        $act = $request->acceptanceAct;
+        $act = $req->acceptanceAct;
 
         if ($act === null) {
             return null;
@@ -567,9 +572,9 @@ final class ApiPresenter
     /**
      * @return array<string, mixed>|null
      */
-    private function presentInvoice(RepairRequest $request): ?array
+    private function presentInvoice(RepairRequest $req): ?array
     {
-        $invoice = $request->invoice;
+        $invoice = $req->invoice;
 
         if ($invoice === null) {
             return null;

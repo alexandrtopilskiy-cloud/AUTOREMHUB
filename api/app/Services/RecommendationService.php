@@ -18,6 +18,7 @@ use App\Support\ApiPresenter;
 use App\Support\CommercialVisibility;
 use App\Support\DomainInput as Input;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final class RecommendationService
 {
@@ -60,6 +61,7 @@ final class RecommendationService
 
     public function defer(User $user, string $key, int $revision, array $selection): array
     {
+        $userDto = UserDto::fromUserModel($user);
         Input::validate($selection, [
             'workIds' => ['present', 'array', 'list', 'max:200'],
             'workIds.*' => ['uuid', 'distinct'],
@@ -72,70 +74,75 @@ final class RecommendationService
         }
 
         $doc = null;
-        $request = $this->requests->mutate($user, $key, $revision, 'recommendations_deferred', function (RepairRequest $request) use ($user, $selection, &$doc): array {
-            $this->requests->flag($request, $user, 'canDeferRecommendations');
-            if (!$request->vehicle_id) {
-                Input::fail('Сначала выберите ТС');
-            }
-            $works = $request->workLines()
-                ->whereIn('uuid', $selection['workIds'])
-                ->get();
-            $parts = $request->parts()
-                ->whereIn('uuid', $selection['partIds'])
-                ->get();
-            if ($works->count() !== count($selection['workIds']) || $parts->count() !== count($selection['partIds'])) {
-                Input::fail('Выбранная позиция уже изменена или не принадлежит заявке');
-            }
-
-            foreach ($parts as $part) {
-                app(RequestPartService::class)->assertEditable($part);
-            }
-
-            // На стадии «В работе» перенос в рекомендации — изменение сметы,
-            // которое СТО отправляет на согласование УК и Заказчику.
-            WorkChangeService::begin($request);
-
-            $display = $this->presenter->document($request, $user);
-            $doc = $this->documentForVehicle($request, $user);
-            $actor = self::actorLabel($user);
-
-            $deferredLineIds = [];
-            $deferredItemIds = [];
-            foreach (['work' => $works, 'part' => $parts] as $kind => $lines) {
-                foreach ($lines as $line) {
-                    $shown = collect($display[$kind === 'work' ? 'works' : 'parts'])->firstWhere('id', $line->uuid);
-                    $deferredLineIds[] = $line->uuid;
-                    $deferredItemIds[] = RecommendationItem::query()->create([
-                        'recommendation_id'     => $doc->id,
-                        'source_request_id'     => $request->id,
-                        'kind'                  => $kind,
-                        'snapshot'              => $line->attributesToArray(),
-                        'display'               => $shown,
-                        'actor_id'              => $user->id,
-                        'actor_label'           => $actor,
-                    ])->uuid;
-                    $line->delete();
+        $req = $this->requests->mutate(
+            user: $user,
+            key: $key,
+            revision: $revision,
+            action: 'recommendations_deferred',
+            change: function (RepairRequest $req) use ($user, $userDto, $userDto, $selection, &$doc): array {
+                $this->requests->flag($req, $userDto, 'canDeferRecommendations');
+                if (!$req->vehicle_id) {
+                    Input::fail('Сначала выберите ТС');
                 }
-            }
-            // Ревизия документа не меняется: добавление строк не мешает
-            // переносу уже выбранных позиций (они проверяются по id).
-            WorkChangeService::recordDeferred($request, $deferredLineIds, $deferredItemIds, (string) $doc->number);
-            $this->requests->recommendationEstimateChanged($request, $user, false);
-            // Перенесены только позиции, добавленные в ходе ремонта: смета
-            // совпадает с согласованной, согласование работ / з/ч не нужно.
-            app(WorkChangeService::class)->clearIfUnchanged($request);
+                $works = $req->workLines()
+                    ->whereIn('uuid', $selection['workIds'])
+                    ->get();
+                $parts = $req->parts()
+                    ->whereIn('uuid', $selection['partIds'])
+                    ->get();
+                if ($works->count() !== count($selection['workIds']) || $parts->count() !== count($selection['partIds'])) {
+                    Input::fail('Выбранная позиция уже изменена или не принадлежит заявке');
+                }
 
-            return [
-                'comment' => 'Позиции добавлены в рекомендации ' . $doc->number,
-                'details' => [
-                    'recommendationId' => $doc->uuid,
-                    'selection' => $selection
-                ]
-            ];
-        });
+                foreach ($parts as $part) {
+                    app(RequestPartService::class)->assertEditable($part);
+                }
+
+                // На стадии «В работе» перенос в рекомендации — изменение сметы,
+                // которое СТО отправляет на согласование УК и Заказчику.
+                WorkChangeService::begin($req);
+
+                $display = $this->presenter->document($req, $userDto);
+                $doc = $this->documentForVehicle($req, $user);
+                $actor = self::actorLabel($user);
+
+                $deferredLineIds = [];
+                $deferredItemIds = [];
+                foreach (['work' => $works, 'part' => $parts] as $kind => $lines) {
+                    foreach ($lines as $line) {
+                        $shown = collect($display[$kind === 'work' ? 'works' : 'parts'])->firstWhere('id', $line->uuid);
+                        $deferredLineIds[] = $line->uuid;
+                        $deferredItemIds[] = RecommendationItem::query()->create([
+                            'recommendation_id'     => $doc->id,
+                            'source_request_id'     => $req->id,
+                            'kind'                  => $kind,
+                            'snapshot'              => $line->attributesToArray(),
+                            'display'               => $shown,
+                            'actor_id'              => $userDto->userId,
+                            'actor_label'           => $actor,
+                        ])->uuid;
+                        $line->delete();
+                    }
+                }
+                // Ревизия документа не меняется: добавление строк не мешает
+                // переносу уже выбранных позиций (они проверяются по id).
+                WorkChangeService::recordDeferred($req, $deferredLineIds, $deferredItemIds, (string) $doc->number);
+                $this->requests->recommendationEstimateChanged($req, $userDto, false);
+                // Перенесены только позиции, добавленные в ходе ремонта: смета
+                // совпадает с согласованной, согласование работ / з/ч не нужно.
+                app(WorkChangeService::class)->clearIfUnchanged($req);
+
+                return [
+                    'comment' => 'Позиции добавлены в рекомендации ' . $doc->number,
+                    'details' => [
+                        'recommendationId' => $doc->uuid,
+                        'selection' => $selection
+                    ]
+                ];
+            });
 
         return [
-            'request' => $this->presenter->document($request, $user),
+            'request' => $this->presenter->document($req, $userDto),
             'recommendation' => $this->present($doc->fresh(self::RELATIONS), $user)
         ];
     }
@@ -144,10 +151,17 @@ final class RecommendationService
      * Один документ рекомендаций на ТС: при первом переносе он создаётся,
      * последующие переносы из любых ЗР добавляют в него новые строки.
      */
-    private function documentForVehicle(RepairRequest $request, User $user): Recommendation
+    private function documentForVehicle(RepairRequest $req, User $user): Recommendation
     {
-        $attributes = ['tenant_id' => $request->tenant_id, 'vehicle_id' => $request->vehicle_id];
-        $doc = Recommendation::query()->where($attributes)->lockForUpdate()->first();
+        $userDto = UserDto::fromUserModel($user);
+        $attributes = [
+            'tenant_id' => $req->tenant_id,
+            'vehicle_id' => $req->vehicle_id,
+        ];
+        $doc = Recommendation::query()
+            ->where($attributes)
+            ->lockForUpdate()
+            ->first();
 
         if ($doc === null) {
             // Параллельный первый перенос по тому же ТС: уникальный индекс
@@ -157,13 +171,13 @@ final class RecommendationService
                  VALUES (?, ?, ?, ?, ?, ?, ?, 0, now(), now())
                  ON CONFLICT (tenant_id, vehicle_id) DO NOTHING',
                 [
-                    (string) \Illuminate\Support\Str::uuid(),
-                    $request->tenant_id,
-                    $request->vehicle_id,
-                    $request->customer_organization_id,
-                    $request->id,
-                    $user->id,
-                    $request->vehicleRecord->vin,
+                    Str::uuid()->toString(),
+                    $req->tenant_id,
+                    $req->vehicle_id,
+                    $req->customer_organization_id,
+                    $req->id,
+                    $userDto->userId,
+                    $req->vehicleRecord->vin,
                 ],
             );
             $doc = Recommendation::query()->where($attributes)->lockForUpdate()->firstOrFail();
@@ -173,9 +187,9 @@ final class RecommendationService
             $doc->number = 'REC-' . str_pad((string) $doc->id, 6, '0', STR_PAD_LEFT);
         }
         $doc->forceFill([
-            'customer_organization_id' => $request->customer_organization_id,
-            'source_request_id'        => $request->id,
-            'vin'                      => $request->vehicleRecord->vin,
+            'customer_organization_id' => $req->customer_organization_id,
+            'source_request_id'        => $req->id,
+            'vin'                      => $req->vehicleRecord->vin,
         ])->save();
 
         return $doc;
@@ -253,6 +267,7 @@ final class RecommendationService
     /** Перенос из нескольких пакетов REC выполняется одной транзакцией и одной ревизией заявки. */
     public function restoreMany(User $user, array $documents, ?string $requestId, ?int $requestRevision): array
     {
+        $userDto = UserDto::fromUserModel($user);
         Input::validate(['documents' => $documents], [
             'documents' => ['required', 'array', 'list', 'min:1', 'max:200'],
             'documents.*' => ['array:id,revision,itemIds'],
@@ -262,10 +277,10 @@ final class RecommendationService
             'documents.*.itemIds.*' => ['required', 'uuid', 'distinct'],
         ]);
 
-        return DB::transaction(function () use ($user, $documents, $requestId, $requestRevision): array {
-            $dto = UserDto::fromUserModel($user);
-            $existing = $requestId ? RepairRequest::resolveFor($dto, $requestId, true) : null;
-            $docs = Recommendation::forUser($dto)
+        return DB::transaction(function () use ($user, $userDto, $documents, $requestId, $requestRevision): array {
+
+            $existing = $requestId ? RepairRequest::resolveFor($userDto, $requestId, true) : null;
+            $docs = Recommendation::forUser($userDto)
                 ->whereIn('uuid', array_column($documents, 'id'))
                 ->orderBy('id')
                 ->lockForUpdate()
@@ -281,7 +296,7 @@ final class RecommendationService
             $first = $docs->first();
 
             foreach ($docs as $doc) {
-                $this->locks->assertAvailable($dto, 'recommendation', $doc->uuid);
+                $this->locks->assertAvailable($userDto, 'recommendation', $doc->uuid);
                 $selection = $selections->get($doc->uuid);
 
                 if ($doc->revision !== (int) $selection['revision']) {
@@ -311,7 +326,7 @@ final class RecommendationService
 
             // Новую заявку из рекомендаций создаёт только Заказчик; УК и СТО
             // переносят позиции в ЗР, из которой открыли рекомендации.
-            if ($existing === null && $user->role !== UserRole::Customer) {
+            if ($existing === null && $userDto->role !== UserRole::Customer) {
                 throw new ApiException(403, 'FORBIDDEN', 'Создать заявку из рекомендаций может только Заказчик');
             }
 
@@ -321,30 +336,35 @@ final class RecommendationService
                 Input::fail('Рекомендации можно переносить только в заявку для того же VIN');
             }
 
-            $request = $this->requests->mutate($user, $target->uuid, $existing ? ($requestRevision ?? -1) : $target->revision, 'recommendations_restored', function (RepairRequest $request) use ($user, $items, $docs): array {
-                $this->requests->flag($request, $user, 'canRestoreRecommendations');
-                // На стадии «В работе» добавленные позиции — изменение сметы,
-                // которое СТО отправляет на согласование УК и Заказчику.
-                WorkChangeService::begin($request);
-                foreach ($items as $item) {
-                    $this->restoreItem($request, $item);
-                    $item->target_request_id = $request->id;
-                    $item->moved_at = now();
-                    $item->save();
-                }
+            $request = $this->requests->mutate(
+                user: $user,
+                key: $target->uuid,
+                revision: $existing ? ($requestRevision ?? -1) : $target->revision,
+                action: 'recommendations_restored',
+                change: function (RepairRequest $request) use ($userDto, $dto, $items, $docs): array {
+                    $this->requests->flag($request, $userDto, 'canRestoreRecommendations');
+                    // На стадии «В работе» добавленные позиции — изменение сметы,
+                    // которое СТО отправляет на согласование УК и Заказчику.
+                    WorkChangeService::begin($request);
+                    foreach ($items as $item) {
+                        $this->restoreItem($request, $item);
+                        $item->target_request_id = $request->id;
+                        $item->moved_at = now();
+                        $item->save();
+                    }
 
-                WorkChangeService::recordRestored($request, $items->pluck('uuid')->all());
-                $this->requests->recommendationEstimateChanged($request, $user, true);
+                    WorkChangeService::recordRestored($request, $items->pluck('uuid')->all());
+                    $this->requests->recommendationEstimateChanged($request, $dto, true);
 
-                return [
-                    'comment' => 'Позиции добавлены из рекомендаций ' . $docs->pluck('number')->implode(', '),
-                    'details' => [
-                        'recommendationIds' => $docs->pluck('uuid')->all(),
-                        'items' => $items->pluck('uuid')->all(),
-                    ],
-                    'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $user->role->value, $event->id)
-                ];
-            });
+                    return [
+                        'comment' => 'Позиции добавлены из рекомендаций ' . $docs->pluck('number')->implode(', '),
+                        'details' => [
+                            'recommendationIds' => $docs->pluck('uuid')->all(),
+                            'items' => $items->pluck('uuid')->all(),
+                        ],
+                        'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $dto->role, $event->id)
+                    ];
+                });
 
             foreach ($docs as $doc) {
                 $doc->revision++;
@@ -352,7 +372,7 @@ final class RecommendationService
             }
 
             return [
-                'request' => $this->presenter->document($request, $user),
+                'request' => $this->presenter->document($request, $userDto),
                 'recommendations' => $docs->map(fn ($doc) => $this->present($doc->fresh(self::RELATIONS), $user))->all(),
             ];
         }, 3);
@@ -470,6 +490,10 @@ final class RecommendationService
             ])->values()->all(),
         ];
 
-        return $user === null ? $data : CommercialVisibility::forUser($data, $user);
+        if ($user) {
+            return CommercialVisibility::forUser($data, $user->role);
+        }
+
+        return $data;
     }
 }

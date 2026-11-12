@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\CatalogKind;
 use App\Enums\PartMovementKind;
 use App\Enums\RequestPartStatus;
-use App\Enums\UserRole;
 use App\Http\Requests\MovePartRequest;
 use App\Http\Requests\RemovePartRequest;
 use App\Http\Requests\StorePartRequest;
@@ -26,6 +24,7 @@ use App\Support\ApiInput;
 use App\Support\ApiPresenter;
 use App\Support\DomainInput as Input;
 use Illuminate\Http\JsonResponse;
+use App\DTO\UserDto;
 
 final class PartController
 {
@@ -48,16 +47,18 @@ final class PartController
 
     public function remove(RemovePartRequest $request, string $id, string $partId): JsonResponse
     {
-        $repairRequest = $this->service->mutate(
-            $request->user(),
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+        $req = $this->service->mutate(
+            $user,
             $id,
             ApiInput::revision($request),
             'part_removed',
-            function (RepairRequest $repairRequest) use ($request, $partId): array {
-                $this->service->flag($repairRequest, $request->user(), 'canEditParts');
-                WorkChangeService::begin($repairRequest);
+            function (RepairRequest $req) use ($userDto, $partId): array {
+                $this->service->flag($req, $userDto, 'canEditParts');
+                WorkChangeService::begin($req);
 
-                $part = $repairRequest->parts()->where('uuid', $partId)->firstOrFail();
+                $part = $req->parts()->where('uuid', $partId)->firstOrFail();
 
                 $hasMovements = PartMovement::query()
                     ->where('request_part_id', $part->id)
@@ -70,19 +71,21 @@ final class PartController
                 $name = $part->name;
                 $part->delete();
 
-                $this->service->markEstimateChanged($repairRequest);
+                $this->service->markEstimateChanged($req);
 
                 return ['comment' => 'Удалена несогласованная позиция: ' . $name];
             },
         );
 
         return response()->json([
-            'request' => $this->apiPresenter->document($repairRequest, $request->user()),
+            'request' => $this->apiPresenter->document($req, $userDto),
         ]);
     }
 
     public function status(UpdatePartStatusRequest $request, string $id, string $partId): JsonResponse
     {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         $comment = trim((string) $request->validated('comment'));
 
         if ($comment === '') {
@@ -91,17 +94,17 @@ final class PartController
 
         $status = RequestPartStatus::from((string) $request->validated('status'));
 
-        $repairRequest = $this->service->mutate(
-            $request->user(),
+        $req = $this->service->mutate(
+            $user,
             $id,
             ApiInput::revision($request),
             'part_status',
-            function (RepairRequest $repairRequest) use ($request, $status, $comment, $partId): array {
-                $this->service->flag($repairRequest, $request->user(), 'canManageParts');
+            function (RepairRequest $req) use ($userDto, $status, $comment, $partId): array {
+                $this->service->flag($req, $userDto, 'canManageParts');
 
-                $part = $repairRequest->parts()->where('uuid', $partId)->firstOrFail();
+                $part = $req->parts()->where('uuid', $partId)->firstOrFail();
 
-                if ($part->approved_version !== $repairRequest->estimate_version) {
+                if ($part->approved_version !== $req->estimate_version) {
                     Input::fail('Запчасть ещё не согласована');
                 }
 
@@ -116,19 +119,20 @@ final class PartController
                 $part->update(['status' => $status]);
 
                 return [
-                    'comment' => 'Запчасть ' . $part->name . ': '
-                        . $status->value . '. ' . $comment,
+                    'comment' => 'Запчасть ' . $part->name . ': ' . $status->value . '. ' . $comment,
                 ];
             },
         );
 
         return response()->json([
-            'request' => $this->apiPresenter->document($repairRequest, $request->user()),
+            'request' => $this->apiPresenter->document($req, $userDto),
         ]);
     }
 
     public function movement(MovePartRequest $request, string $id, string $partId): JsonResponse
     {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         $comment = trim((string) $request->validated('comment'));
 
         if ($comment === '') {
@@ -140,13 +144,13 @@ final class PartController
         $attachmentIds = $request->validated('attachmentIds');
         $replacementId = $request->validated('replacementPartId');
 
-        $repairRequest = $this->service->mutate(
-            $request->user(),
+        $req = $this->service->mutate(
+            $user,
             $id,
             ApiInput::revision($request),
             'part_movement',
-            function (RepairRequest $repairRequest) use (
-                $request,
+            function (RepairRequest $req) use (
+                $userDto,
                 $kind,
                 $qty,
                 $comment,
@@ -154,9 +158,9 @@ final class PartController
                 $replacementId,
                 $partId,
             ): array {
-                $this->service->flag($repairRequest, $request->user(), 'canManageParts');
+                $this->service->flag($req, $userDto, 'canManageParts');
 
-                $part = $repairRequest->parts()
+                $part = $req->parts()
                     ->where('uuid', $partId)
                     ->lockForUpdate()
                     ->firstOrFail();
@@ -172,19 +176,19 @@ final class PartController
                 }
 
                 $replacement = $this->resolveReplacement(
-                    $repairRequest,
+                    $req,
                     $kind,
                     $replacementId,
                     $part,
                     $qty,
                 );
 
-                $files = $this->service->attachmentIds($repairRequest, $attachmentIds);
+                $files = $this->service->attachmentIds($req, $attachmentIds);
 
                 PartMovement::create([
                     'request_part_id'     => $part->id,
                     'replacement_part_id' => $replacement?->id,
-                    'actor_id'            => $request->user()->id,
+                    'actor_id'            => $userDto->userId,
                     'kind'                => $kind,
                     'quantity'            => $qty,
                     'comment'             => $comment,
@@ -202,8 +206,7 @@ final class PartController
                 $part->save();
 
                 return [
-                    'comment' => $kind->label() . ' запчасти '
-                        . $part->name . ': ' . $comment,
+                    'comment' => $kind->label() . ' запчасти ' . $part->name . ': ' . $comment,
                     'after'   => function ($event) use ($files): void {
                         Attachment::query()
                             ->whereIn('id', array_map(static fn ($file) => $file->id, $files))
@@ -214,7 +217,7 @@ final class PartController
         );
 
         return response()->json([
-            'request' => $this->apiPresenter->document($repairRequest, $request->user()),
+            'request' => $this->apiPresenter->document($req, $userDto),
         ]);
     }
 
@@ -223,6 +226,8 @@ final class PartController
      */
     private function save(StorePartRequest $request, string $id, ?string $partId): JsonResponse
     {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         $name = trim((string) $request->validated('name'));
 
         if ($name === '') {
@@ -236,13 +241,13 @@ final class PartController
         $quantity = (string) $request->validated('qty');
         $price = $request->validated('price');
 
-        $repairRequest = $this->service->mutate(
-            $request->user(),
+        $req = $this->service->mutate(
+            $user,
             $id,
             ApiInput::revision($request),
             'part',
-            function (RepairRequest $repairRequest) use (
-                $request,
+            function (RepairRequest $req) use (
+                $userDto,
                 $name,
                 $article,
                 $unit,
@@ -252,21 +257,16 @@ final class PartController
                 $price,
                 $partId,
             ): array {
-                $this->service->flag($repairRequest, $request->user(), 'canEditParts');
-                WorkChangeService::begin($repairRequest);
+                $this->service->flag($req, $userDto, 'canEditParts');
+                WorkChangeService::begin($req);
 
                 $part = $partId
-                    ? $repairRequest->parts()->where('uuid', $partId)->firstOrFail()
-                    : new RequestPart(['repair_request_id' => $repairRequest->id]);
-                $supplier = $this->resolveSupplier($repairRequest, $supplierId);
-                $catalogPart = ($part->exists && !$part->catalog_part_id && empty($catalogPartId)) ? null : $this->resolveCatalogPart(
-                    $request->user(),
-                    $repairRequest,
-                    $catalogPartId ?: $part->catalogPart?->uuid,
-                    $name,
-                    $article,
-                    $unit,
-                );
+                    ? $req->parts()->where('uuid', $partId)->firstOrFail()
+                    : new RequestPart(['repair_request_id' => $req->id]);
+                $supplier = $this->resolveSupplier($req, $supplierId);
+                $catalogPart = ($part->exists && !$part->catalog_part_id && empty($catalogPartId))
+                    ? null
+                    : $this->resolveCatalogPart($req, $catalogPartId ?: $part->catalogPart?->uuid);
 
 
                 if ($part->exists && !$part->status->isEditable()) {
@@ -291,52 +291,46 @@ final class PartController
 
                 $part->save();
 
-                $this->service->markEstimateChanged($repairRequest);
+                $this->service->markEstimateChanged($req);
 
                 return ['comment' => 'Сохранена запчасть: ' . $part->name];
             },
         );
 
         return response()->json(
-            ['request' => $this->apiPresenter->document($repairRequest, $request->user())],
+            ['request' => $this->apiPresenter->document($req, $userDto)],
             $partId ? 200 : 201,
         );
     }
 
-    private function resolveSupplier(RepairRequest $repairRequest, mixed $supplierId): ?Supplier
+    private function resolveSupplier(RepairRequest $req, mixed $supplierId): ?Supplier
     {
         if (empty($supplierId)) {
             return null;
         }
 
         return Supplier::query()
-            ->where('tenant_id', $repairRequest->tenant_id)
+            ->where('tenant_id', $req->tenant_id)
             ->where('active', true)
             ->where('uuid', $supplierId)
             ->firstOrFail();
     }
 
-    private function resolveCatalogPart(
-        User $user,
-        RepairRequest $repairRequest,
-        mixed $catalogPartId,
-        string $name,
-        string $article,
-        string $unit,
-    ): ?CatalogPart {
-        if (!empty($catalogPartId)) {
-            return CatalogPart::query()
-                ->where('tenant_id', $repairRequest->tenant_id)
-                ->where('active', true)
-                ->where('uuid', $catalogPartId)
-                ->firstOrFail();
+    private function resolveCatalogPart(RepairRequest $req, mixed $catalogPartId): ?CatalogPart
+    {
+        if (empty($catalogPartId)) {
+            Input::fail('Выберите запчасть из справочника или сначала создайте её со всеми обязательными реквизитами', 'catalogPartId');
         }
 
-        Input::fail('Выберите запчасть из справочника или сначала создайте её со всеми обязательными реквизитами', 'catalogPartId');
+        return CatalogPart::query()
+            ->where('tenant_id', $req->tenant_id)
+            ->where('active', true)
+            ->where('uuid', $catalogPartId)
+            ->firstOrFail();
     }
 
     private function resolveReplacement(
-        RepairRequest $repairRequest,
+        RepairRequest $req,
         PartMovementKind $kind,
         mixed $replacementId,
         RequestPart $part,
@@ -350,7 +344,7 @@ final class PartController
             Input::fail('Выберите согласованную позицию на замену');
         }
 
-        $replacement = $repairRequest->parts()->where('uuid', $replacementId)->firstOrFail();
+        $replacement = $req->parts()->where('uuid', $replacementId)->firstOrFail();
 
         $replacementRemaining = bcsub(
             (string) $replacement->quantity,
@@ -360,7 +354,7 @@ final class PartController
 
         if (
             $replacement->id === $part->id
-            || $replacement->approved_version !== $repairRequest->estimate_version
+            || $replacement->approved_version !== $req->estimate_version
             || bccomp($replacementRemaining, $qty, 3) < 0
         ) {
             Input::fail('Замена должна быть отдельно согласована и иметь достаточное количество');

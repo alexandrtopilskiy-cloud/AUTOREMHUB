@@ -17,7 +17,7 @@ final class ApiErrorRenderer
     /**
      * @return array{0: int, 1: string, 2: string, 3: array<string, string>, 4: array<string, string>}
      */
-    public static function resolve(Throwable $e, Request $request): array
+    public static function resolve(Throwable $e): array
     {
         $status = 500;
         $code = 'SERVER_ERROR';
@@ -66,9 +66,9 @@ final class ApiErrorRenderer
         return [$status, $code, $message, $fields, $headers];
     }
 
-    public static function render(Throwable $e, Request $request): JsonResponse
+    public static function render(Throwable $e): JsonResponse
     {
-        [$status, $code, $message, $fields, $headers] = self::resolve($e, $request);
+        [$status, $code, $message, $fields, $headers] = self::resolve($e);
 
         $error = [
             'code'    => $code,
