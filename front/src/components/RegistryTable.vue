@@ -49,6 +49,14 @@ export default {
     };
   },
   methods: {
+    /** Название СТО-партнёра, которой передана ЗР (без адреса). */
+    stationName(item) {
+      return (
+        item?.stationDetails?.name ||
+        String(item?.station || "").split(" · ")[0] ||
+        ""
+      ).trim();
+    },
     money,
     total,
     formatDateTime,
@@ -221,7 +229,25 @@ export default {
                 >
                   {{ item.statusLabel || step(item.stage).status }}
                 </span>
-                <small>{{ item.ownerLabel || step(item.stage).owner }}</small>
+                <small
+                  v-if="stationName(item)"
+                  class="registry-station"
+                  :title="item.station || stationName(item)"
+                  >СТО: {{ stationName(item) }}</small
+                >
+                <small
+                  v-if="item.company && user.role !== 'customer'"
+                  class="registry-station"
+                  :title="item.company"
+                  >Заказчик: {{ item.company }}</small
+                >
+                <small
+                  v-if="
+                    !stationName(item) &&
+                    !(item.company && user.role !== 'customer')
+                  "
+                  >{{ item.ownerLabel || step(item.stage).owner }}</small
+                >
                 <small v-if="item.overdueSeconds" class="overdue">
                   Превышен плановый срок
                 </small>

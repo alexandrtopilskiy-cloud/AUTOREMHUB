@@ -3343,6 +3343,11 @@ body.is-resizing-column {
   margin: 12px 0;
 }
 
+.registry-station {
+  color: var(--blue-dark);
+  font-weight: 600;
+}
+
 .overdue {
   color: var(--amber-overdue);
   font-weight: 600;
