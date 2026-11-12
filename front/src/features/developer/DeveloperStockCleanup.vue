@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import FormAlert from "../../components/FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace.js";
 import { money } from "../../data/permissions.js";
@@ -76,7 +76,7 @@ async function load() {
     try {
         const data = await marketplaceApi.developerStockDocuments();
         rows.value = data.documents || [];
-        maxDelete.value = data.maxDelete || 200;
+        maxDelete.value = Math.min(data.maxDelete || 25, 25);
         const ids = new Set(rows.value.map((row) => row.id));
         selected.value = new Set([...selected.value].filter((id) => ids.has(id)));
     } catch (exception) {
@@ -93,12 +93,19 @@ function toggle(row) {
     selected.value = next;
 }
 
+/* Выделение всегда в пределах текущего фильтра: «выбрать все» выделяет ровно
+ * отфильтрованные строки, повторный клик снимает выделение целиком. */
 function toggleAll() {
-    const next = new Set(selected.value);
-    if (allListedSelected.value) listed.value.forEach((row) => next.delete(row.id));
-    else listed.value.forEach((row) => next.add(row.id));
-    selected.value = next;
+    selected.value = allListedSelected.value ? new Set() : new Set(listed.value.map((row) => row.id));
 }
+
+/* При смене фильтра строки, ушедшие из списка, перестают быть выделенными. */
+watch(listed, (rowsInFilter) => {
+    const visible = new Set(rowsInFilter.map((row) => row.id));
+    if ([...selected.value].some((id) => !visible.has(id))) {
+        selected.value = new Set([...selected.value].filter((id) => visible.has(id)));
+    }
+});
 
 function clearSelection() {
     selected.value = new Set();
@@ -148,6 +155,12 @@ async function confirmDelete() {
         }
         result.value = { deleted: deleted.length, payments, failed: ids.length - deleted.length };
         if (!error.value) dialogOpen.value = false;
+        // После ошибки часть набора могла удалиться на сервере — сверяем список.
+        else {
+            const message = error.value;
+            await load();
+            error.value = error.value || message;
+        }
     }
 }
 
