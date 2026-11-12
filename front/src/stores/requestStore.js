@@ -712,6 +712,19 @@ export function createRequestStore(api) {
             }
         },
 
+        /** ЗР удалены на сервере (меню «Разработчик»): убираем их из кэша и реестра. */
+        forgetRequests(ids) {
+            const gone = new Set(ids);
+            this.requests = this.requests.filter((request) => !gone.has(request.id));
+            this.registry.rows = this.registry.rows.filter((request) => !gone.has(request.id));
+            for (const id of gone) {
+                baselines.delete(id);
+                acceptedAt.delete(id);
+                delete this.pending[id];
+            }
+            this.reloadRegistrySilently();
+        },
+
         async deleteDrafts(ids) {
             if (this.busy) {
                 throw new Error("Дождитесь завершения текущей операции");

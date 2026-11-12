@@ -306,6 +306,93 @@ final class ClosingRouteTest extends TestCase
         $this->assertSame(['out', 'customer_payment', 1500.0], [$rows[0]['direction'], $rows[0]['article'], (float) $rows[0]['amount']]);
     }
 
+    public function test_developer_deletes_closed_request_with_files_and_records(): void
+    {
+        $this->test_full_closing_route();
+        $uuid = $this->request->uuid;
+        $id = $this->request->id;
+
+        // Чат с файлом и строка Рекомендаций из этой ЗР.
+        $this->actingAs($this->users['manager']);
+        $this->api('POST', "/requests/{$uuid}/chat")->assertSuccessful();
+        $this->call('POST', "/api/requests/{$uuid}/chat/messages", ['text' => 'Фото'], [],
+            ['files' => [UploadedFile::fake()->createWithContent('a.pdf', "%PDF-1.4\n%%EOF")]],
+            ['HTTP_ACCEPT' => 'application/json'])->assertSuccessful();
+        $recommendation = \App\Models\Recommendation::query()->create([
+            'uuid' => (string) Str::uuid(), 'tenant_id' => $this->request->tenant_id,
+            'vehicle_id' => $this->request->vehicle_id, 'customer_organization_id' => $this->request->customer_organization_id,
+            'source_request_id' => $id, 'vin' => 'XTA00000000000001',
+        ]);
+        \Illuminate\Support\Facades\DB::table('recommendation_items')->insert([
+            'uuid' => (string) Str::uuid(), 'recommendation_id' => $recommendation->id, 'kind' => 'work',
+            'snapshot' => '{}', 'display' => '{}', 'actor_label' => 'УК', 'source_request_id' => $id, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $files = array_merge(
+            \App\Models\Attachment::query()->where('repair_request_id', $id)->get(['disk', 'object_key'])->map(fn ($a) => [$a->disk, $a->object_key])->all(),
+            \Illuminate\Support\Facades\DB::table('request_chat_files')->get(['disk', 'object_key'])->map(fn ($a) => [$a->disk, $a->object_key])->all(),
+        );
+        $this->assertNotEmpty($files);
+        foreach ($files as [$disk, $key]) {
+            Storage::disk($disk)->assertExists($key);
+        }
+        $this->assertTrue(\App\Models\StockMovement::query()->where('source_type', 'repair_request')->where('source_id', $id)->exists());
+
+        // Только УК видит меню и может удалять.
+        $this->assertTrue($this->get('/api/session')->json('user.permissions.canUseDeveloperTools'));
+        $this->actingAs($this->users['station']);
+        $this->assertFalse($this->get('/api/session')->json('user.permissions.canUseDeveloperTools'));
+        $this->get('/api/developer/requests')->assertForbidden();
+        $this->api('POST', '/developer/requests/delete', ['ids' => [$uuid]])->assertForbidden();
+
+        $this->actingAs($this->users['manager']);
+        // «Прочитать все уведомления во всех ЛК».
+        foreach ($this->users as $role => $recipient) {
+            \App\Models\RequestNotification::query()->create([
+                'uuid' => (string) Str::uuid(), 'user_id' => $recipient->id, 'repair_request_id' => $id,
+                'kind' => 'test', 'title' => 'Тест', 'message' => $role,
+            ]);
+        }
+        $stats = $this->get('/api/developer/notifications')->assertOk()->json();
+        $this->assertGreaterThanOrEqual(3, $stats['total']);
+        $this->assertEqualsCanonicalizing(['customer', 'manager', 'station'], array_unique(array_column($stats['users'], 'role')));
+        $this->assertSame($stats['total'], $this->api('POST', '/developer/notifications/read-all')->assertOk()->json('read'));
+        $this->assertSame(0, $this->get('/api/developer/notifications')->json('total'));
+        $this->actingAs($this->users['customer']);
+        $this->assertSame([], $this->get('/api/notifications')->json('notifications'));
+        $this->api('POST', '/developer/notifications/read-all')->assertForbidden();
+
+        $this->actingAs($this->users['manager']);
+        $list = $this->get('/api/developer/requests')->assertOk()->json('requests');
+        $this->assertSame([$uuid], array_column($list, 'id'));
+        $this->assertSame(count($files), $list[0]['files']);
+
+        $result = $this->api('POST', '/developer/requests/delete', ['ids' => [$uuid]])->assertOk()->json();
+        $this->assertSame([$uuid], $result['deletedIds']);
+        $this->assertSame(count($files), $result['files']);
+
+        $this->assertNull(RepairRequest::query()->find($id));
+        foreach ([
+            'attachments', 'request_documents', 'invoices', 'vehicle_acceptance_acts', 'work_orders',
+            'vehicle_service_records', 'request_events', 'request_approvals', 'request_works', 'request_parts', 'request_chats',
+            'request_notifications', 'request_status_periods',
+        ] as $table) {
+            $this->assertSame(0, \Illuminate\Support\Facades\DB::table($table)->where('repair_request_id', $id)->count(), $table);
+        }
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('request_chat_files')->count());
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('edo_documents')->where('source_type', RepairRequest::class)->where('source_id', $id)->count());
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('recommendation_items')->where('source_request_id', $id)->count());
+        $this->assertNull(\App\Models\Recommendation::query()->find($recommendation->id));
+        $this->assertFalse(\App\Models\StockMovement::query()->where('source_type', 'repair_request')->where('source_id', $id)->exists());
+        foreach ($files as [$disk, $key]) {
+            Storage::disk($disk)->assertMissing($key);
+        }
+        $this->get("/api/requests/{$uuid}")->assertNotFound();
+        $this->assertSame([], $this->get('/api/developer/requests')->json('requests'));
+        $this->api('POST', '/developer/requests/delete', ['ids' => [$uuid]])->assertNotFound();
+        $this->api('POST', '/developer/requests/delete', ['ids' => []])->assertStatus(422);
+    }
+
     public function test_report_excludes_requests_before_customer_payment(): void
     {
         $this->actingAs($this->users['manager']);

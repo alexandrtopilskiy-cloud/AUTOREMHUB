@@ -1319,6 +1319,48 @@ export const marketplaceApi = {
         return http.request("/reports/cash-flow");
     },
 
+    /* ─── Меню «Разработчик» (ЛК УК) ─── */
+
+    /** @returns {Promise<{requests: object[], maxDelete: number}>} */
+    developerRequests() {
+        return http.request("/developer/requests");
+    },
+
+    /**
+     * Удаляет ЗР со всеми файлами и связанными записями.
+     *
+     * @param {string[]} ids
+     * @returns {Promise<{deletedIds: string[], files: number, removed: object}>}
+     */
+    developerDeleteRequests(ids) {
+        return http.request("/developer/requests/delete", { method: "POST", body: { ids } });
+    },
+
+    /** @returns {Promise<{documents: object[], maxDelete: number}>} */
+    developerStockDocuments() {
+        return http.request("/developer/stock-documents");
+    },
+
+    /**
+     * Удаляет Приходы и Реализации с оплатами и движениями по складу.
+     *
+     * @param {string[]} ids
+     * @returns {Promise<{deletedIds: string[], movements: number, payments: number}>}
+     */
+    developerDeleteStockDocuments(ids) {
+        return http.request("/developer/stock-documents/delete", { method: "POST", body: { ids } });
+    },
+
+    /** @returns {Promise<{users: object[], total: number}>} */
+    developerNotifications() {
+        return http.request("/developer/notifications");
+    },
+
+    /** @returns {Promise<{read: number}>} */
+    developerReadAllNotifications() {
+        return http.request("/developer/notifications/read-all", { method: "POST", body: {} });
+    },
+
     /* ─── Склад ─── */
 
     warehouseSettings() {
