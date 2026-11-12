@@ -6,7 +6,7 @@ import {readRequest} from '../src/api/marketplace.js'
 import {requestFields} from '../src/data/permissions.js'
 import {workflow,statusClass} from '../src/data/workflow.js'
 const record=()=>({id:'dc917bc8-66aa-45f8-82ec-4c20fcb8da8f',number:'ZR-000001',revision:0,stage:0,...Object.fromEntries(requestFields.map(k=>[k,k==='works'?[]:''])),parts:[],permissions:{editableFields:requestFields,canAdvance:true,canDeleteDraft:true}})
-const fixture=()=>{let rows=[];let notifications=[];return {listRequests:async()=>structuredClone(rows),listCatalogs:async()=>[],references:async()=>({reasons:[]}),listNotifications:async()=>structuredClone(notifications),chatSummary:async()=>({chats:[],unreadTotal:0}),readNotification:async id=>{const index=notifications.findIndex(item=>item.id===id);const [item]=notifications.splice(index,1);return {...structuredClone(item),deleted:true}},createRequest:async()=>{const r=record();rows.push(r);return structuredClone(r)},deleteDrafts:async ids=>{rows=rows.filter(row=>!ids.includes(row.id));return structuredClone(ids)},updateRequest:async(id,revision,patch)=>{const r=rows.find(r=>r.id===id);assert.equal(r.revision,revision);Object.assign(r,patch);r.revision++;return structuredClone(r)},transition:async(id,revision)=>{const r=rows.find(r=>r.id===id);r.stage=1;r.revision++;return structuredClone(r)},stationDecision:async(id,revision,decision)=>{const r=rows.find(r=>r.id===id);r.stage=decision==='declined'?1:3;r.revision++;return structuredClone(r)},addNotification:item=>notifications.push(item)}}
+const fixture=()=>{let rows=[];let notifications=[];return {listRequests:async()=>({requests:structuredClone(rows),meta:{page:1,perPage:50,total:rows.length,lastPage:1},counts:{all:rows.length,action:0}}),getRequests:async ids=>structuredClone(rows.filter(row=>ids.includes(row.id))),getRequest:async id=>structuredClone(rows.find(row=>row.id===id)),listCatalogs:async()=>[],references:async()=>({reasons:[]}),listNotifications:async()=>structuredClone(notifications),chatSummary:async()=>({chats:[],unreadTotal:0}),readNotification:async id=>{const index=notifications.findIndex(item=>item.id===id);const [item]=notifications.splice(index,1);return {...structuredClone(item),deleted:true}},createRequest:async()=>{const r=record();rows.push(r);return structuredClone(r)},deleteDrafts:async ids=>{rows=rows.filter(row=>!ids.includes(row.id));return structuredClone(ids)},updateRequest:async(id,revision,patch)=>{const r=rows.find(r=>r.id===id);assert.equal(r.revision,revision);Object.assign(r,patch);r.revision++;return structuredClone(r)},transition:async(id,revision)=>{const r=rows.find(r=>r.id===id);r.stage=1;r.revision++;return structuredClone(r)},stationDecision:async(id,revision,decision)=>{const r=rows.find(r=>r.id===id);r.stage=decision==='declined'?1:3;r.revision++;return structuredClone(r)},addNotification:item=>notifications.push(item)}}
 test('empty initial store and creation: no fabricated data',async()=>{const s=createRequestStore(fixture());await s.refresh();assert.deepEqual(s.requests,[]);const r=await s.create();assert.equal(r.number,'ZR-000001');assert.equal(r.vehicleId,'');assert.deepEqual(r.works,[]);s.reset()})
 test('new API requires ZR number and supports closing stages',()=>{assert.equal(readRequest({...record(),stage:10}).stage,10);assert.throws(()=>readRequest({...record(),number:undefined}));assert.throws(()=>readRequest({...record(),stage:11}))})
 test('workflow exposes the agreed operational statuses',()=>{assert.deepEqual(workflow.map(step=>step.status),['Черновик','Маршрутизация УК','Согласование СТО','Согласование Заказчика','Ожидание ТС на СТО','В работе','ТС готово к выдаче Заказчику','Выдан. Подготовка документов','Подтверждение оплаты Заказчика','Оплата в СТО','Заявка на ремонт закрыта'])})
@@ -73,10 +73,10 @@ test('stale request list does not roll back a revision saved while it was loadin
     const api = fixture();
     const store = createRequestStore(api);
     const request = await store.create();
-    const list = api.listRequests;
+    const list = api.getRequests;
     let release;
-    api.listRequests = async () => {
-        const rows = await list();
+    api.getRequests = async (ids) => {
+        const rows = await list(ids);
         await new Promise((resolve) => { release = resolve; });
         return rows;
     };
@@ -90,7 +90,7 @@ test('stale request list does not roll back a revision saved while it was loadin
     await refresh;
     assert.equal(store.get(request.id).revision, 1);
     assert.equal(store.get(request.id).description, 'Первое сохранение');
-    api.listRequests = list;
+    api.getRequests = list;
     store.get(request.id).description = 'Второе сохранение';
     store.touch(request.id);
     await store.save(request.id);
@@ -101,10 +101,10 @@ test('stale request list does not roll back a revision saved while it was loadin
 test('request created while the list was loading is kept in the store', async () => {
     const api = fixture();
     const store = createRequestStore(api);
-    const list = api.listRequests;
+    const list = api.getRequests;
     let release;
-    api.listRequests = async () => {
-        const rows = await list();
+    api.getRequests = async (ids) => {
+        const rows = await list(ids);
         await new Promise((resolve) => { release = resolve; });
         return rows;
     };
@@ -114,7 +114,7 @@ test('request created while the list was loading is kept in the store', async ()
     release();
     await refresh;
     assert.equal(store.get(request.id)?.id, request.id);
-    api.listRequests = list;
+    api.getRequests = list;
     request.description = 'Новая ЗР';
     store.touch(request.id);
     await store.save(request.id);
@@ -131,7 +131,10 @@ test('request opened from the list of a reactive store saves only changed fields
     // Как в App.data(): хранилище реактивно, get() возвращает Proxy.
     const store = reactive(createRequestStore(api));
     await store.refresh();
-    const id = store.requests[0].id;
+    // В реестре лёгкие строки; полная ЗР подгружается при открытии.
+    assert.equal(store.requests.length, 0);
+    const id = store.registry.rows[0].id;
+    await store.ensure(id);
     let patch;
     const update = api.updateRequest;
     api.updateRequest = async (key, revision, body) => { patch = body; return update(key, revision, body); };
@@ -139,5 +142,40 @@ test('request opened from the list of a reactive store saves only changed fields
     store.touch(id);
     await store.save(id);
     assert.deepEqual(Object.keys(patch), ['description']);
+    store.reset();
+});
+
+test('registry keeps only a page of rows; full requests are cached for open tabs', async () => {
+    const rows = [
+        { ...record(), id: 'request-a', number: 'ZR-000001' },
+        { ...record(), id: 'request-b', number: 'ZR-000002' },
+    ];
+    let params;
+    const api = {
+        ...fixture(),
+        listRequests: async (query) => {
+            params = query;
+            return { requests: rows.map((row) => ({ ...row, summary: true })), meta: { page: 1, perPage: 50, total: 2, lastPage: 1 }, counts: { all: 2, action: 1 } };
+        },
+        getRequests: async (ids) => structuredClone(rows.filter((row) => ids.includes(row.id))),
+        getRequest: async (id) => structuredClone(rows.find((row) => row.id === id)),
+    };
+    const store = createRequestStore(api);
+    await store.refresh();
+    assert.equal(store.registry.rows.length, 2);
+    assert.deepEqual(store.registry.counts, { all: 2, action: 1 });
+    assert.equal(store.requests.length, 0);
+    await store.loadRegistry({ scope: 'action', filters: { vehicle: 'kia' }, page: 2 });
+    assert.deepEqual(params, { scope: 'action', page: 2, perPage: 50, vehicle: 'kia' });
+    await store.ensure('request-a');
+    await store.ensure('request-b');
+    assert.equal(store.registryRows()[0].summary, undefined);
+    store.get('request-b').description = 'Не потерять';
+    store.touch('request-b');
+    await store.refreshLive([]);
+    // Ненужная интерфейсу ЗР убрана из кэша, несохранённая осталась.
+    assert.equal(store.get('request-a'), undefined);
+    assert.equal(store.get('request-b').description, 'Не потерять');
+    assert.equal(store.find('request-a').id, 'request-a');
     store.reset();
 });

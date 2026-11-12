@@ -127,7 +127,8 @@ export default {
     user: { type: Object, required: true },
     active: { type: Object, default: null },
     panel: { type: Object, required: true },
-    requests: { type: Array, default: () => [] },
+    /** Число ЗР, доступных пользователю (счётчик реестра с сервера). */
+    requestCount: { type: Number, default: 0 },
     awaiting: { type: Number, default: 0 },
     notifications: { type: Array, default: () => [] },
     unreadNotifications: { type: Number, default: 0 },
@@ -166,7 +167,7 @@ export default {
           {
             key: "requests",
             label: "Заявки на ремонт",
-            count: this.requests.length,
+            count: this.requestCount,
             emit: ["open-list", "requests"],
             isActive: active.key === "requests",
           },
