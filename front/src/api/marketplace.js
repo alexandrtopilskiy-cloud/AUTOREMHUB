@@ -1351,6 +1351,16 @@ export const marketplaceApi = {
         return http.request("/developer/stock-documents/delete", { method: "POST", body: { ids } });
     },
 
+    /** @returns {Promise<{users: object[], total: number}>} */
+    developerNotifications() {
+        return http.request("/developer/notifications");
+    },
+
+    /** @returns {Promise<{read: number}>} */
+    developerReadAllNotifications() {
+        return http.request("/developer/notifications/read-all", { method: "POST", body: {} });
+    },
+
     /* ─── Склад ─── */
 
     warehouseSettings() {

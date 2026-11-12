@@ -32,6 +32,7 @@ import StockDocumentEditor from "./features/warehouse/StockDocumentEditor.vue";
 import StockBalanceReport from "./features/warehouse/StockBalanceReport.vue";
 import DeveloperRequestCleanup from "./features/developer/DeveloperRequestCleanup.vue";
 import DeveloperStockCleanup from "./features/developer/DeveloperStockCleanup.vue";
+import DeveloperNotifications from "./features/developer/DeveloperNotifications.vue";
 
 /** Пункты меню «Склад» и «Настройки» (ЛК УК и СТО). */
 const WAREHOUSE_MENU = {
@@ -99,6 +100,7 @@ export default {
         StockBalanceReport,
         DeveloperRequestCleanup,
         DeveloperStockCleanup,
+        DeveloperNotifications,
     },
     data() {
         return {
@@ -271,6 +273,7 @@ export default {
                     items: [
                         { key: "developerDeleteRequests", label: "Удаление ЗР" },
                         { key: "developerDeleteStock", label: "Удаление Приходов и Реализаций" },
+                        { key: "developerReadNotifications", label: "Прочитать все уведомления" },
                     ],
                 });
             }
@@ -1509,6 +1512,7 @@ export default {
             if (key === "warehouseSettings") return this.openSimpleTab("warehouse-settings", "Складской учёт", key);
             if (key === "developerDeleteRequests") return this.openSimpleTab("developer-delete-requests", "Удаление ЗР", key);
             if (key === "developerDeleteStock") return this.openSimpleTab("developer-delete-stock", "Удаление Приходов и Реализаций", key);
+            if (key === "developerReadNotifications") return this.openSimpleTab("developer-notifications", "Все уведомления", key);
             return this.openList(key);
         },
         async openSimpleTab(kind, title, menuKey) {
@@ -2619,6 +2623,11 @@ export default {
                         <DeveloperStockCleanup
                             v-else-if="active?.kind === 'developer-delete-stock'"
                             @deleted="developerStockDeleted"
+                            @notify="notify"
+                        />
+                        <DeveloperNotifications
+                            v-else-if="active?.kind === 'developer-notifications'"
+                            @read="store.refreshNotifications()"
                             @notify="notify"
                         />
                         <div v-else-if="!active" class="workspace-splash">

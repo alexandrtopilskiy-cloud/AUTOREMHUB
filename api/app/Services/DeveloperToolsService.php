@@ -354,4 +354,56 @@ final class DeveloperToolsService
             return ['deletedIds' => $docs->pluck('uuid')->values()->all(), 'movements' => $movements, 'payments' => $payments];
         });
     }
+
+    /**
+     * Непрочитанные уведомления по всем пользователям контура (УК, СТО, Заказчики).
+     *
+     * @return array{users: array<int, array<string, mixed>>, total: int}
+     */
+    public function notificationStats(User $user): array
+    {
+        $this->assertAllowed($user);
+
+        $rows = DB::table('request_notifications AS n')
+            ->join('users AS u', 'u.id', '=', 'n.user_id')
+            ->join('organizations AS o', 'o.id', '=', 'u.organization_id')
+            ->where('o.tenant_id', $user->tenantId())
+            ->whereNull('n.read_at')
+            ->groupBy('u.id', 'u.login', 'u.role', 'o.name')
+            ->orderBy('u.role')
+            ->orderBy('o.name')
+            ->orderBy('u.login')
+            ->get(['u.id', 'u.login', 'u.role', 'o.name AS organization', DB::raw('count(*) AS unread')]);
+
+        $users = $rows->map(fn ($row): array => [
+            'login'        => (string) $row->login,
+            'role'         => (string) $row->role,
+            'roleLabel'    => UserRole::tryFrom((string) $row->role)?->label() ?? (string) $row->role,
+            'organization' => (string) $row->organization,
+            'unread'       => (int) $row->unread,
+        ])->values()->all();
+
+        return ['users' => $users, 'total' => array_sum(array_column($users, 'unread'))];
+    }
+
+    /**
+     * «Прочитать» все уведомления во всех ЛК контура. Прочитанное уведомление
+     * в системе удаляется (как при открытии уведомления пользователем).
+     *
+     * @return array{read: int}
+     */
+    public function readAllNotifications(User $user): array
+    {
+        $this->assertAllowed($user);
+
+        $read = DB::table('request_notifications')
+            ->whereNull('read_at')
+            ->whereIn('user_id', DB::table('users AS u')
+                ->join('organizations AS o', 'o.id', '=', 'u.organization_id')
+                ->where('o.tenant_id', $user->tenantId())
+                ->select('u.id'))
+            ->delete();
+
+        return ['read' => $read];
+    }
 }

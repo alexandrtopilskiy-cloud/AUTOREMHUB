@@ -346,6 +346,23 @@ final class ClosingRouteTest extends TestCase
         $this->api('POST', '/developer/requests/delete', ['ids' => [$uuid]])->assertForbidden();
 
         $this->actingAs($this->users['manager']);
+        // «Прочитать все уведомления во всех ЛК».
+        foreach ($this->users as $role => $recipient) {
+            \App\Models\RequestNotification::query()->create([
+                'uuid' => (string) Str::uuid(), 'user_id' => $recipient->id, 'repair_request_id' => $id,
+                'kind' => 'test', 'title' => 'Тест', 'message' => $role,
+            ]);
+        }
+        $stats = $this->get('/api/developer/notifications')->assertOk()->json();
+        $this->assertGreaterThanOrEqual(3, $stats['total']);
+        $this->assertEqualsCanonicalizing(['customer', 'manager', 'station'], array_unique(array_column($stats['users'], 'role')));
+        $this->assertSame($stats['total'], $this->api('POST', '/developer/notifications/read-all')->assertOk()->json('read'));
+        $this->assertSame(0, $this->get('/api/developer/notifications')->json('total'));
+        $this->actingAs($this->users['customer']);
+        $this->assertSame([], $this->get('/api/notifications')->json('notifications'));
+        $this->api('POST', '/developer/notifications/read-all')->assertForbidden();
+
+        $this->actingAs($this->users['manager']);
         $list = $this->get('/api/developer/requests')->assertOk()->json('requests');
         $this->assertSame([$uuid], array_column($list, 'id'));
         $this->assertSame(count($files), $list[0]['files']);
