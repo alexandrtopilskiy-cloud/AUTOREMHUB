@@ -28,6 +28,7 @@ export const requestFields = [
     "works",
     "parts",
     "laborRateType",
+    "partsFromManager",
 ];
 
 /* ─── Форматирование ─── */
@@ -96,6 +97,8 @@ export function total(request) {
  * реквизитов выбранной СТО. Заказчику API эти данные не отдаёт.
  */
 export function agentDiscountPercent(line, request, stationPercent = null) {
+    // «ЗЧ от УК»: агентская скидка не применяется ни к работам, ни к ЗЧ.
+    if (request?.partsFromManager) return 0;
     const value = line?.agentDiscountPercent ?? stationPercent ?? request?.agentDiscount?.percent;
 
     return value == null || value === "" ? null : Number(value);

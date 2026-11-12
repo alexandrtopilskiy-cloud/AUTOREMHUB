@@ -64,7 +64,12 @@ async function loadStock() {
     if (props.customerView) return;
     try {
         // СТО берётся из формы: она может быть выбрана, но ещё не сохранена.
-        stock.value = await marketplaceApi.requestStock(props.request.id, props.request.stationId);
+        // «ЗЧ от УК» до приёма ЗЧ СТО: наличие и цены — по складу УК.
+        stock.value = await marketplaceApi.requestStock(
+            props.request.id,
+            props.request.stationId,
+            props.request.partsTransfer ? undefined : Boolean(props.request.partsFromManager),
+        );
     } catch {
         stock.value = null;
     }
@@ -81,7 +86,44 @@ function fillStockPrices() {
     }
 }
 onMounted(loadStock);
-watch(() => [props.request.id, props.request.revision, props.request.stationId], loadStock);
+watch(() => [props.request.id, props.request.revision, props.request.stationId, props.request.partsFromManager], loadStock);
+/* Галочка «ЗЧ от УК»: УК на этапе «Маршрутизация УК», пока ЗЧ не перемещены. */
+const canToggleManagerParts = computed(
+    () => !props.customerView
+        && !props.request.partsTransfer
+        && (props.request.permissions?.editableFields || []).includes("partsFromManager"),
+);
+const showManagerPartsToggle = computed(
+    () => !props.customerView && (canToggleManagerParts.value || props.request.partsFromManager),
+);
+const fromManagerStock = computed(() => stock.value?.source === "manager");
+async function toggleManagerParts(checked) {
+    props.request.partsFromManager = checked;
+    emit("touch");
+    await loadStock();
+    // Цены новых и изменяемых строк — по складу, с которого продаются ЗЧ:
+    // УК (закуп + наценка УК) или СТО.
+    if (!stock.value?.available) return;
+    for (const row of props.request.parts || []) {
+        const info = stock.value.parts[row.catalogPartId];
+        if (!info || !editable(row) || info.salePrice == null) continue;
+        row.price = info.salePrice;
+        row._stockDirty = true;
+    }
+}
+/* «ЗЧ от УК»: цена = закуп УК + наценка УК, вручную не меняется. */
+function fixedManagerPrice(row) {
+    return fromManagerStock.value && stock.value?.parts[row.catalogPartId]?.salePrice != null;
+}
+const canAcceptManagerParts = computed(() => props.request.permissions?.canAcceptManagerParts === true);
+async function acceptManagerParts() {
+    error.value = "";
+    try {
+        await props.perform("acceptManagerParts");
+    } catch (exception) {
+        error.value = exception.message;
+    }
+}
 function stockQty(value) {
     return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 }
@@ -101,6 +143,15 @@ function stockState(row) {
         : { label: `Нет на складе (есть ${stockQty(free)})`, kind: "missing" };
 }
 const hasMissingStock = computed(() => rows.value.some((row) => stockState(row)?.kind === "missing"));
+/* Признак склада строки ЗЧ: УК — ЗЧ от УК (со склада УК), СТО — со склада СТО. */
+function warehouseLabel(row) {
+    const fromManager = row.fromManager || (props.request.partsFromManager && !props.request.partsTransfer);
+    return fromManager ? "УК" : "СТО";
+}
+function missingClass(row) {
+    if (stockState(row)?.kind !== "missing") return "";
+    return fromManagerStock.value ? "part-missing-manager-stock" : "part-missing-stock";
+}
 const canEditParts = computed(
     () => props.request.permissions?.canEditParts === true,
 );
@@ -314,6 +365,34 @@ async function apply() {
     <div class="parts-panel estimate-section">
         <h3>Запчасти</h3>
         <FormAlert v-if="error" class="error-message">{{ error }}</FormAlert>
+        <div v-if="showManagerPartsToggle" class="manager-parts-bar">
+            <label class="manager-parts-toggle" title="ЗЧ продаёт УК со своего склада: с наценкой УК, без наценки СТО и без агентской скидки">
+                <input
+                    type="checkbox"
+                    :checked="Boolean(request.partsFromManager)"
+                    :disabled="busy || !canToggleManagerParts"
+                    @change="toggleManagerParts($event.target.checked)"
+                />
+                ЗЧ от УК
+            </label>
+            <span v-if="request.partsFromManager && !request.partsTransfer" class="muted">
+                ЗЧ продаются со склада УК с наценкой УК; агентская скидка по работам и ЗЧ не применяется.
+                СТО принимает ЗЧ на «Склад от УК» на этапе «Ожидание ТС на СТО».
+            </span>
+            <span v-if="request.partsTransfer" class="manager-parts-done">
+                ЗЧ от УК приняты на «{{ request.partsTransfer.warehouse }}» · Перемещение
+                {{ request.partsTransfer.number }}
+            </span>
+            <button
+                v-if="canAcceptManagerParts"
+                type="button"
+                class="primary-btn"
+                :disabled="busy"
+                @click="acceptManagerParts"
+            >
+                Принять ЗЧ от УК
+            </button>
+        </div>
         <div class="table-wrap excel-grid-wrap">
             <table
                 class="excel-grid parts-grid"
@@ -325,6 +404,7 @@ async function apply() {
                     <col style="width: 84px" />
                     <col style="width: 88px" />
                     <col style="width: 38px" />
+                    <col v-if="!customerView" style="width: 54px" />
                     <col style="width: 58px" />
                     <col style="width: 74px" />
                     <col v-if="!customerView" style="width: 84px" />
@@ -341,6 +421,7 @@ async function apply() {
                                 'Артикул',
                                 'Производитель',
                                 'Ед.',
+                                ...(!customerView ? ['Склад'] : []),
                                 'Кол-во',
                                 'Цена, ₽',
                                 ...(!customerView
@@ -372,7 +453,7 @@ async function apply() {
                         @dblclick="openPartDialog(row, $event, index)"
                         :class="[
                             lineChange(row) ? 'line-' + lineChange(row) : '',
-                            stockState(row)?.kind === 'missing' ? 'part-missing-stock' : '',
+                            missingClass(row),
                         ]"
                     >
                         <td v-if="selectable">
@@ -411,6 +492,11 @@ async function apply() {
                             {{ row.manufacturer || "—" }}
                         </td>
                         <td :title="row.unit">{{ row.unit }}</td>
+                        <td
+                            v-if="!customerView"
+                            class="part-warehouse-cell"
+                            :title="warehouseLabel(row) === 'УК' ? 'Склад УК' : 'Склад СТО'"
+                        >{{ warehouseLabel(row) }}</td>
                         <td>
                             <input
                                 v-if="editable(row)"
@@ -426,7 +512,7 @@ async function apply() {
                         </td>
                         <td>
                             <input
-                                v-if="editable(row)"
+                                v-if="editable(row) && !fixedManagerPrice(row)"
                                 v-model.number="row.price"
                                 :title="String(row.price ?? '')"
                                 type="number"
@@ -499,7 +585,11 @@ async function apply() {
             </button>
         </div>
         <p v-if="!rows.length" class="muted">Запчасти не добавлены.</p>
-        <p v-if="hasMissingStock" class="parts-stock-note">
+        <p v-if="hasMissingStock && fromManagerStock" class="parts-stock-note manager-stock-note" role="status">
+            Тёмно-оранжевым выделены ЗЧ, которых нет на складе УК в нужном количестве.
+            Оприходуйте их на склад УК до этапа «Ожидание ТС на СТО»: без них СТО не сможет принять ЗЧ от УК.
+        </p>
+        <p v-else-if="hasMissingStock" class="parts-stock-note">
             Красным выделены ЗЧ, которых нет на складе СТО в нужном количестве — они есть только в ЗР.
             Перевести ЗР на этап «ТС готово к выдаче Заказчику» можно только после оприходования этих ЗЧ.
         </p>

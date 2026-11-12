@@ -324,6 +324,18 @@ export const marketplaceApi = {
         return command(key, "/acceptance-act", revision, body);
     },
 
+    /**
+     * «Принять ЗЧ от УК»: СТО принимает ЗЧ, перемещаемые со склада УК
+     * на «Склад от УК» (документ Перемещение PRM-).
+     *
+     * @param {string} key
+     * @param {number} revision
+     * @returns {Promise<object>}
+     */
+    acceptManagerParts(key, revision) {
+        return command(key, "/manager-parts/accept", revision);
+    },
+
     /* ─── Изменение работ и ЗЧ на стадии «В работе» ─── */
 
     /**
@@ -1323,8 +1335,11 @@ export const marketplaceApi = {
         if (warehouseId) query.set("warehouseId", warehouseId);
         return http.request(`/warehouse/balance?${query}`);
     },
-    requestStock(key, stationId) {
-        const query = stationId === undefined || stationId === null ? "" : `?stationId=${encodeURIComponent(stationId)}`;
+    requestStock(key, stationId, fromManager) {
+        const params = new URLSearchParams();
+        if (stationId !== undefined && stationId !== null) params.set("stationId", stationId);
+        if (fromManager !== undefined && fromManager !== null) params.set("fromManager", fromManager ? "1" : "0");
+        const query = params.toString() ? `?${params}` : "";
         return http.request(key ? `/requests/${encodeId(key)}/stock${query}` : `/warehouse/station-stock${query}`);
     },
 

@@ -51,7 +51,15 @@ final class AgentDiscount
     {
         $total = '0.00';
         $discount = '0.00';
+        $managerParts = '0.00';
         $percents = [];
+        // «ЗЧ от УК»: эти ЗЧ реализует УК, СТО за них не получает оплату.
+        $awaitsManagerParts = $request->awaitsManagerParts();
+        foreach ($request->parts as $part) {
+            if ($part->from_manager || $awaitsManagerParts) {
+                $managerParts = bcadd($managerParts, self::partAmount($part), self::MONEY_SCALE);
+            }
+        }
 
         $lines = [
             ...$request->workLines->map(static fn (RequestWork $work): array => [
@@ -85,7 +93,7 @@ final class AgentDiscount
                 ? (float) array_key_first($percents)
                 : ($stationPercent !== null ? (float) $stationPercent : null),
             'amount'        => (float) $discount,
-            'stationAmount' => (float) bcsub($total, $discount, self::MONEY_SCALE),
+            'stationAmount' => (float) bcsub(bcsub($total, $discount, self::MONEY_SCALE), $managerParts, self::MONEY_SCALE),
             'total'         => (float) $total,
         ];
     }

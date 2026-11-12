@@ -22,6 +22,8 @@ final class StockMovement extends Model
     public const SOURCE_RECEIPT = 'receipt';
     public const SOURCE_SALE = 'sale';
     public const SOURCE_REQUEST = 'repair_request';
+    /** Перемещение «ЗЧ от УК»: − на складе УК, + на «Складе от УК» СТО. */
+    public const SOURCE_TRANSFER = 'transfer';
 
     public const UPDATED_AT = null;
 

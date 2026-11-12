@@ -80,6 +80,7 @@ final class RepairRequest extends Entity
             'work_change'              => 'array',
             'planned_completion_at'    => 'immutable_datetime',
             'repair_completed_at'      => 'immutable_datetime',
+            'parts_from_manager'       => 'boolean',
         ];
     }
 
@@ -135,6 +136,18 @@ final class RepairRequest extends Entity
     public function parts(): HasMany
     {
         return $this->hasMany(RequestPart::class);
+    }
+
+    /** @return BelongsTo<StockDocument, $this> Перемещение «ЗЧ от УК» на склад СТО. */
+    public function partsTransfer(): BelongsTo
+    {
+        return $this->belongsTo(StockDocument::class, 'parts_transfer_document_id');
+    }
+
+    /** «ЗЧ от УК» отмечены, но СТО ещё не приняла их (ЗЧ на складе УК). */
+    public function awaitsManagerParts(): bool
+    {
+        return (bool) $this->parts_from_manager && $this->parts_transfer_document_id === null;
     }
 
     /** @return HasMany<RequestEvent, $this> */

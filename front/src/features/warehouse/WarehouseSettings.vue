@@ -193,9 +193,11 @@ export default {
                                         @keydown.esc="editingId = ''"
                                     />
                                     <span v-else>{{ row.name }}</span>
+                                    <span v-if="row.system" class="muted warehouse-system-note"> — создан автоматически для ЗЧ от УК</span>
                                 </td>
                                 <td class="warehouse-actions-col">
-                                    <template v-if="editingId === row.id">
+                                    <span v-if="row.system" class="muted">Не редактируется</span>
+                                    <template v-else-if="editingId === row.id">
                                         <button class="primary-btn small-btn" :disabled="busy" @click="saveEdit(row)">Сохранить</button>
                                         <button class="ghost-btn small-btn" :disabled="busy" @click="editingId = ''">Отмена</button>
                                     </template>
