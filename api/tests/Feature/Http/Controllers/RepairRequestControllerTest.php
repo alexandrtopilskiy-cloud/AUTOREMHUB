@@ -139,6 +139,85 @@ final class RepairRequestControllerTest extends TestCase
         $this->assertContains($request->uuid, $ids);
     }
 
+    /* ─────────────────── index: реестр (страницы и фильтры) ─────────────────── */
+
+    public function test_index_returns_a_page_of_light_rows_with_counts(): void
+    {
+        $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);
+        $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);
+        $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);
+
+        $this->actingAs($this->customer);
+        $response = $this->getJson('/api/requests?perPage=2')->assertOk()
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('meta.lastPage', 2)
+            ->assertJsonPath('counts.all', 3)
+            ->assertJsonCount(2, 'requests')
+            ->assertJsonPath('requests.0.summary', true);
+
+        $this->assertArrayNotHasKey('works', $response->json('requests.0'));
+        $this->assertArrayNotHasKey('history', $response->json('requests.0'));
+
+        $this->getJson('/api/requests?perPage=2&page=2')->assertOk()->assertJsonCount(1, 'requests');
+    }
+
+    public function test_index_filters_by_document_number_and_empty_draft(): void
+    {
+        // Номер ЗР — генерируемая колонка, читаем после вставки.
+        $first = $this->makeRequest($this->customer, Workflow::STAGE_DRAFT)->refresh();
+        $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);
+
+        $this->actingAs($this->customer);
+        $ids = collect($this->getJson('/api/requests?document=' . urlencode(mb_strtolower((string) $first->number)))
+            ->assertOk()->json('requests'))->pluck('id')->all();
+        $this->assertSame([$first->uuid], $ids);
+
+        $this->getJson('/api/requests?vehicle=' . urlencode('Пустой черновик'))
+            ->assertOk()->assertJsonCount(2, 'requests');
+        $this->getJson('/api/requests?vehicle=kia')->assertOk()->assertJsonCount(0, 'requests');
+    }
+
+    public function test_index_action_scope_matches_workflow_permissions(): void
+    {
+        $routing = $this->makeRequest($this->customer, Workflow::STAGE_MANAGER_ROUTING);
+        $this->makeRequest($this->customer, Workflow::STAGE_STATION_APPROVAL, $this->stationRecord);
+
+        $this->actingAs($this->manager);
+        $response = $this->getJson('/api/requests?scope=action')->assertOk()
+            ->assertJsonPath('counts.all', 2)
+            ->assertJsonPath('counts.action', 1);
+
+        $this->assertSame([$routing->uuid], collect($response->json('requests'))->pluck('id')->all());
+        $this->assertTrue($response->json('requests.0.permissions.requiresAction'));
+    }
+
+    public function test_index_filters_by_status_text_and_amount(): void
+    {
+        $routing = $this->makeRequest($this->customer, Workflow::STAGE_MANAGER_ROUTING);
+        $this->makeRequest($this->customer, Workflow::STAGE_STATION_APPROVAL, $this->stationRecord);
+
+        $this->actingAs($this->manager);
+        $ids = collect($this->getJson('/api/requests?status=' . urlencode('маршрутизация ук'))
+            ->assertOk()->json('requests'))->pluck('id')->all();
+        $this->assertSame([$routing->uuid], $ids);
+
+        $this->getJson('/api/requests?status=nothing')->assertOk()->assertJsonCount(0, 'requests');
+        $this->getJson('/api/requests?amount=0')->assertOk()->assertJsonCount(2, 'requests');
+        $this->getJson('/api/requests?amount=999')->assertOk()->assertJsonCount(0, 'requests');
+    }
+
+    public function test_index_with_ids_returns_full_requests_visible_to_user(): void
+    {
+        $own = $this->makeRequest($this->customer, Workflow::STAGE_DRAFT);
+        $foreign = $this->makeRequest($this->manager, Workflow::STAGE_DRAFT);
+
+        $this->actingAs($this->customer);
+        $response = $this->getJson('/api/requests?ids=' . $own->uuid . ',' . $foreign->uuid)->assertOk();
+
+        $this->assertSame([$own->uuid], collect($response->json('requests'))->pluck('id')->all());
+        $this->assertArrayHasKey('works', $response->json('requests.0'));
+    }
+
     /* ─────────────────── show ─────────────────── */
 
     public function test_show_returns_request_for_owner(): void

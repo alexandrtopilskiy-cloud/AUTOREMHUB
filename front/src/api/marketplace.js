@@ -217,12 +217,50 @@ export const marketplaceApi = {
     /* ─── Заявки ─── */
 
     /**
+     * Страница реестра ЗР: лёгкие строки, фильтры колонок применяет сервер.
+     *
+     * @param {{scope?: string, page?: number, perPage?: number, document?: string, vehicle?: string, status?: string, amount?: string}} [params]
+     * @returns {Promise<{requests: object[], meta: {page: number, perPage: number, total: number, lastPage: number}, counts: {all: number, action: number}}>}
+     */
+    async listRequests(params = {}) {
+        const query = new URLSearchParams();
+
+        for (const [key, value] of Object.entries(params)) {
+            if (value !== undefined && value !== null && String(value).trim() !== "") {
+                query.set(key, String(value).trim());
+            }
+        }
+
+        const search = query.toString();
+        const data = await http.request("/requests" + (search ? "?" + search : ""));
+        const requests = data.requests.map(readRequest);
+
+        return {
+            requests,
+            meta: data.meta || { page: 1, perPage: requests.length, total: requests.length, lastPage: 1 },
+            counts: data.counts || { all: requests.length, action: 0 },
+        };
+    },
+
+    /**
+     * Полные ЗР по идентификаторам (открытые вкладки), не более 50 за запрос.
+     *
+     * @param {string[]} ids
      * @returns {Promise<object[]>}
      */
-    async listRequests() {
-        const data = await http.request("/requests");
+    async getRequests(ids) {
+        const unique = [...new Set(ids)].filter(Boolean);
+        const result = [];
 
-        return data.requests.map(readRequest);
+        for (let index = 0; index < unique.length; index += 50) {
+            const chunk = unique.slice(index, index + 50);
+            const data = await http.request(
+                "/requests?ids=" + chunk.map(encodeURIComponent).join(","),
+            );
+            result.push(...data.requests.map(readRequest));
+        }
+
+        return result;
     },
 
     /**

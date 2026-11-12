@@ -1295,29 +1295,45 @@ test("Options API component rendering and interactive methods", async (context) 
         );
 
         await context.test(
-            "request list column filters narrow rows without errors",
+            "request list shows the server page and sends trimmed column filters",
             async () => {
                 const { default: App } =
                     await server.ssrLoadModule("/src/App.vue");
                 const rows = [
-                    { id: "a", number: "ZR-000001", vehicle: "BMW 520d", plate: "А001АА77", company: "Флот", stage: 1, works: [], parts: [], permissions: {} },
-                    { id: "b", number: "ZR-000002", vehicle: "Kia Rio", plate: "В002ВВ77", company: "Такси", stage: 3, works: [], parts: [], permissions: {} },
+                    { id: "a", number: "ZR-000001", revision: 2, stage: 1, summary: true, total: 10, permissions: {} },
+                    { id: "b", number: "ZR-000002", revision: 1, stage: 3, summary: true, total: 20, permissions: {} },
                 ];
+                const full = { id: "a", number: "ZR-000001", revision: 3, stage: 2, works: [], parts: [], permissions: {} };
+                const store = {
+                    requests: [full],
+                    registry: { rows },
+                    get(id) { return this.requests.find((r) => r.id === id); },
+                };
+                store.registryRows = function () {
+                    return this.registry.rows.map((row) => {
+                        const cached = this.get(row.id);
+                        return cached && cached.revision >= row.revision ? cached : row;
+                    });
+                };
                 const vm = {
-                    active: { kind: "list", key: "requests", filters: {} },
+                    active: { id: "list:action", kind: "list", key: "action", filters: { vehicle: "  kia ", status: "" }, page: 2 },
                     isRequestList: true,
-                    store: { requests: rows },
+                    store,
                     user: { role: "manager" },
                 };
                 Object.assign(vm, App.methods);
-                const listed = () => App.computed.listed.call(vm);
 
-                vm.active.filters = { vehicle: "kia" };
-                assert.deepEqual(listed().map((r) => r.id), ["b"]);
-                vm.active.filters = { document: "000001" };
-                assert.deepEqual(listed().map((r) => r.id), ["a"]);
-                vm.active.filters = { status: "", amount: "" };
-                assert.equal(listed().length, 2);
+                // Клиент больше не фильтрует: строки страницы как есть, свежая полная ЗР поверх строки.
+                const listed = App.computed.listed.call(vm);
+                assert.deepEqual(listed.map((r) => r.id), ["a", "b"]);
+                assert.equal(listed[0].stage, 2);
+
+                assert.deepEqual(JSON.parse(App.computed.registryQuery.call(vm)), {
+                    tab: "list:action",
+                    scope: "action",
+                    filters: { vehicle: "kia" },
+                    page: 2,
+                });
             },
         );
 
@@ -2044,7 +2060,7 @@ test("Options API component rendering and interactive methods", async (context) 
                 const props = {
                     user: { role: "customer", organization: "Org", label: "User" },
                     panel: { menu: true },
-                    requests: [{ id: 1 }, { id: 2 }],
+                    requestCount: 2,
                     awaiting: 1,
                 };
                 const menu = await renderToString(

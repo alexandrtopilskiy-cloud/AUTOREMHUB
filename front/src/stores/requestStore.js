@@ -67,6 +67,18 @@ export function serializeParts(parts = []) {
         );
 }
 
+/** Пустое состояние реестра ЗР. */
+function emptyRegistry() {
+    return {
+        rows: [],
+        meta: { page: 1, perPage: 50, total: 0, lastPage: 1 },
+        counts: { all: 0, action: 0 },
+        params: { scope: "all", filters: {}, page: 1, perPage: 50 },
+        loading: false,
+        loaded: false,
+    };
+}
+
 /**
  * Сравнение двух значений по JSON-представлению.
  *
@@ -117,59 +129,70 @@ export function createRequestStore(api) {
     let acceptSeq = 0;
 
     /**
-     * Обновляет заявки с сервера, не затирая несохранённые поля формы и
-     * более свежие ответы, полученные, пока шёл запрос списка.
+     * Обновляет кэш полных ЗР ответом сервера, не затирая несохранённые поля
+     * формы и более свежие ответы, полученные, пока шёл запрос.
      *
-     * Список ЗР тяжёлый и может отвечать несколько секунд. Если за это время
-     * пользователь сохранил заявку (ревизия n → n + 1), устаревший список с
-     * ревизией n не должен её перезаписать: иначе следующее сохранение уходит
-     * со старой ревизией и сервер отвечает «Заявка уже изменена другим
-     * пользователем», хотя заявка открыта в одном кабинете.
+     * Если за время запроса пользователь сохранил заявку (ревизия n → n + 1),
+     * устаревший ответ с ревизией n не должен её перезаписать: иначе следующее
+     * сохранение уходит со старой ревизией и сервер отвечает «Заявка уже
+     * изменена другим пользователем», хотя заявка открыта в одном кабинете.
      *
      * @param {RequestStore} store
      * @param {Array<object>} remote
-     * @param {number} since значение acceptSeq на момент запроса списка
+     * @param {number} since значение acceptSeq на момент запроса
+     * @param {string[]} requested идентификаторы, которые запрашивались
      */
-    function applyRemoteRequests(store, remote, since) {
-        const previous = store.requests;
+    function applyRemoteRequests(store, remote, since, requested = []) {
         const keepLocal = (id) =>
             store.pending[id] || saves.has(id) || (acceptedAt.get(id) || 0) > since;
         const remoteIds = new Set(remote.map((request) => request.id));
-        // Заявки, взятые из ответа списка. Сравнивать store.get(id) === request
-        // нельзя: в App.data() хранилище реактивно, get() возвращает Proxy, и
-        // эталон (baseline) не обновлялся — первое сохранение ЗР, открытой из
-        // списка, отправляло все поля («Поля на текущем этапе недоступны»).
-        const fromRemote = new Set();
-
-        store.requests = remote.map((request) => {
-            const local = previous.find((item) => item.id === request.id);
-
-            if (local && (keepLocal(request.id) || local.revision > request.revision)) {
-                return local;
-            }
-
-            fromRemote.add(request.id);
-
-            return request;
-        });
-
-        for (const request of previous) {
-            if (!remoteIds.has(request.id) && keepLocal(request.id)) {
-                store.requests.push(request);
-            }
-        }
 
         for (const request of remote) {
-            if (fromRemote.has(request.id)) {
-                baselines.set(request.id, clone(request));
+            const index = store.requests.findIndex((item) => item.id === request.id);
+            const local = index >= 0 ? store.requests[index] : null;
+
+            if (local && (keepLocal(request.id) || local.revision > request.revision)) {
+                continue;
+            }
+
+            if (index >= 0) {
+                store.requests[index] = request;
+            } else {
+                store.requests.push(request);
+            }
+
+            // Эталон берём из ответа, а не из store.get(id): в App.data()
+            // хранилище реактивно и get() возвращает Proxy.
+            baselines.set(request.id, clone(request));
+        }
+
+        // Удалённые или недоступные ЗР сервер не вернул — убираем из кэша.
+        const missing = new Set(
+            requested.filter((id) => !remoteIds.has(id) && !keepLocal(id)),
+        );
+
+        if (missing.size) {
+            store.requests = store.requests.filter((item) => !missing.has(item.id));
+
+            for (const id of missing) {
+                baselines.delete(id);
             }
         }
     }
 
+    /** Номер последнего запроса реестра: устаревший ответ не применяется. */
+    let registrySeq = 0;
+
+    /** @type {Map<string, Promise<object|undefined>>} */
+    const loads = new Map();
+
     return {
         /* ─── Состояние ─── */
 
+        /** Кэш полных ЗР: открытые вкладки, выбранная строка, несохранённые. */
         requests: [],
+        /** Текущая страница реестра ЗР (лёгкие строки с сервера). */
+        registry: emptyRegistry(),
         records: [],
         notifications: [],
         chatSummaries: [],
@@ -205,6 +228,146 @@ export function createRequestStore(api) {
 
         get(id) {
             return this.requests.find((request) => request.id === id);
+        },
+
+        /**
+         * Строки реестра. Если полная ЗР в кэше не старее строки, показываем её:
+         * так в списке сразу видны локальные правки и результат действий.
+         */
+        registryRows() {
+            return this.registry.rows.map((row) => {
+                const full = this.get(row.id);
+
+                return full && full.revision >= row.revision ? full : row;
+            });
+        },
+
+        /** Полная ЗР из кэша или лёгкая строка реестра. */
+        find(id) {
+            return this.get(id) || this.registry.rows.find((row) => row.id === id);
+        },
+
+        /**
+         * Гарантирует полную ЗР в кэше (открытие вкладки, предпросмотр).
+         *
+         * @param {string} id
+         * @returns {Promise<object|undefined>}
+         */
+        async ensure(id) {
+            if (!id) {
+                return undefined;
+            }
+
+            const cached = this.get(id);
+
+            if (cached) {
+                return cached;
+            }
+
+            if (loads.has(id)) {
+                return loads.get(id);
+            }
+
+            const version = this.generation;
+            const task = (async () => {
+                const request = await api.getRequest(id);
+
+                if (version !== this.generation) {
+                    return undefined;
+                }
+
+                if (!this.get(id)) {
+                    this.accept(request);
+                }
+
+                return this.get(id);
+            })();
+
+            loads.set(id, task);
+
+            try {
+                return await task;
+            } finally {
+                loads.delete(id);
+            }
+        },
+
+        /**
+         * Убирает из кэша полные ЗР, которые больше не нужны интерфейсу.
+         * Несохранённые и сохраняемые остаются.
+         *
+         * @param {string[]} keepIds
+         */
+        prune(keepIds = []) {
+            const keep = new Set(keepIds);
+            const removed = this.requests.filter(
+                (request) =>
+                    !keep.has(request.id) && !this.pending[request.id] && !saves.has(request.id),
+            );
+
+            if (!removed.length) {
+                return;
+            }
+
+            const ids = new Set(removed.map((request) => request.id));
+            this.requests = this.requests.filter((request) => !ids.has(request.id));
+
+            for (const id of ids) {
+                baselines.delete(id);
+                acceptedAt.delete(id);
+                delete this.pending[id];
+            }
+        },
+
+        /**
+         * Загружает страницу реестра ЗР с фильтрами колонок и счётчики меню.
+         *
+         * @param {{scope?: string, filters?: object, page?: number, perPage?: number}} [params]
+         */
+        async loadRegistry(params = this.registry.params) {
+            const version = this.generation;
+            const seq = ++registrySeq;
+            const next = {
+                scope: params.scope === "action" ? "action" : "all",
+                filters: { ...(params.filters || {}) },
+                page: Math.max(1, Number(params.page) || 1),
+                perPage: Number(params.perPage) || this.registry.params.perPage || 50,
+            };
+
+            this.registry.params = next;
+            this.registry.loading = true;
+
+            try {
+                const data = await api.listRequests({
+                    scope: next.scope,
+                    page: next.page,
+                    perPage: next.perPage,
+                    ...next.filters,
+                });
+
+                if (version !== this.generation || seq !== registrySeq) {
+                    return;
+                }
+
+                this.registry.rows = data.requests;
+                this.registry.meta = data.meta;
+                this.registry.counts = data.counts;
+                this.registry.loaded = true;
+
+                // После удаления/фильтра текущая страница могла опустеть.
+                if (data.requests.length === 0 && next.page > 1 && data.meta.lastPage < next.page) {
+                    await this.loadRegistry({ ...next, page: data.meta.lastPage });
+                }
+            } finally {
+                if (version === this.generation && seq === registrySeq) {
+                    this.registry.loading = false;
+                }
+            }
+        },
+
+        /** Фоновая перезагрузка реестра после действия; ошибки повторит опрос. */
+        reloadRegistrySilently() {
+            this.loadRegistry().catch(() => {});
         },
 
         changed(id) {
@@ -250,8 +413,10 @@ export function createRequestStore(api) {
             this.loading = true;
 
             try {
-                const [remote, records, refs, notifications, chats] = await Promise.all([
-                    api.listRequests(),
+                const ids = this.requests.map((request) => request.id);
+                const [remote, , records, refs, notifications, chats] = await Promise.all([
+                    api.getRequests(ids),
+                    this.loadRegistry().then(() => null),
                     api.listCatalogs(),
                     api.references(),
                     api.listNotifications(),
@@ -262,7 +427,7 @@ export function createRequestStore(api) {
                     return;
                 }
 
-                applyRemoteRequests(this, remote, since);
+                applyRemoteRequests(this, remote, since, ids);
 
                 this.records = records;
                 this.references = refs;
@@ -280,11 +445,22 @@ export function createRequestStore(api) {
          * Фоновая синхронизация. Не загружает тяжёлые справочники и нормы
          * времени: они обновляются при входе и после профильных операций.
          */
-        async refreshLive() {
+        /**
+         * @param {string[]|null} [keepIds] ЗР, нужные интерфейсу (открытые
+         *   вкладки, выбранная строка); остальные полные ЗР убираются из кэша.
+         */
+        async refreshLive(keepIds = null) {
             const version = this.generation;
             const since = acceptSeq;
-            const [remote, notifications, chats] = await Promise.all([
-                api.listRequests(),
+
+            if (Array.isArray(keepIds)) {
+                this.prune(keepIds);
+            }
+
+            const ids = this.requests.map((request) => request.id);
+            const [remote, , notifications, chats] = await Promise.all([
+                api.getRequests(ids),
+                this.loadRegistry(),
                 api.listNotifications(),
                 api.chatSummary(),
             ]);
@@ -293,7 +469,7 @@ export function createRequestStore(api) {
                 return;
             }
 
-            applyRemoteRequests(this, remote, since);
+            applyRemoteRequests(this, remote, since, ids);
             const knownNotifications = new Set(this.notifications.map((item) => item.id),
             );
             const manufacturerChanged = notifications.some((item) => item.kind === "manufacturer_reviewed" && !knownNotifications.has(item.id),
@@ -524,6 +700,11 @@ export function createRequestStore(api) {
                 const request = await api.createRequest();
 
                 this.accept(request);
+                this.registry.counts = {
+                    ...this.registry.counts,
+                    all: (this.registry.counts.all || 0) + 1,
+                };
+                this.reloadRegistrySilently();
 
                 return this.get(request.id);
             } finally {
@@ -552,10 +733,16 @@ export function createRequestStore(api) {
                     (request) => !deleted.has(request.id),
                 );
 
+                this.registry.rows = this.registry.rows.filter(
+                    (request) => !deleted.has(request.id),
+                );
+
                 for (const id of deleted) {
                     baselines.delete(id);
                     delete this.pending[id];
                 }
+
+                this.reloadRegistrySilently();
 
                 return deletedIds;
             } catch (error) {
@@ -588,6 +775,8 @@ export function createRequestStore(api) {
                 );
 
                 this.accept(request);
+                // Этап сменился — счётчик «Ожидают действия» и строки реестра.
+                this.reloadRegistrySilently();
                 // Успешное действие снимает прежнюю ошибку (например, отказ «Далее»).
                 this.saveError = "";
 
@@ -658,7 +847,10 @@ export function createRequestStore(api) {
             baselines.clear();
             acceptedAt.clear();
 
+            loads.clear();
+            registrySeq++;
             this.requests = [];
+            this.registry = emptyRegistry();
             this.records = [];
             this.notifications = [];
             this.chatSummaries = [];

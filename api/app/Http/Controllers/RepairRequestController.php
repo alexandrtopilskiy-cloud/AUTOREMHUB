@@ -19,10 +19,12 @@ use App\Http\Requests\TransitionRequest;
 use App\Http\Requests\UpdateRepairRequestRequest;
 use App\Http\Resources\RepairRequestCollection;
 use App\Http\Resources\RepairRequestHistoryResource;
+use App\Http\Resources\RepairRequestListResource;
 use App\Http\Resources\RepairRequestResource;
 use App\Http\Resources\WorkOrderResource;
 use App\Models\RepairRequest;
 use App\Services\RepairRequestService;
+use App\Services\RequestRegistryService;
 use App\Support\ApiPresenter;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -37,17 +39,60 @@ final class RepairRequestController
         private readonly ApiPresenter $apiPresenter,
     ) {}
 
-    public function index(Request $request): RepairRequestCollection
+    /**
+     * Реестр ЗР по страницам (лёгкие строки + счётчики меню) или, с `ids`,
+     * полные ЗР по списку идентификаторов — для фонового обновления
+     * открытых вкладок.
+     */
+    public function index(Request $request, RequestRegistryService $registry): JsonResponse|RepairRequestCollection
     {
         $this->authorize('viewAny', RepairRequest::class);
 
+        $validated = $request->validate([
+            'ids'      => ['sometimes', 'nullable', 'string', 'max:4000'],
+            'page'     => ['sometimes', 'integer', 'min:1'],
+            'perPage'  => ['sometimes', 'integer', 'min:1', 'max:' . RequestRegistryService::MAX_PER_PAGE],
+            'scope'    => ['sometimes', 'in:all,action'],
+            'document' => ['sometimes', 'nullable', 'string', 'max:200'],
+            'vehicle'  => ['sometimes', 'nullable', 'string', 'max:200'],
+            'status'   => ['sometimes', 'nullable', 'string', 'max:200'],
+            'amount'   => ['sometimes', 'nullable', 'string', 'max:50'],
+        ]);
+
         $user = $request->user();
         $dto = UserDto::fromUserModel($user);
-        $requests = RepairRequest::forUser($dto)->latest('id')->get();
 
-        $this->apiPresenter->preloadRecommendations($requests, $dto);
+        if (array_key_exists('ids', $validated)) {
+            $ids = array_slice(array_values(array_filter(
+                explode(',', (string) $validated['ids']),
+                static fn (string $id): bool => preg_match('/^[0-9a-f-]{36}$/i', $id) === 1,
+            )), 0, 50);
+            $requests = $ids === []
+                ? collect()
+                : RepairRequest::forUser($dto)->whereIn('uuid', $ids)->latest('id')->get();
+            $this->apiPresenter->preloadRecommendations($requests, $dto);
 
-        return new RepairRequestCollection($requests);
+            return new RepairRequestCollection($requests);
+        }
+
+        $page = $registry->page(
+            $dto,
+            (string) ($validated['scope'] ?? 'all'),
+            array_intersect_key($validated, array_flip(['document', 'vehicle', 'status', 'amount'])),
+            (int) ($validated['page'] ?? 1),
+            (int) ($validated['perPage'] ?? RequestRegistryService::DEFAULT_PER_PAGE),
+        );
+
+        return response()->json([
+            'requests' => RepairRequestListResource::collection($page->getCollection())->resolve($request),
+            'meta'     => [
+                'page'     => $page->currentPage(),
+                'perPage'  => $page->perPage(),
+                'total'    => $page->total(),
+                'lastPage' => $page->lastPage(),
+            ],
+            'counts'   => $registry->counts($dto),
+        ]);
     }
 
     public function show(Request $request, string $id): RepairRequestResource

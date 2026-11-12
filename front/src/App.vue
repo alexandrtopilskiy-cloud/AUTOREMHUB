@@ -107,6 +107,7 @@ export default {
             saveErrorTimer: null,
             notificationTimer: null,
             liveRefreshBusy: false,
+            registryTimer: null,
             lockTimer: null,
             documentLocks: {},
             logoutBusy: false,
@@ -261,9 +262,26 @@ export default {
             return groups;
         },
         awaiting() {
-            return this.store.requests.filter(
-                (r) => r.permissions.requiresAction ?? r.permissions.canAdvance,
-            ).length;
+            return this.store.registry.counts.action || 0;
+        },
+        /**
+         * Параметры страницы реестра ЗР активной вкладки. Фильтры колонок и
+         * листание выполняет сервер: полный список ЗР в браузер не грузится.
+         */
+        registryQuery() {
+            if (this.active?.kind !== "list" || !this.isRequestList) return "";
+            const filters = Object.fromEntries(
+                Object.entries(this.active.filters || {})
+                    .map(([key, value]) => [key, String(value || "").trim()])
+                    .filter(([, value]) => value !== ""),
+            );
+
+            return JSON.stringify({
+                tab: this.active.id,
+                scope: this.active.key === "action" ? "action" : "all",
+                filters,
+                page: this.active.page || 1,
+            });
         },
         unreadNotifications() {
             return this.store.notifications.filter(
@@ -307,19 +325,13 @@ export default {
         },
         listed() {
             if (this.active?.kind !== "list") return [];
-            let rows = this.isRequestList
-                ? this.store.requests
-                : this.active.key === "changeRegistry"
+            // Строки реестра ЗР уже отфильтрованы сервером.
+            if (this.isRequestList) return this.store.registryRows();
+            let rows = this.active.key === "changeRegistry"
                   ? this.store.changeRegistry
                   : this.store.records.filter(
                         (r) => r.kind === this.active.key,
                     );
-            if (this.active.key === "action")
-                rows = rows.filter(
-                    (r) =>
-                        r.permissions.requiresAction ??
-                        r.permissions.canAdvance,
-                );
             if (this.active.key === "partManufacturers") {
                 const search = String(this.active.search || "").toLowerCase().trim();
                 rows = rows
@@ -359,9 +371,11 @@ export default {
         selected() {
             if (this.current) return this.current;
             if (this.active?.kind === "record") return this.active.record;
-            return (
-                this.listed.find((r) => r.id === this.active?.selection) || null
-            );
+            const row =
+                this.listed.find((r) => r.id === this.active?.selection) || null;
+            // Предпросмотру ЗР нужна полная заявка (её подгружает select()).
+            if (row && this.isRequestList) return this.store.get(row.id) || null;
+            return row;
         },
         canCreateCatalog() {
             if (
@@ -455,6 +469,36 @@ export default {
             return "Изменения сохранены";
         },
     },
+    watch: {
+        registryQuery(value, previous) {
+            if (!value) return;
+            const query = JSON.parse(value);
+            const before = previous ? JSON.parse(previous) : null;
+            const filtersChanged =
+                before?.tab === query.tab &&
+                JSON.stringify(before.filters) !== JSON.stringify(query.filters);
+
+            // Новый фильтр — снова с первой страницы.
+            if (filtersChanged && query.page !== 1) {
+                this.active.page = 1;
+                return;
+            }
+
+            clearTimeout(this.registryTimer);
+            this.registryTimer = setTimeout(
+                () => {
+                    this.store
+                        .loadRegistry({
+                            scope: query.scope,
+                            filters: query.filters,
+                            page: query.page,
+                        })
+                        .catch((error) => this.notify(error.message));
+                },
+                filtersChanged ? 350 : 0,
+            );
+        },
+    },
     methods: {
         money,
         total,
@@ -463,47 +507,8 @@ export default {
         catalogNamesValue(key) {
             return catalogNames[key];
         },
-        requestColumnValue(item, key) {
-            if (key === "document") {
-                return [item.number, formatDateTime(item.createdAt)]
-                    .filter(Boolean)
-                    .join(" ");
-            }
-
-            if (key === "vehicle") {
-                return [
-                    item.vehicle || "Автомобиль не выбран",
-                    item.plate || "Пустой черновик",
-                    this.user?.role === "station" ? "" : item.company,
-                ]
-                    .filter(Boolean)
-                    .join(" ");
-            }
-
-            if (key === "status") {
-                const stage = workflow[item.stage] || {};
-
-                return [
-                    item.statusLabel || stage.status,
-                    stage.owner,
-                    item.overdueSeconds ? "Превышен плановый срок" : "",
-                ]
-                    .filter(Boolean)
-                    .join(" ");
-            }
-
-            if (key === "amount") {
-                const amount = total(item);
-
-                return `${amount} ${money(amount)}`;
-            }
-
-            return "";
-        },
         filterCell(item, key) {
-            return this.isRequestList
-                ? this.requestColumnValue(item, key)
-                : this.cell(item, key);
+            return this.cell(item, key);
         },
         step(stage) {
             return workflow[stage];
@@ -683,7 +688,7 @@ export default {
             this.liveRefreshBusy = true;
 
             try {
-                await this.store.refreshLive();
+                await this.store.refreshLive(this.cachedRequestIds());
                 await this.$refs.requestChat?.refresh();
 
                 if (this.active?.key === "changeRegistry") {
@@ -700,6 +705,23 @@ export default {
             } finally {
                 this.liveRefreshBusy = false;
             }
+        },
+
+        /** ЗР, полные данные которых нужны интерфейсу: вкладки, выбор, чат. */
+        cachedRequestIds() {
+            const ids = new Set();
+            for (const tab of this.tabs) {
+                if (tab.kind === "request" && tab.recordId) ids.add(tab.recordId);
+                if (tab.requestId) ids.add(tab.requestId);
+                if (tab.kind === "list" && ["requests", "action"].includes(tab.key) && tab.selection)
+                    ids.add(tab.selection);
+            }
+            if (this.chatRequestId) ids.add(this.chatRequestId);
+            return [...ids];
+        },
+
+        setRegistryPage(page) {
+            if (this.active?.kind === "list") this.active.page = Math.max(1, page);
         },
 
         stopNotificationPolling() {
@@ -1011,6 +1033,7 @@ export default {
                     filters: {},
                     search: "",
                     selection: null,
+                    page: 1,
                 };
 
                 if (!(await this.acquireTabLock(tab))) return false;
@@ -1031,6 +1054,15 @@ export default {
 
         async openRecord(record, kind = "request") {
             const id = kind + ":" + record.id;
+            if (kind === "request") {
+                // В реестре только лёгкие строки — полную ЗР берём с сервера.
+                try {
+                    if (!(await this.store.ensure(record.id))) return false;
+                } catch (error) {
+                    this.notify(error.message);
+                    return false;
+                }
+            }
             let tab = this.tabs.find((item) => item.id === id);
 
             if (!tab) {
@@ -1234,6 +1266,8 @@ export default {
 
         select(item) {
             this.active.selection = item.id;
+            if (this.isRequestList)
+                this.store.ensure(item.id).catch((error) => this.notify(error.message));
             this.panel.state = true;
             if (window.innerWidth < 760) this.showPanel("state");
         },
@@ -1281,7 +1315,7 @@ export default {
 
         pruneDraftSelection() {
             const available = new Set(
-                this.store.requests
+                [...this.store.registry.rows, ...this.store.requests]
                     .filter((item) => item.permissions?.canDeleteDraft)
                     .map((item) => item.id),
             );
@@ -1293,7 +1327,7 @@ export default {
 
         async deleteDrafts(ids) {
             const selectedIds = [...new Set(ids)].filter(
-                (id) => this.store.get(id)?.permissions?.canDeleteDraft,
+                (id) => this.store.find(id)?.permissions?.canDeleteDraft,
             );
 
             if (!selectedIds.length) {
@@ -1548,8 +1582,7 @@ export default {
                 this.active.recommendation = doc;
         },
         async openRequestById(id) {
-            const row = this.store.requests.find((item) => item.id === id);
-            await this.openRecord(row || { id });
+            await this.openRecord(this.store.find(id) || { id });
         },
         async saveRequestBeforeTransfer(id) {
             await this.store.save(id);
@@ -2099,6 +2132,7 @@ export default {
         this.resizeCleanup?.();
         this.stopNotificationPolling();
         this.stopLockHeartbeat();
+        clearTimeout(this.registryTimer);
         clearTimeout(this.toastTimer);
         clearTimeout(this.fatalTimer);
         clearTimeout(this.saveErrorTimer);
@@ -2146,7 +2180,7 @@ export default {
                 :user="user"
                 :active="active"
                 :panel="panel"
-                :requests="store.requests"
+                :request-count="store.registry.counts.all"
                 :awaiting="awaiting"
                 :notifications="store.notifications"
                 :unread-notifications="unreadNotifications"
@@ -2244,7 +2278,9 @@ export default {
                                         <span class="count">{{
                                             active.key === "vehicleModels"
                                                 ? vehicleReferenceTotal
-                                                : listed.length
+                                                : isRequestList
+                                                  ? store.registry.meta.total
+                                                  : listed.length
                                         }}</span>
                                     </h1>
                                 </div>
@@ -2343,6 +2379,8 @@ export default {
                                     allVisibleDraftsSelected
                                 "
                                 :active-filters-applied="activeFiltersApplied"
+                                :pager="isRequestList ? store.registry.meta : null"
+                                @page="setRegistryPage"
                                 @select="select"
                                 @open-listed="openListed"
                                 @toggle-all-drafts="toggleAllDrafts"
