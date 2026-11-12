@@ -134,7 +134,7 @@ final class ApiPresenter
             'createdAt'              => $request->created_at->toISOString(),
             'updatedAt'              => $request->updated_at->toISOString(),
             'estimateVersion'        => $request->estimate_version,
-            'reviewContext'          => $request->review_context,
+            'reviewContext'          => $request->review_context?->value,
             'declinedStationIds' => $request->data['declinedStationIds'] ?? [],
             'statusLabel' => Workflow::statusLabel($request),
             'ownerLabel' => Workflow::ownerLabel($request),
