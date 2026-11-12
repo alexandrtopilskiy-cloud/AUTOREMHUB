@@ -36,78 +36,95 @@ final class EdoClosingDocumentsService
     {
         Log::channel('edo')->info("EdoService: Подготовка УПД (СТО -> УК) для заявки {$req->number}");
 
-        // Отправитель: СТО. Получатель: УК.
         $sto = $req->stationRecord->organization;
         $uk = $req->ukOrganization;
 
-        $document = $this->getEdoDocument($req, EdoDocumentType::UpdSfDop, '-УПД-СТО', $sto->id);
+        $document = $this->getEdoDocument(
+            req: $req,
+            type: EdoDocumentType::UpdSfDop,
+            suffix: '-УПД-СТО',
+            senderId: $sto->id,
+        );
         $provider = $this->dispatcher->forOrganization($sto);
 
         $dto = $this->updBuilder->build($req, $document, $sto, $uk);
 
-        $this->sender->process($dto, $provider, $validateOnly);
+        $this->sender->process($document, $dto, $provider, $validateOnly);
     }
 
     private function generateAndSendUpdManager(RepairRequest $req, bool $validateOnly): void
     {
         Log::channel('edo')->info("EdoService: Подготовка УПД (УК -> Заказчик) для заявки {$req->number}");
 
-        // Отправитель: УК. Получатель: Заказчик.
-        $senderOrg = $req->ukOrganization ?? $req->tenant;
+        $uk = $req->ukOrganization;
+        $customer = $req->customerOrganization;
 
-        $document = $this->getEdoDocument($req, EdoDocumentType::UpdSfDop, '-УПД-УК', $senderOrg->id);
-        $provider = $this->dispatcher->forOrganization($senderOrg);
+        $document = $this->getEdoDocument(
+            req: $req,
+            type: EdoDocumentType::UpdSfDop,
+            suffix: '-УПД-УК',
+            senderId: $uk->id,
+        );
+        $provider = $this->dispatcher->forOrganization($uk);
 
-        $dto = $this->updBuilder->build($req, $document);
+        $dto = $this->updBuilder->build($req, $document, $uk, $customer);
 
-        $this->sender->process($dto, $provider, $validateOnly);
+        $this->sender->process($document, $dto, $provider, $validateOnly);
     }
 
     private function generateAndSendZNSto(RepairRequest $req, bool $validateOnly): void
     {
         Log::channel('edo')->info("EdoService: Подготовка Заказ-наряда (СТО -> УК) для заявки {$req->number}");
 
-        $senderOrg = $req->stationRecord->organization;
+        $sto = $req->stationRecord->organization;
+        $uk = $req->ukOrganization;
 
-        $document = $this->getEdoDocument($req, EdoDocumentType::WorkOrder, '-ЗН-СТО', $senderOrg->id);
-        $provider = $this->dispatcher->forOrganization($senderOrg);
+        $document = $this->getEdoDocument(
+            req: $req,
+            type: EdoDocumentType::WorkOrder,
+            suffix: '-ЗН-СТО',
+            senderId: $sto->id,
+        );
+        $provider = $this->dispatcher->forOrganization($sto);
 
-        $dto = $this->workOrderBuilder->build($req, $document);
+        $dto = $this->workOrderBuilder->build($req, $document, $sto, $uk);
 
-        $this->sender->process($dto, $provider, $validateOnly);
+        $this->sender->process($document, $dto, $provider, $validateOnly);
     }
 
     private function generateAndSendZNManager(RepairRequest $req, bool $validateOnly): void
     {
         Log::channel('edo')->info("EdoService: Подготовка Заказ-наряда (УК -> Заказчик) для заявки {$req->number}");
 
-        $senderOrg = $req->ukOrganization ?? $req->tenant;
+        $uk = $req->ukOrganization;
+        $customer = $req->customerOrganization;
 
-        $document = $this->getEdoDocument($req, EdoDocumentType::WorkOrder, '-ЗН-УК', $senderOrg->id);
-        $provider = $this->dispatcher->forOrganization($senderOrg);
+        $document = $this->getEdoDocument(
+            req: $req,
+            type: EdoDocumentType::WorkOrder,
+            suffix: '-ЗН-УК',
+            senderId: $uk->id,
+        );
+        $provider = $this->dispatcher->forOrganization($uk);
 
-        $dto = $this->workOrderBuilder->build($req, $document);
+        $dto = $this->workOrderBuilder->build($req, $document, $uk, $customer);
 
-        $this->sender->process($dto, $provider, $validateOnly);
+        $this->sender->process($document, $dto, $provider, $validateOnly);
     }
 
-    private function getEdoDocument(
-        RepairRequest $req,
-        EdoDocumentType $type,
-        string $suffix,
-        int $organizationId
-    ): EdoDocument {
+    private function getEdoDocument(RepairRequest $req, EdoDocumentType $type, string $suffix, int $senderId): EdoDocument
+    {
         return EdoDocument::firstOrCreate(
             [
                 'source_type'   => RepairRequest::class,
                 'source_id'     => $req->id,
                 'document_type' => $type->value,
-                'number'        => $req->number . $suffix, // Различаем по номеру
+                'number'        => $req->number . $suffix,
             ],
             [
                 'uuid'             => Str::uuid(),
                 'tenant_id'        => $req->tenant_id,
-                'organization_id'  => $organizationId, // Отправитель
+                'organization_id'  => $senderId,
                 'provider'         => config('edo.default'),
                 'document_date'    => now()->toDateString(),
                 'status'           => 'draft',

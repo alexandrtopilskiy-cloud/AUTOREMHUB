@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 final class DiadocProvider implements
-    EdoProviderInterface,
     EdoOutboundProviderInterface,
     EdoReadProviderInterface,
     EdoAccountProviderInterface
@@ -36,11 +35,6 @@ final class DiadocProvider implements
         private readonly DiadocClient $client,
         private readonly DiadocMapper $mapper,
     ) {}
-
-    public function provider(): EdoProviderEnum
-    {
-        return EdoProviderEnum::Diadoc;
-    }
 
     /**
      * Привязка организации к Диадоку.
@@ -317,5 +311,10 @@ final class DiadocProvider implements
             'edo_client_id'     => $clientId,
             'edo_refresh_token' => $refreshToken,
         ]);
+    }
+
+    public function createNonFormalizedDocument(EdoStructuredRequest $request): EdoDocumentDto
+    {
+        // TODO: Implement createNonFormalizedDocument()
     }
 }

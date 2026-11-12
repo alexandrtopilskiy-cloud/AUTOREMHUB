@@ -6,7 +6,6 @@ namespace App\Services\Edo\Drivers\Sbis;
 
 use App\Contracts\Edo\EdoOutboundProviderInterface;
 use App\DTO\EdoDocumentDto;
-use App\DTO\EdoFile;
 use App\DTO\EdoSignature;
 use App\DTO\EdoStructuredRequest;
 use App\Enums\Edo\EdoDocumentStatus;
@@ -29,11 +28,11 @@ class SbisProvider implements EdoOutboundProviderInterface
             throw new RuntimeException("В запросе отсутствует meta['xml_content'].");
         }
 
+        $uuid = Str::uuid()->toString();
         $metadata = SbisXmlMetadataExtractor::extractUpdMetadata($xmlContent);
-        $externalId = 'ZR-' . $dto->number . "-" . Str::uuid()->toString();
+        $externalId = "{$dto->number}-$uuid";
         $logger->info("EXTRANAL ID = $externalId");
 
-        // 1. Формируем объект "Документ"
         $document = [
             'Идентификатор' => $externalId,
             'Дата'          => $metadata['Дата'],
@@ -41,7 +40,7 @@ class SbisProvider implements EdoOutboundProviderInterface
             'Тип'           => $metadata['Тип'],
             'Вложение'      => [
                 [
-                    'Идентификатор'    => Str::uuid()->toString(),
+                    'Идентификатор'    => $uuid,
                     'Файл'             => [
                         'Имя'            => 'document.xml',
                         'ДвоичныеДанные' => base64_encode($xmlContent),
@@ -64,14 +63,8 @@ class SbisProvider implements EdoOutboundProviderInterface
             ]
         ];
 
-        // 2. Вызываем клиент
         $response = $this->client->request('СБИС.ЗаписатьДокумент', ['Документ' => $document]);
         $sbisInternalId = $response['Идентификатор'] ?? $externalId;
-
-        // В мок-режиме возвращаем статус sended (если config позволяет)
-        // В реальном — draft
-        $isMock = config('edo.mock', false);
-        $status = $isMock ? EdoDocumentStatus::Sended : EdoDocumentStatus::Draft;
 
         return new EdoDocumentDto(
             externalId: $externalId,
@@ -79,7 +72,7 @@ class SbisProvider implements EdoOutboundProviderInterface
             number: $metadata['Номер'],
             date: $dto->date,
             type: $dto->type,
-            status: $status,
+            status: EdoDocumentStatus::Sended,
             senderName: $dto->sender->name,
             senderInn: $dto->sender->inn,
             receiverName: $dto->receiver->name,
@@ -88,18 +81,107 @@ class SbisProvider implements EdoOutboundProviderInterface
         );
     }
 
-    public function addAttachment(string $externalId, EdoFile $file): void
+    /**
+     * Создает неформализованный документ (например, Заказ-наряд) в СБИС.
+     * Отправляет PDF-файл напрямую, без парсинга XML.
+     */
+    public function createNonFormalizedDocument(EdoStructuredRequest $request): EdoDocumentDto
     {
-        Log::channel('edo')->info("SbisProvider: Добавление вложения к {$externalId}");
+        $pdfContent = $request->meta['file_content'];
+        $fileName = $request->meta['file_name'];
+
+        if (!$pdfContent) {
+            throw new RuntimeException("В запросе отсутствует meta['file_content'] (PDF).");
+        }
+
+        // СБИС требует UUID для идентификатора документа
+        $externalId = Str::uuid()->toString();
+
+        // Формируем структуру документа по документации СБИС
+        $document = [
+            'Идентификатор' => $externalId,
+            'Дата'          => $request->date->format('d.m.Y'),
+            'Номер'         => $request->number,
+            'Тип'           => 'NonFormalized', // Тип для неформализованного документа
+            'Примечание'    => 'Документ по заявке (Заказ-наряд)',
+
+            // Вложение с PDF-файлом
+            'Вложение'      => [
+                [
+                    'Идентификатор' => Str::uuid()->toString(),
+                    'Файл'          => [
+                        'Имя'            => $fileName,
+                        'ДвоичныеДанные' => $pdfContent, // Уже в base64 из билдера
+                    ],
+                ]
+            ],
+
+            // Организации (отправитель и получатель)
+            'НашаОрганизация' => [
+                'СвЮЛ' => [
+                    'ИНН'      => $request->sender->inn,
+                    'КПП'      => $request->sender->kpp,
+                    'Название' => $request->sender->name,
+                ]
+            ],
+            'Контрагент' => [
+                'СвЮЛ' => [
+                    'ИНН'      => $request->receiver->inn,
+                    'КПП'      => $request->receiver->kpp,
+                    'Название' => $request->receiver->name,
+                ]
+            ],
+        ];
+
+        // Отправляем запрос в СБИС
+        $response = $this->client->request('СБИС.ЗаписатьДокумент', ['Документ' => $document]);
+        $sbisInternalId = $response['Идентификатор'] ?? $externalId;
+
+        return new EdoDocumentDto(
+            externalId: $externalId,
+            externalUuid: $sbisInternalId,
+            number: $request->number,
+            date: $request->date,
+            type: $request->type,
+            status: EdoDocumentStatus::Draft,
+            senderName: $request->sender->name,
+            senderInn: $request->sender->inn,
+            receiverName: $request->receiver->name,
+            receiverInn: $request->receiver->inn,
+            raw: $response
+        );
     }
 
     public function signDocument(string $externalId, EdoSignature $signature): void
     {
-        Log::channel('edo')->info("SbisProvider: Подписание документа {$externalId}");
+        // 1. Подготавливаем действие подписания
+        $prepared = $this->client->request('СБИС.ПодготовитьДействие', [
+            'Документ' => ['Идентификатор' => $externalId],
+            'Действие' => 'Подписать',
+        ]);
+
+        // 2. Выполняем (передаем сертификат и подпись)
+        $this->client->request('СБИС.ВыполнитьДействие', [
+            'Документ' => ['Идентификатор' => $externalId],
+            'Действие' => 'Подписать',
+            'Параметры' => $prepared, // Данные из первого шага
+            'Подпись'   => $signature->base64, // Ваша подпись
+        ]);
     }
 
     public function sendDocument(string $externalId): void
     {
-        Log::channel('edo')->info("SbisProvider: Отправка документа {$externalId}");
+        // 1. Подготавливаем действие подписания
+        $prepared = $this->client->request('СБИС.ПодготовитьДействие', [
+            'Документ' => ['Идентификатор' => $externalId],
+            'Действие' => 'Отправить',
+        ]);
+
+        // 2. Выполняем (передаем сертификат и подпись)
+        $this->client->request('СБИС.ВыполнитьДействие', [
+            'Документ' => ['Идентификатор' => $externalId],
+            'Действие' => 'Отправить',
+            'Параметры' => $prepared,
+        ]);
     }
 }

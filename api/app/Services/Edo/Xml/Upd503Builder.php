@@ -212,14 +212,45 @@ final class Upd503Builder
         $idSv = $dom->createElement('ИдСв');
         $node->appendChild($idSv);
 
-        $svUl = $dom->createElement('СвЮЛУч');
-        $svUl->setAttribute('НаимОрг', $party->name);
-        $svUl->setAttribute('ИННЮЛ', $party->inn);
-        if ($party->kpp !== '') {
-            $svUl->setAttribute('КПП', $party->kpp);
-        }
-        $idSv->appendChild($svUl);
+        // Проверяем, ИП это или ЮЛ (по длине ИНН)
+        $isIndividual = strlen($party->inn) === 12;
 
+        if ($isIndividual) {
+            // Генерируем <СвИП> для Индивидуального предпринимателя
+            $svIp = $dom->createElement('СвИП');
+            $svIp->setAttribute('ИННФЛ', $party->inn);
+
+            // Для ИП ФИО берем из EdoPartyInfo (или из signer, если так удобнее)
+            // Предполагаем, что у вас в EdoPartyInfo есть поля для ФИО
+            // Если нет, нужно добавить их туда, либо брать из $party->name
+            $fioParts = preg_split('/\s+/', trim($party->name));
+
+            $fio = $dom->createElement('ФИО');
+            $fio->setAttribute('Фамилия', $fioParts[0] ?? '');
+            $fio->setAttribute('Имя',     $fioParts[1] ?? '');
+            if (isset($fioParts[2])) {
+                $fio->setAttribute('Отчество', $fioParts[2]);
+            }
+            $svIp->appendChild($fio);
+
+            // ОГРНИП (обязателен для ИП, если есть)
+            if (!empty($party->ogrnip)) {
+                $svIp->setAttribute('ОГРНИП', $party->ogrnip);
+            }
+
+            $idSv->appendChild($svIp);
+        } else {
+            // Генерируем <СвЮЛУч> для Юридического лица
+            $svUl = $dom->createElement('СвЮЛУч');
+            $svUl->setAttribute('НаимОрг', $party->name);
+            $svUl->setAttribute('ИННЮЛ', $party->inn);
+            if ($party->kpp !== '') {
+                $svUl->setAttribute('КПП', $party->kpp);
+            }
+            $idSv->appendChild($svUl);
+        }
+
+        // Адрес
         $adres = $dom->createElement('Адрес');
         $node->appendChild($adres);
 

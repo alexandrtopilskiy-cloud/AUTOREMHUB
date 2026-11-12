@@ -21,7 +21,7 @@
 </head>
 <body>
     <h1>{{ $title }} № {{ $doc->number }}</h1>
-    <div class="sub">от {{ $doc->document_date->format('d.m.Y') }} · по заявке на ремонт {{ $payload['request']['number'] ?? '' }}</div>
+    <div class="sub">от {{ $doc->document_date->format('d.m.Y') }}</div>
     @yield('content')
 </body>
 </html>

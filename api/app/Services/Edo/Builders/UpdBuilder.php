@@ -40,53 +40,47 @@ final class UpdBuilder
         $logger = Log::channel('edo');
 
         $workOrder = $req->workOrder;
-
         if (!$workOrder) {
             throw new \RuntimeException("У заявки {$req->number} отсутствует заказ-наряд.");
         }
 
-        // 1. Формируем Payload для XML билдера (с НДС)
+        $isSenderIp = strlen($sender->inn) === 12;
+        $isReceiverIp = strlen($receiver->inn) === 12;
+
         $payload = new EdoInvoicePayload(
             seller: new EdoPartyInfo(
                 name: $sender->name,
                 inn: $sender->inn,
-                kpp: $sender->kpp ?? '',
+                kpp: $sender->kpp,
                 address: $sender->legal_address,
-                ediCode: $sender->edo_edi_code
+                regionCode: $sender->region_code ?? '78',
+                ediCode: $sender->edo_edi_code,
+                isIndividual: $isSenderIp,
+                ogrnip: $sender->ogrn,
             ),
             buyer: new EdoPartyInfo(
                 name: $receiver->name,
                 inn: $receiver->inn,
                 kpp: $receiver->kpp ?? '',
                 address: $receiver->legal_address,
-                ediCode: $receiver->edo_edi_code
+                regionCode: $receiver->region_code ?? '78',
+                ediCode: $receiver->edo_edi_code,
+                isIndividual: $isReceiverIp,
+                ogrnip: $receiver->ogrn,
             ),
             rows: $this->mapWorkOrderToRows($workOrder)
         );
 
-        $fio = $this->parseFio($sender->director_name);
+        $signer = EdoSignerDto::fromOrganization($sender);
 
-        // 2. Формируем данные подписанта (от имени ОТПРАВИТЕЛЯ)
-        $signer = new EdoSignerDto(
-            lastName: $fio['lastName'],
-            firstName: $fio['firstName'],
-            middleName: $fio['middleName'],
-            title: 'Генеральный директор',
-            inn: $sender->inn,
-            authorityScope: '1',
-            signatureType: '1'
-        );
-
-        // 3. Генерируем XML (СЧФДОП — Статус 1)
         $xmlContent = $this->builder->build(
             payload: $payload,
             function: UpdFunction::SfDop,
             number: $document->number,
             date: new DateTimeImmutable($document->document_date->format('Y-m-d')),
-            signer: $signer
+            signer: $signer,
         );
 
-        // 4. Считаем общую сумму
         $totalSum = number_format((float) $workOrder->total, 2, '.', '');
 
         return new EdoStructuredRequest(
@@ -124,7 +118,10 @@ final class UpdBuilder
     {
         $rows = [];
         foreach ($workOrder->items as $item) {
-            $totalSum = (float) $item->total;
+            $quantity = (float) $item->quantity;
+            $price = (float) $item->price;
+            $totalSum = $quantity * $price;
+
             $vatRate = 20.0;
 
             $netSum = $totalSum / (1 + $vatRate / 100);
@@ -133,14 +130,15 @@ final class UpdBuilder
             $rows[] = new EdoInvoiceRow(
                 name: $item->name,
                 unit: $item->unit_code ?? '796',
-                amount: (string) $item->quantity,
-                price: number_format($netSum / max(1, (float)$item->quantity), 2, '.', ''),
+                amount: (string) $quantity,
+                price: number_format($price, 2, '.', ''),
                 netSum: number_format($netSum, 2, '.', ''),
                 vatType: '20%',
                 vatSum: number_format($vatSum, 2, '.', ''),
                 totalSum: number_format($totalSum, 2, '.', '')
             );
         }
+
         return $rows;
     }
 

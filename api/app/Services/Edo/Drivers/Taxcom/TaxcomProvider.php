@@ -6,20 +6,16 @@ namespace App\Services\Edo\Drivers\Taxcom;
 
 use App\Contracts\Edo\EdoAccountProviderInterface;
 use App\Contracts\Edo\EdoOutboundProviderInterface;
-use App\Contracts\Edo\EdoProviderInterface;
 use App\Contracts\Edo\EdoReadProviderInterface;
-use App\Enums\Edo\EdoProvider as EdoProviderEnum;
-use App\Exceptions\EdoException;
-use App\DTO\EdoAccountInfoDto;
 use App\DTO\EdoDocumentDto;
 use App\DTO\EdoFile;
 use App\DTO\EdoSignature;
 use App\DTO\EdoStructuredRequest;
-    use App\DTO\EdoSyncResult;
-
+use App\DTO\EdoSyncResult;
+use App\Exceptions\EdoException;
+use App\Models\Organization;
 
 final class TaxcomProvider implements
-    EdoProviderInterface,
     EdoOutboundProviderInterface,
     EdoReadProviderInterface,
     EdoAccountProviderInterface
@@ -29,48 +25,8 @@ final class TaxcomProvider implements
         private readonly TaxcomMapper $mapper,
     ) {}
 
-    public function provider(): EdoProviderEnum
-    {
-        return EdoProviderEnum::Taxcom;
-    }
-
-    /* --- Состояние ЛК --- */
-
-    public function getAccountInfo(): EdoAccountInfoDto
-    {
-        // GET /API/GetMyAccountInfo
-        $response = $this->client->get('/API/GetMyAccountInfo');
-
-        // Такском возвращает XML. Парсим (пока — простой регэксп, позже — DOMDocument).
-        $body = $response['_raw'] ?? '';
-        $data = $this->parseXml($body);
-
-        return new EdoAccountInfoDto(
-            login: (string) ($data['Login'] ?? ''),
-            isBlocked: filter_var($data['IsBlocked'] ?? false, FILTER_VALIDATE_BOOLEAN),
-            tariffName: $data['TariffName'] ?? null,
-            tariffExpiredAt: $data['TariffExpiredAt'] ?? null,
-            availableDocuments: (int) ($data['AvailableDocuments'] ?? 0),
-            consumedDocuments: (int) ($data['ConsumedDocuments'] ?? 0),
-            balance: isset($data['Balance']) ? (float) $data['Balance'] : null,
-        );
-    }
-
-    public function isAuthenticated(): bool
-    {
-        try {
-            $this->client->get('/API/GetMyAccountInfo');
-            return true;
-        } catch (EdoException) {
-            return false;
-        }
-    }
-
-    /* --- Список документов --- */
-
     public function getDocumentList(array $filters = []): array
     {
-        // GET /API/GetMessageList?DateFrom=...&DateTo=...
         $query = [
             'DateFrom' => $filters['dateFrom'] ?? now()->subMonth()->format('d.m.Y'),
             'DateTo'   => $filters['dateTo'] ?? now()->format('d.m.Y'),
@@ -119,28 +75,23 @@ final class TaxcomProvider implements
         throw EdoException::operationNotSupported('downloadPdf', 'taxcom');
     }
 
-    public function pullEvents(int $fromEventId, int $count = 100): EdoSyncResult
+    public function createNonFormalizedDocument(EdoStructuredRequest $request): EdoDocumentDto
     {
-        throw EdoException::operationNotSupported('pullEvents', 'taxcom');
+        // TODO: Implement createNonFormalizedDocument()
     }
 
-    /* --- Вспомогательные --- */
-
-    private function parseXml(string $xml): array
+    public function pullEvents(int $fromEventId, int $count = 100): EdoSyncResult
     {
-        $data = [];
-        if (preg_match_all('/<(\w+)>(.*?)<\/\1>/s', $xml, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $match) {
-                $data[$match[1]] = $match[2];
-            }
-        }
-        return $data;
+        // TODO: Implement pullEvents()
+    }
+
+    public function connect(Organization $org, array $credentials): void
+    {
+        // TODO: Implement connect()
     }
 
     private function parseDocumentList(array $response): array
     {
-        // Пока предполагаем, что ответ — массив в JSON.
-        // Для XML нужно будет написать парсер.
         return $response['Documents'] ?? [];
     }
 }

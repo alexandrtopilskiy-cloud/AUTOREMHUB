@@ -8,9 +8,8 @@ use App\Contracts\Edo\EdoOutboundProviderInterface;
 use App\DTO\EdoStructuredRequest;
 use App\Services\Edo\EdoXmlValidator;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use App\Models\EdoDocument;
+use App\Enums\Edo\EdoDocumentType;
 
 final class EdoDocumentSenderService
 {
@@ -40,41 +39,20 @@ final class EdoDocumentSenderService
             return;
         }
 
-        if (config('edo.mock')) {
-            $logger->info("Sender [MOCK]: Генерация PDF из XML и сохранение.");
-            $this->handleMockPdf($dto);
+        $logger->info("Sender: Отправка в провайдер (реальный режим).");
+
+        // Выбираем метод в зависимости от типа документа
+        if ($dto->type === EdoDocumentType::NonFormalized) {
+            // Для Заказ-наряда (PDF)
+            $result = $provider->createNonFormalizedDocument($dto);
         } else {
-            $logger->info("Sender: Отправка в провайдер (реальный режим).");
+            // Для УПД (XML)
             $result = $provider->createStructuredDocument($dto);
-
-            $document->update([
-                'external_id' => $result->externalId,
-                'status'      => $result->status->value ?? 'draft', // Обычно 'draft'
-            ]);
-
-            $logger->info("Sender: Документ обновлен в БД", [
-                'external_id' => $result->externalId,
-                'status'      => $result->status->value
-            ]);
         }
-    }
 
-    private function handleMockPdf(EdoStructuredRequest $dto): void
-    {
-        $logger = Log::channel('edo');
-
-        // Предполагаем, что в DTO лежит file_content (PDF)
-        $pdfContent = base64_decode($dto->meta['file_content']);
-        $originalName = $dto->meta['file_name'] ?? 'document.pdf';
-        $uniquePrefix = Str::uuid()->toString();
-        $fileName = $uniquePrefix . '_' . $originalName;
-
-        $disk = 'local';
-        $objectKey = 'edo/mock/' . $dto->meta['repair_request_id'] . '_' . $fileName;
-
-        Storage::disk($disk)->put($objectKey, $pdfContent);
-
-        // ... Логика получения request_status_period_id и создания Attachment ...
-        // (тут ваш код из saveMockAttachment)
+        $document->update([
+            'external_id' => $result->externalId,
+            'status'      => $result->status->value ?? 'draft',
+        ]);
     }
 }

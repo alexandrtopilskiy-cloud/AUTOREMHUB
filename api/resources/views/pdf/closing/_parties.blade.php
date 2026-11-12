@@ -1,16 +1,17 @@
-@php
-    $party = function (array $p): string {
-        return trim(($p['name'] ?? '') . (($p['inn'] ?? '') !== '' ? ', ИНН ' . $p['inn'] : '') . (($p['kpp'] ?? '') !== '' ? ', КПП ' . $p['kpp'] : '') . (($p['address'] ?? '') !== '' ? ', ' . $p['address'] : ''));
-    };
-@endphp
 <table class="parties">
     <tr>
-        <td><span class="label">{{ $sellerLabel ?? 'Исполнитель' }}:</span><br>{{ $party($payload['seller'] ?? []) }}</td>
-        <td><span class="label">{{ $buyerLabel ?? 'Заказчик' }}:</span><br>{{ $party($payload['buyer'] ?? []) }}</td>
+        <td>
+            <span class="label">{{ $sellerLabel ?? 'Исполнитель' }}:</span><br>
+            {{ $payload['seller']['display_name'] ?? '' }}
+        </td>
+        <td>
+            <span class="label">{{ $buyerLabel ?? 'Заказчик' }}:</span><br>
+            {{ $payload['buyer']['display_name'] ?? '' }}
+        </td>
     </tr>
 </table>
-<div class="box">
-    <span class="label">ТС:</span> {{ $payload['request']['vehicle'] ?? '' }}
-    · Госномер {{ $payload['request']['plate'] ?? '—' }} · VIN {{ $payload['request']['vin'] ?? '—' }}
-    @if(!empty($payload['request']['mileage'])) · Пробег {{ number_format((float) $payload['request']['mileage'], 0, ',', ' ') }} км @endif
-</div>
+@if(!empty($payload['vehicle_info']))
+    <div class="box">
+        {{ $payload['vehicle_info'] }}
+    </div>
+@endif

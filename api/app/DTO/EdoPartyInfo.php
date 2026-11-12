@@ -10,8 +10,10 @@ final readonly class EdoPartyInfo
         public string $name,
         public string $inn,
         public string $kpp,
-        public ?string $address = null,
-        public ?string $regionCode = null,
-        public ?string $ediCode = null,
+        public ?string $address,
+        public ?string $regionCode,
+        public ?string $ediCode,
+        public bool $isIndividual = false,
+        public ?string $ogrnip = null,
     ) {}
 }

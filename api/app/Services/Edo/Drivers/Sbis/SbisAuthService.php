@@ -30,7 +30,6 @@ class SbisAuthService
         }
 
         $logger = Log::channel('edo');
-        $logger->info(json_encode($dto, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
         // 1. Проверяем, есть ли уже сохраненный токен и не истек ли он
         if ($dto->token && $dto->tokenExpiresAt?->isFuture()) {
             return $dto->token;

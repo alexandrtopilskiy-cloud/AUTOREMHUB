@@ -8,41 +8,58 @@ use App\DTO\EdoOrganizationDto;
 use App\DTO\EdoStructuredRequest;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
+use App\Models\Organization;
 use App\Models\RepairRequest;
+use App\Services\DocumentGeneratorService;
 use DateTimeImmutable;
 
 final class WorkOrderBuilder
 {
-    public function build(RepairRequest $req, EdoDocument $document): EdoStructuredRequest
-    {
-        // Пока это заглушка. Здесь в будущем будет генерация XML/PDF для Заказ-наряда.
+    public function __construct(
+        private readonly DocumentGeneratorService $generator
+    ) {}
+
+    public function build(
+        RepairRequest $req,
+        EdoDocument $document,
+        Organization $sender,
+        Organization $receiver
+    ): EdoStructuredRequest {
+
+        $workOrder = $req->workOrder;
+        if (!$workOrder) {
+            throw new \RuntimeException("У заявки {$req->number} отсутствует заказ-наряд.");
+        }
+
+        // 1. Генерируем PDF
+        $pdfContent = $this->generator->generateWorkOrder($req, $workOrder, $sender, $receiver);
 
         return new EdoStructuredRequest(
-            type: EdoDocumentType::WorkOrder, // Убедитесь, что этот тип есть в вашем Enum
+            type: EdoDocumentType::NonFormalized, // <-- Указываем, что это неформализованный документ
             number: $document->number,
             date: new DateTimeImmutable($document->document_date->format('Y-m-d')),
             sender: new EdoOrganizationDto(
-                id: '00000000-0000-0000-0000-000000000000',
-                name: 'Заглушка Отправителя',
-                inn: '0000000000',
-                kpp: '000000000',
+                id: $sender->uuid,
+                name: $sender->name,
+                inn: $sender->inn,
+                kpp: $sender->kpp ?? '',
             ),
             receiver: new EdoOrganizationDto(
-                id: '00000000-0000-0000-0000-000000000001',
-                name: 'Заглушка Получателя',
-                inn: '1111111111',
-                kpp: '111111111',
+                id: $receiver->uuid,
+                name: $receiver->name,
+                inn: $receiver->inn,
+                kpp: $receiver->kpp ?? '',
             ),
             items: [],
-            totalSum: '0.00',
+            totalSum: number_format((float) $workOrder->total, 2, '.', ''),
             vatSum: '0.00',
-            vatIncluded: false,
+            vatIncluded: true,
             meta: [
-                // Пока просто пустая заглушка для XML
-                'xml_content'       => '<?xml version="1.0" encoding="UTF-8"?><Файл></Файл>',
+                // Для неформализованного документа xml_content не нужен
                 'file_name'         => "Заказ-наряд_{$document->number}.pdf",
-                'file_content'      => base64_encode('mock pdf content'), // Фейковый PDF
+                'file_content'      => base64_encode($pdfContent),
                 'repair_request_id' => $req->id,
+                'uploaded_by'       => $req->created_by,
             ],
         );
     }
