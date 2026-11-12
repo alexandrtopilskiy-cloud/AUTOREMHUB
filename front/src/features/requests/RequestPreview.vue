@@ -13,6 +13,20 @@ import {
 
 const KIND_REQUEST = 'request';
 
+/*
+ * Подпись панели «Состояние документа»: строка списка — предпросмотр,
+ * открытый документ — доступен для редактирования или только для просмотра
+ * (нет прав на этапе или документ открыт другим пользователем).
+ */
+const MODE_PREVIEW = 'preview';
+const MODE_EDIT = 'edit';
+const MODE_READONLY = 'readonly';
+const MODE_LABELS = {
+  [MODE_PREVIEW]: 'Предпросмотр',
+  [MODE_EDIT]: 'Редактирование',
+  [MODE_READONLY]: 'Только просмотр',
+};
+
 const SECTION_DATA = 'data';
 const SECTION_HISTORY = 'history';
 const SECTION_TIME = 'time';
@@ -49,6 +63,11 @@ const props = defineProps({
   kind: {
     type: String,
     required: true,
+  },
+  /** preview — строка списка, edit — открыт для правки, readonly — только просмотр. */
+  mode: {
+    type: String,
+    default: 'preview',
   },
 });
 
@@ -104,7 +123,7 @@ function periodExitedAt(period) {
 
   <!-- Предпросмотр -->
   <div v-else class="preview-content">
-    <span class="eyebrow">Только просмотр</span>
+    <span class="eyebrow" :class="{ 'eyebrow-edit': mode === MODE_EDIT }">{{ MODE_LABELS[mode] || MODE_LABELS[MODE_PREVIEW] }}</span>
     <h2>{{ item.number || item.vehicle || item.name }}</h2>
 
     <template v-if="kind === KIND_REQUEST">

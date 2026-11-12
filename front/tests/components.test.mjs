@@ -1627,7 +1627,7 @@ test("Options API component rendering and interactive methods", async (context) 
             },
         );
 
-        await context.test("right preview is read-only", async () => {
+        await context.test("right preview has no inputs and labels mode", async () => {
             const { default: Preview } = await server.ssrLoadModule(
                 "/src/features/requests/RequestPreview.vue",
             );
@@ -1638,8 +1638,16 @@ test("Options API component rendering and interactive methods", async (context) 
                 }),
             );
 
-            assert.match(html, /Только просмотр/);
+            assert.match(html, /Предпросмотр/);
             assert.doesNotMatch(html, /<(?:input|textarea|select)\b/);
+
+            // Открытая ЗР: подпись по правам, а не постоянное «Только просмотр».
+            const label = async (mode) => renderToString(
+                createSSRApp(Preview, { item: request(), kind: "request", mode }),
+            );
+            assert.match(await label("edit"), /Редактирование/);
+            assert.doesNotMatch(await label("edit"), /Только просмотр/);
+            assert.match(await label("readonly"), /Только просмотр/);
         });
         await context.test(
             "customer final approval exposes icon route actions and recommendation selection",
