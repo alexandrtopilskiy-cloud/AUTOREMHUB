@@ -198,11 +198,8 @@ final class ApiPresenter
             'invoice'                => $this->presentInvoice($request),
             'acceptanceAct'          => $this->presentAcceptanceAct($request),
             'closing'                => app(ClosingDocumentService::class)->present($request, $dto),
-            // ЛК СТО, этапы «Ожидание ТС на СТО» и «В работе»: каких ЗЧ не хватает на складе СТО.
-            'stockShortage'          => $dto->role === UserRole::Station
-                && in_array($request->stage, [RepairStage::WaitingVehicle, RepairStage::RepairInProgress], true)
-                ? app(\App\Services\StockService::class)->missingForRequest($request)
-                : [],
+            // Склад: нехватка ЗЧ у СТО (этапы 4/5) и «ЗЧ от УК» (галочка, Перемещение).
+            ...app(\App\Services\StockService::class)->presentRequest($request, $dto->role),
             'permissions' => array_merge(Workflow::permissions($request, $dto), [
                 'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
                     || $request->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
@@ -385,6 +382,7 @@ final class ApiPresenter
                     'name'            => $part->name,
                     'article'         => $part->article,
                     'manufacturer'    => $part->manufacturer_snapshot ?? $part->catalogPart?->manufacturer ?? '',
+                    'fromManager' => (bool) $part->from_manager,
                     'purchasePrice' => $part->purchase_price === null ? null : (float) $part->purchase_price,
                     'catalogPartId'   => $part->catalog_part_id !== null
                         ? $part->catalogPart?->uuid ?? ''

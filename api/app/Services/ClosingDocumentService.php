@@ -149,7 +149,7 @@ final class ClosingDocumentService
 
         $stationOrder = $this->store($request, $user, RequestDocumentType::StationWorkOrder, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
-            'agentDiscount' => ['percent' => $summary['percent'], 'amount' => $summary['amount'], 'fullAmount' => $summary['total']],
+            'agentDiscount' => ['percent' => $summary['percent'], 'amount' => $summary['amount'], 'fullAmount' => round($summary['stationAmount'] + $summary['amount'], 2)],
         ]);
         $documents[] = $stationOrder;
         $documents[] = $this->store($request, $user, RequestDocumentType::StationUpd, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
@@ -393,7 +393,8 @@ final class ClosingDocumentService
 
     /**
      * Строки документов: для СТО → УК сумма строки уменьшается на агентскую
-     * скидку, для УК → Заказчик — полная стоимость.
+     * скидку, для УК → Заказчик — полная стоимость. ЗЧ, перемещённые от УК
+     * («ЗЧ от УК»), реализует УК: в документы СТО → УК они не попадают.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -412,7 +413,7 @@ final class ClosingDocumentService
         foreach ($request->parts as $part) {
             /** @var RequestPart $part */
             $quantity = bcsub((string) $part->quantity, (string) $part->returned_quantity, 3);
-            if (bccomp($quantity, '0', 3) <= 0) {
+            if (bccomp($quantity, '0', 3) <= 0 || ($stationSide && $part->from_manager)) {
                 continue;
             }
             $fields = AgentDiscount::partFields($part);

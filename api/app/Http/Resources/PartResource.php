@@ -23,6 +23,7 @@ final class PartResource extends JsonResource
             'name'            => $this->name,
             'article'         => $this->article,
             'manufacturer'    => $this->manufacturer_snapshot ?? $this->catalogPart?->manufacturer ?? '',
+            'fromManager'     => (bool) $this->from_manager,
             'purchasePrice'   => $this->purchase_price === null ? null : (float) $this->purchase_price,
             'catalogPartId'   => $this->catalog_part_id !== null ? ($this->catalogPart?->uuid ?? '') : '',
             'unit'            => $this->unit,

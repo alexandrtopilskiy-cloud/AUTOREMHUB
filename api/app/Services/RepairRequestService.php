@@ -418,6 +418,7 @@ final class RepairRequestService
                 $this->applyContactChange($request, $dto->contactId);
                 $this->applyDriverChange($request, $dto->driverId);
                 $this->applyStationChange($request, $dto->stationId);
+                $this->applyPartsFromManagerChange($request, $dto->rawPatch);
                 $this->applyReasonChange($request, $user, $dto->reasonId);
                 $this->applyReasonSubtypeChange($request, $dto->reasonSubtypeId);
 
@@ -448,8 +449,9 @@ final class RepairRequestService
                     $this->replaceWorks($request, $works, $userDto->role === UserRole::Customer);
                 }
 
-                // Смена СТО: строки получают агентскую скидку новой СТО.
-                if ($request->isDirty('assigned_station_id')) {
+                // Смена СТО: строки получают агентскую скидку новой СТО;
+                // «ЗЧ от УК» — агентская скидка не применяется (0 %).
+                if ($request->isDirty('assigned_station_id') || $request->isDirty('parts_from_manager')) {
                     $agentDiscount = self::stationAgentDiscount($request);
                     foreach ([RequestWork::class, RequestPart::class] as $lineModel) {
                         $lineModel::query()
@@ -584,6 +586,19 @@ final class RepairRequestService
             $request->driver_snapshot = null;
             $request->data = array_replace($request->data, ['contact' => '']);
         }
+    }
+
+    /** Галочка «ЗЧ от УК» (УК, этап «Маршрутизация УК»). */
+    private function applyPartsFromManagerChange(RepairRequest $request, array $patch): void
+    {
+        if (!array_key_exists('partsFromManager', $patch)) {
+            return;
+        }
+        $value = (bool) $patch['partsFromManager'];
+        if ($value !== (bool) $request->parts_from_manager && $request->parts_transfer_document_id !== null) {
+            Input::fail('ЗЧ уже перемещены со склада УК на склад СТО — изменить «ЗЧ от УК» нельзя', 'partsFromManager');
+        }
+        $request->parts_from_manager = $value;
     }
 
     private function applyContactChange(RepairRequest $request, ?string $contactId): void
@@ -745,6 +760,12 @@ final class RepairRequestService
      */
     public static function stationAgentDiscount(RepairRequest $request): ?string
     {
+        // «ЗЧ от УК»: УК зарабатывает на наценке ЗЧ, агентской скидки нет
+        // ни по работам, ни по ЗЧ.
+        if ($request->parts_from_manager) {
+            return '0';
+        }
+
         if ($request->assigned_station_id === null) {
             return null;
         }
@@ -1408,6 +1429,24 @@ final class RepairRequestService
                 $attachment->update(['request_event_id' => $event->id]);
             },
         ];
+    }
+
+    /**
+     * «Принять ЗЧ от УК» (СТО, этап «Ожидание ТС на СТО»): ЗЧ ЗР перемещаются
+     * со склада УК на «Склад от УК» СТО документом Перемещение (PRM-).
+     */
+    public function acceptManagerParts(User $user, string $key, int $revision): RepairRequest
+    {
+        return $this->mutate($user, $key, $revision, 'manager_parts_accepted', function (RepairRequest $request) use ($user): array {
+            $this->flag($request, $user, 'canAcceptManagerParts');
+            $request->loadMissing('stationRecord');
+            $doc = app(StockService::class)->transferFromManager($request, $user);
+
+            return [
+                'comment' => 'ЗЧ от УК приняты на склад СТО «' . \App\Models\Warehouse::FROM_MANAGER_NAME . '», Перемещение ' . $doc->number,
+                'details' => ['transferId' => $doc->uuid, 'number' => $doc->number],
+            ];
+        });
     }
 
     public function transition(User $user, TransitionDto $dto): RepairRequest
@@ -2224,6 +2263,10 @@ final class RepairRequestService
 
         if ($stage === RepairStage::ManagerRouting) {
             $this->validateManagerReviewStage($request);
+        }
+
+        if ($stage === RepairStage::WaitingVehicle && app(StockService::class)->requiresManagerParts($request)) {
+            Input::fail('Примите ЗЧ от УК: нажмите «Принять ЗЧ от УК» на вкладке «Работы и ЗЧ»');
         }
 
         if ($stage === RepairStage::WaitingVehicle && !$request->acceptanceAct()->exists()) {

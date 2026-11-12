@@ -452,6 +452,123 @@ final class WarehouseTest extends TestCase
         $this->getJson('/api/warehouse/documents?type=receipt')->assertOk()->assertJsonCount(2, 'data');
     }
 
+    /** Перевод ЗР теста на этап (без прохождения маршрута). */
+    private function moveTo(RepairStage $stage): void
+    {
+        RequestStatusPeriod::query()->where('repair_request_id', $this->request->id)->whereNull('exited_at')->update(['exited_at' => now()]);
+        RequestStatusPeriod::query()->create([
+            'repair_request_id' => $this->request->id, 'stage' => $stage->value,
+            'entered_at' => now(), 'actor_id' => $this->users['manager']->id,
+        ]);
+        $this->request->forceFill(['stage' => $stage])->save();
+        RequestPart::query()->where('repair_request_id', $this->request->id)->update(['status' => 'proposed', 'approved_version' => null]);
+    }
+
+    public function test_parts_from_manager_use_uk_stock_markup_and_no_agent_discount(): void
+    {
+        app(WarehouseService::class)->saveMarkup($this->users['manager'], ['mode' => 'flat', 'percent' => 20, 'tiers' => []]);
+        $this->stockPart($this->users['manager'], $this->catalog, 1, $this->supplier, 100, 130);
+        $this->moveTo(RepairStage::ManagerRouting);
+        $this->actingAs($this->users['manager']);
+        $request = $this->get('/api/requests/' . $this->request->uuid)->assertOk()->json('request');
+        $this->assertFalse($request['partsFromManager']);
+        $this->assertContains('partsFromManager', $request['permissions']['editableFields']);
+        $this->assertSame(10.0, (float) $request['parts'][0]['agentDiscountPercent']);
+
+        // Галочка ещё не сохранена: остатки и цены — по складу УК (закуп 100 + наценка УК 20 %).
+        $stock = $this->getJson("/api/requests/{$request['id']}/stock?fromManager=1")->assertOk()->json();
+        $this->assertSame('manager', $stock['source']);
+        $this->assertSame(120.0, (float) $stock['parts'][$this->catalog->uuid]['salePrice']);
+
+        $request = $this->patchRequest($request, ['partsFromManager' => true]);
+        $this->assertTrue($request['partsFromManager']);
+        $this->assertSame(0.0, (float) $request['parts'][0]['agentDiscountPercent'], 'Агентская скидка по ЗЧ не применяется');
+        $this->assertSame(0.0, (float) $request['works'][0]['agentDiscountPercent'], 'Агентская скидка по работам не применяется');
+        $this->assertSame(0.0, (float) $request['agentDiscount']['amount']);
+
+        // Нужно 2, на складе УК 1 — строка не покрыта (во фронте тёмно-оранжевая).
+        $stock = $this->getJson("/api/requests/{$request['id']}/stock")->assertOk()->json();
+        $this->assertSame('manager', $stock['source']);
+        $this->assertFalse($stock['rows'][$request['parts'][0]['id']]['sufficient']);
+        $this->stockPart($this->users['manager'], $this->catalog, 1, $this->supplier, 100, 130);
+        $stock = $this->getJson("/api/requests/{$request['id']}/stock")->assertOk()->json();
+        $this->assertTrue($stock['rows'][$request['parts'][0]['id']]['sufficient'], 'ЗЧ в резерве на складе УК');
+
+        // Галочка снята — скидка СТО возвращается.
+        $request = $this->patchRequest($request, ['partsFromManager' => false]);
+        $this->assertSame(10.0, (float) $request['parts'][0]['agentDiscountPercent']);
+        $this->assertSame('station', $this->getJson("/api/requests/{$request['id']}/stock")->assertOk()->json('source'));
+    }
+
+    public function test_station_accepts_parts_from_manager_with_transfer_document(): void
+    {
+        app(WarehouseService::class)->saveMarkup($this->users['manager'], ['mode' => 'flat', 'percent' => 20, 'tiers' => []]);
+        $this->stockPart($this->users['manager'], $this->catalog, 5, $this->supplier, 100, 130);
+        $this->moveTo(RepairStage::WaitingVehicle);
+        $this->request->forceFill(['parts_from_manager' => true])->save();
+        RequestPart::query()->where('repair_request_id', $this->request->id)->update(['agent_discount_percent' => 0]);
+
+        $this->actingAs($this->users['station']);
+        $settings = $this->getJson('/api/warehouse/settings')->assertOk()->json('warehouses');
+        $system = collect($settings)->firstWhere('system', true);
+        $this->assertSame('Склад от УК', $system['name']);
+        $this->patchJson('/api/warehouse/warehouses/' . $system['id'], ['name' => 'Другой'])->assertStatus(422);
+        $this->deleteJson('/api/warehouse/warehouses/' . $system['id'])->assertStatus(422);
+
+        $request = $this->get('/api/requests/' . $this->request->uuid)->assertOk()->json('request');
+        $this->assertTrue($request['permissions']['canAcceptManagerParts']);
+        $this->assertSame([], $request['stockShortage'], 'До приёма ЗЧ лежат на складе УК');
+        $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => '', 'attachmentIds' => []])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Примите ЗЧ от УК: нажмите «Принять ЗЧ от УК» на вкладке «Работы и ЗЧ»']);
+
+        $request = $this->api('POST', "/requests/{$request['id']}/manager-parts/accept", ['revision' => $request['revision']])
+            ->assertOk()->json('request');
+        $this->assertSame('PRM-000001', $request['partsTransfer']['number']);
+        $this->assertFalse($request['permissions']['canAcceptManagerParts']);
+
+        $managerOrg = $this->orgs['manager']->id;
+        $stationOrg = $this->orgs['station']->id;
+        $stock = app(\App\Services\StockService::class);
+        $this->assertSame(3.0, $stock->onHand($managerOrg)[$this->catalog->id], 'Списано со склада УК');
+        $target = \App\Models\Warehouse::query()->where('organization_id', $stationOrg)->where('system_code', 'from_manager')->firstOrFail();
+        $this->assertSame(2.0, $stock->onHand($stationOrg, [], $target->id)[$this->catalog->id], 'Оприходовано на «Склад от УК»');
+        $incoming = StockMovement::query()->where('organization_id', $stationOrg)->where('source_type', 'transfer')->firstOrFail();
+        $this->assertSame(120.0, (float) $incoming->unit_cost, 'Цена Перемещения = закуп УК 100 + наценка УК 20 %, без наценки СТО');
+        $doc = \App\Models\StockDocument::query()->where('type', 'transfer')->firstOrFail();
+        $this->assertSame(100.0, (float) $doc->items()->first()->purchase_price, 'Себестоимость УК');
+        $this->assertSame(120.0, (float) $doc->items()->first()->sale_price);
+        $this->assertSame([], $stock->missingForRequest($this->request->refresh()), 'ЗЧ ЗР теперь покрыты складом СТО');
+
+        // Закрывающие документы: ЗЧ от УК реализует УК — у СТО только работы.
+        $docs = collect(app(\App\Services\ClosingDocumentService::class)->generateClosingDocuments($this->request->refresh(), $this->users['manager']))->keyBy(fn ($doc) => $doc->type instanceof \BackedEnum ? $doc->type->value : $doc->type);
+        foreach (['station_work_order', 'station_upd', 'station_invoice'] as $type) {
+            $this->assertSame(['work'], array_values(array_unique(array_column($docs[$type]->payload['rows'], 'kind'))), $type);
+        }
+        foreach (['customer_work_order', 'customer_upd', 'customer_invoice'] as $type) {
+            $this->assertContains('part', array_column($docs[$type]->payload['rows'], 'kind'), $type);
+        }
+        $this->assertSame(900.0, (float) $docs['station_invoice']->amount, 'СТО → УК: работа 1000 за вычетом агентской скидки 10 %');
+        $this->assertSame(900.0, \App\Support\AgentDiscount::summary($this->request->refresh())['stationAmount'], 'К оплате СТО — без ЗЧ от УК');
+
+        $this->api('POST', "/requests/{$request['id']}/manager-parts/accept", ['revision' => $request['revision']])->assertForbidden();
+        $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => '', 'attachmentIds' => []])
+            ->assertOk()->assertJsonPath('request.stage', RepairStage::RepairInProgress->value);
+    }
+
+    public function test_station_cannot_accept_parts_missing_on_uk_stock(): void
+    {
+        $this->stockPart($this->users['manager'], $this->catalog, 1, $this->supplier);
+        $this->moveTo(RepairStage::WaitingVehicle);
+        $this->request->forceFill(['parts_from_manager' => true])->save();
+        $this->actingAs($this->users['station']);
+        $request = $this->get('/api/requests/' . $this->request->uuid)->assertOk()->json('request');
+        $this->api('POST', "/requests/{$request['id']}/manager-parts/accept", ['revision' => $request['revision']])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Недостаточно ЗЧ на складе УК: Фильтр (F-1) — нужно 2, на складе доступно 1. Обратитесь в УК.']);
+        $this->assertSame(0, StockMovement::query()->where('source_type', 'transfer')->count());
+    }
+
     public function test_customer_has_no_stock_access(): void
     {
         $this->actingAs($this->users['customer'])->getJson('/api/requests/' . $this->request->uuid . '/stock')->assertForbidden();

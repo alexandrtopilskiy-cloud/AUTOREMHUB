@@ -89,6 +89,11 @@ small {
   margin: 0 0 7px;
 }
 
+/* Панель «Состояние документа»: открытый документ доступен для правки. */
+.eyebrow.eyebrow-edit {
+  color: var(--blue);
+}
+
 /* ─── Формы ─── */
 
 button,
@@ -3338,6 +3343,11 @@ body.is-resizing-column {
   margin: 12px 0;
 }
 
+.registry-station {
+  color: var(--blue-dark);
+  font-weight: 600;
+}
+
 .overdue {
   color: var(--amber-overdue);
   font-weight: 600;
@@ -4307,3 +4317,48 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
   grid-column: 1 / -1;
   scroll-margin: 16px;
 }
+
+/* ─── «ЗЧ от УК» (0.43.005): галочка над таблицей ЗЧ, нехватка на складе УК ─── */
+.manager-parts-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.manager-parts-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.manager-parts-toggle input { margin: 0; width: 16px; height: 16px; }
+.manager-parts-done { color: #267353; font-weight: 600; }
+.excel-grid tr.part-missing-manager-stock > td {
+  background: #f6c9a4;
+  color: #8a3a00;
+}
+.excel-grid tr.part-missing-manager-stock > td input {
+  color: #8a3a00;
+}
+.parts-stock-note.manager-stock-note {
+  border-left-color: #c2560c;
+  background: #fbe3cf;
+  color: #8a3a00;
+}
+.manager-parts-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-left: 4px solid #c2560c;
+  border-radius: 6px;
+  background: #fbe3cf;
+  color: #8a3a00;
+  font-size: 14px;
+}
+.parts-grid td.part-warehouse-cell { text-align: center; font-weight: 600; }

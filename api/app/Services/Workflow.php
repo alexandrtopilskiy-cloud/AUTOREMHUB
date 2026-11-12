@@ -52,6 +52,7 @@ final class Workflow
         'routeComment',
         'works',
         'parts',
+        'partsFromManager',
     ];
 
     /**
@@ -66,6 +67,7 @@ final class Workflow
         'routeComment',
         'works',
         'parts',
+        'partsFromManager',
     ];
 
     /**
@@ -207,6 +209,8 @@ final class Workflow
             'canStationDecide' => $isStationDecision,
             'canCustomerSlotDecide' => $isCustomerSlotDecision,
             'canAcceptVehicle' => $isVehicleAcceptance,
+            // «ЗЧ от УК»: СТО принимает ЗЧ со склада УК (до этого 4 → 5 недоступен).
+            'canAcceptManagerParts' => $isVehicleAcceptance && $request->awaitsManagerParts(),
             'canEditParts'     => $canChangeInWork || ($isOwner && (self::isPartsEditableStage($stage) || ($stage === RepairStage::Draft && $role !== UserRole::Customer))),
             // Заказчик может перенести работы / ЗЧ в Рекомендации уже в Черновике.
             'canDeferRecommendations' => $canChangeInWork

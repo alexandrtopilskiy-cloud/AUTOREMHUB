@@ -33,6 +33,7 @@ final class RequestPart extends Entity
     {
         return [
             'agent_discount_percent' => 'decimal:2',
+            'from_manager' => 'boolean',
             'quantity'          => 'decimal:3',
             'purchase_price' => 'decimal:2',
             'price'             => 'decimal:2',

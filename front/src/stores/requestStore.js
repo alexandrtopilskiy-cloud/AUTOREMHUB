@@ -135,17 +135,20 @@ export function createRequestStore(api) {
         const keepLocal = (id) =>
             store.pending[id] || saves.has(id) || (acceptedAt.get(id) || 0) > since;
         const remoteIds = new Set(remote.map((request) => request.id));
+        // Заявки, взятые из ответа списка. Сравнивать store.get(id) === request
+        // нельзя: в App.data() хранилище реактивно, get() возвращает Proxy, и
+        // эталон (baseline) не обновлялся — первое сохранение ЗР, открытой из
+        // списка, отправляло все поля («Поля на текущем этапе недоступны»).
+        const fromRemote = new Set();
 
         store.requests = remote.map((request) => {
             const local = previous.find((item) => item.id === request.id);
 
-            if (!local) {
-                return request;
-            }
-
-            if (keepLocal(request.id) || local.revision > request.revision) {
+            if (local && (keepLocal(request.id) || local.revision > request.revision)) {
                 return local;
             }
+
+            fromRemote.add(request.id);
 
             return request;
         });
@@ -157,7 +160,7 @@ export function createRequestStore(api) {
         }
 
         for (const request of remote) {
-            if (store.get(request.id) === request) {
+            if (fromRemote.has(request.id)) {
                 baselines.set(request.id, clone(request));
             }
         }
