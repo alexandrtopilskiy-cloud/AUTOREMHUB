@@ -106,6 +106,8 @@ final class DeveloperToolsService
             throw new ValidationException($validator);
         }
         $uuids = $validator->validated()['ids'];
+        // Большие наборы ЗР (сотни файлов) не должны упираться в лимит времени PHP.
+        @set_time_limit(300);
 
         /** @var array<int, array{disk: string, key: string}> $files */
         $files = [];

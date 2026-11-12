@@ -21,6 +21,8 @@ const MAX_STAGE = 10;
 
 /** Ключ для сохранения токена только в текущей вкладке браузера. */
 const TOKEN_STORAGE_KEY = "api_token";
+/** Служебные операции меню «Разработчик» (массовое удаление) идут дольше обычных запросов. */
+const DEVELOPER_TIMEOUT_MS = 300_000;
 
 /**
  * @param {string|number} value
@@ -1333,7 +1335,7 @@ export const marketplaceApi = {
      * @returns {Promise<{deletedIds: string[], files: number, removed: object}>}
      */
     developerDeleteRequests(ids) {
-        return http.request("/developer/requests/delete", { method: "POST", body: { ids } });
+        return http.request("/developer/requests/delete", { method: "POST", body: { ids }, timeoutMs: DEVELOPER_TIMEOUT_MS });
     },
 
     /** @returns {Promise<{documents: object[], maxDelete: number}>} */
@@ -1348,7 +1350,7 @@ export const marketplaceApi = {
      * @returns {Promise<{deletedIds: string[], movements: number, payments: number}>}
      */
     developerDeleteStockDocuments(ids) {
-        return http.request("/developer/stock-documents/delete", { method: "POST", body: { ids } });
+        return http.request("/developer/stock-documents/delete", { method: "POST", body: { ids }, timeoutMs: DEVELOPER_TIMEOUT_MS });
     },
 
     /** @returns {Promise<{users: object[], total: number}>} */
@@ -1358,7 +1360,7 @@ export const marketplaceApi = {
 
     /** @returns {Promise<{read: number}>} */
     developerReadAllNotifications() {
-        return http.request("/developer/notifications/read-all", { method: "POST", body: {} });
+        return http.request("/developer/notifications/read-all", { method: "POST", body: {}, timeoutMs: DEVELOPER_TIMEOUT_MS });
     },
 
     /* ─── Склад ─── */
