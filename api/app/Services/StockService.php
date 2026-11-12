@@ -350,7 +350,8 @@ final class StockService
      * «Принять ЗЧ от УК» (СТО, этап «Ожидание ТС на СТО»): документ
      * Перемещение PRM- списывает ЗЧ ЗР со складов УК и приходует их на
      * «Склад от УК» СТО. Себестоимость УК — по её методу списания, цена
-     * прихода на СТО — цена ЗР (закуп УК + наценка УК), без наценки СТО.
+     * Перемещения — цена реализации УК: закуп + наценка из Настроек УК.
+     * На СТО дополнительной наценки нет.
      */
     public function transferFromManager(RepairRequest $request, User $user): StockDocument
     {
@@ -395,12 +396,13 @@ final class StockService
 
         $line = 0;
         $firstSource = null;
+        $markup = app(WarehouseService::class);
         foreach ($request->parts()->orderBy('id')->get() as $part) {
             $need = round((float) $part->quantity - (float) $part->returned_quantity, 3);
             if ($need <= 0 || $part->catalog_part_id === null) {
                 continue;
             }
-            $price = round((float) $part->price, 2);
+            $price = null;
             $byWarehouse = StockMovement::query()
                 ->where('organization_id', $managerId)
                 ->where('catalog_part_id', $part->catalog_part_id)
@@ -419,6 +421,8 @@ final class StockService
                     continue;
                 }
                 $cost = $this->issueCost($managerId, (int) $part->catalog_part_id, (int) $row->warehouse_id, $take);
+                // Нет подходящего диапазона наценки — цена строки ЗР.
+                $price = $markup->salePrice($managerId, $cost) ?? round((float) $part->price, 2);
                 $item = StockDocumentItem::query()->create([
                     'stock_document_id' => $doc->id,
                     'line_no' => ++$line,
@@ -436,7 +440,7 @@ final class StockService
                 Input::fail('Недостаточно ЗЧ на складе УК: ' . $part->name, 'parts');
             }
             // Для СТО цена закупа этих ЗЧ — цена Перемещения.
-            $part->purchase_price = $price;
+            $part->purchase_price = $price ?? $part->purchase_price;
             $part->save();
         }
         if ($line === 0) {

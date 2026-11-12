@@ -502,6 +502,7 @@ final class WarehouseTest extends TestCase
 
     public function test_station_accepts_parts_from_manager_with_transfer_document(): void
     {
+        app(WarehouseService::class)->saveMarkup($this->users['manager'], ['mode' => 'flat', 'percent' => 20, 'tiers' => []]);
         $this->stockPart($this->users['manager'], $this->catalog, 5, $this->supplier, 100, 130);
         $this->moveTo(RepairStage::WaitingVehicle);
         $this->request->forceFill(['parts_from_manager' => true])->save();
@@ -533,9 +534,10 @@ final class WarehouseTest extends TestCase
         $target = \App\Models\Warehouse::query()->where('organization_id', $stationOrg)->where('system_code', 'from_manager')->firstOrFail();
         $this->assertSame(2.0, $stock->onHand($stationOrg, [], $target->id)[$this->catalog->id], 'Оприходовано на «Склад от УК»');
         $incoming = StockMovement::query()->where('organization_id', $stationOrg)->where('source_type', 'transfer')->firstOrFail();
-        $this->assertSame(250.0, (float) $incoming->unit_cost, 'Цена прихода на СТО = цена ЗР, без наценки СТО');
+        $this->assertSame(120.0, (float) $incoming->unit_cost, 'Цена Перемещения = закуп УК 100 + наценка УК 20 %, без наценки СТО');
         $doc = \App\Models\StockDocument::query()->where('type', 'transfer')->firstOrFail();
         $this->assertSame(100.0, (float) $doc->items()->first()->purchase_price, 'Себестоимость УК');
+        $this->assertSame(120.0, (float) $doc->items()->first()->sale_price);
         $this->assertSame([], $stock->missingForRequest($this->request->refresh()), 'ЗЧ ЗР теперь покрыты складом СТО');
 
         $this->api('POST', "/requests/{$request['id']}/manager-parts/accept", ['revision' => $request['revision']])->assertForbidden();

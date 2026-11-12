@@ -111,6 +111,10 @@ async function toggleManagerParts(checked) {
         row._stockDirty = true;
     }
 }
+/* «ЗЧ от УК»: цена = закуп УК + наценка УК, вручную не меняется. */
+function fixedManagerPrice(row) {
+    return fromManagerStock.value && stock.value?.parts[row.catalogPartId]?.salePrice != null;
+}
 const canAcceptManagerParts = computed(() => props.request.permissions?.canAcceptManagerParts === true);
 async function acceptManagerParts() {
     error.value = "";
@@ -496,7 +500,7 @@ async function apply() {
                         </td>
                         <td>
                             <input
-                                v-if="editable(row)"
+                                v-if="editable(row) && !fixedManagerPrice(row)"
                                 v-model.number="row.price"
                                 :title="String(row.price ?? '')"
                                 type="number"
