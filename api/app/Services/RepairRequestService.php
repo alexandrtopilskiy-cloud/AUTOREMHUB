@@ -367,7 +367,7 @@ final class RepairRequestService
         $this->recalculatePlannedCompletion($request);
         if ($restored && $user->role === UserRole::Customer && $request->stage === RepairStage::CustomerApproval) {
             $this->moveToStage($request, $user, RepairStage::ManagerRouting);
-            $this->captureReviewBaseline($request, ReviewContext::Initial->value);
+            $this->captureReviewBaseline($request, ReviewContext::Initial);
         }
     }
 
@@ -1211,9 +1211,14 @@ final class RepairRequestService
         $snapshot = $this->buildTransitionSnapshot($request);
 
         if ($to === RepairStage::ManagerRouting) {
+            if ($estimateChanged) {
+                // Смета, которую УК пропустила в СТО (для ЗР, ушедших в СТО до
+                // появления отдельного снимка).
+                $this->rememberManagerApprovedFromBaseline($request);
+            }
             $this->captureReviewBaseline(
                 $request,
-                $estimateChanged ? ReviewContext::StationChanges->value : ReviewContext::StationDeclined->value,
+                $estimateChanged ? ReviewContext::StationChanges : ReviewContext::StationDeclined,
             );
         } else {
             $request->review_context = ReviewContext::Initial;
@@ -1312,7 +1317,7 @@ final class RepairRequestService
         if ($dto->decision === ApprovalDecision::Accepted) {
             $this->approveCurrentEstimate($request);
         } else {
-            $this->captureReviewBaseline($request, ReviewContext::CustomerSlot->value);
+            $this->captureReviewBaseline($request, ReviewContext::CustomerSlot);
         }
 
         $this->moveToStage($request, $user, $to);
@@ -1602,19 +1607,25 @@ final class RepairRequestService
         RepairStage $from,
         RepairStage $to,
         TransitionAction $transition,
-        string $reviewContext,
+        ReviewContext $reviewContext,
     ): void {
         if ($from === RepairStage::ManagerRouting && $to === RepairStage::StationApproval) {
-            $managerChangedEstimate = $reviewContext === ReviewContext::StationChanges;
-            $context = $managerChangedEstimate
-                ? ReviewContext::StationChanges->value
-                : ReviewContext::Initial->value;
+            if ($reviewContext === ReviewContext::StationChanges) {
+                // УК вернула правки СТО на доработку. СТО сравнивает смету с той,
+                // что УК согласовала раньше: «Подтвердить» без исправлений снова
+                // отправит изменения в УК, а не Заказчику.
+                $this->restoreManagerApprovedBaseline($request);
 
-            $this->captureReviewBaseline($request, $context);
+                return;
+            }
+
+            $this->captureReviewBaseline($request, ReviewContext::Initial);
+            $this->rememberManagerApproved($request);
         }
 
         if ($transition === TransitionAction::Next && $from === RepairStage::ManagerRouting && $to === RepairStage::CustomerApproval) {
             $request->review_context = ReviewContext::Initial;
+            $this->rememberManagerApproved($request);
         }
     }
 
@@ -1625,12 +1636,12 @@ final class RepairRequestService
     ): RepairStage {
         if ($from === RepairStage::ManagerRouting) {
             if ($action === TransitionAction::Return) {
-                return $request->review_context === ReviewContext::StationChanges->value
+                return $request->review_context === ReviewContext::StationChanges
                     ? RepairStage::StationApproval
                     : RepairStage::Draft;
             }
 
-            if ($request->review_context === ReviewContext::StationChanges->value) {
+            if ($request->review_context === ReviewContext::StationChanges) {
                 return RepairStage::CustomerApproval;
             }
 
@@ -1763,7 +1774,7 @@ final class RepairRequestService
                 if ($request->stage === RepairStage::CustomerApproval) {
                     $this->notifyStationEstimateApproved($request, $event->id);
                     $this->notifyCustomerFinalApproval($request, $event->id);
-                } elseif ($request->stage === RepairStage::StationApproval && $context->reviewContext === ReviewContext::StationChanges) {
+                } elseif ($request->stage === RepairStage::StationApproval && $context->reviewContext === ReviewContext::StationChanges->value) {
                     $this->notifyStationEstimateChanged(
                         $request,
                         $event->id,
@@ -1892,11 +1903,49 @@ final class RepairRequestService
      * Сохраняет снимок сметы, относительно которого следующий участник
      * согласования будет видеть изменения.
      */
-    private function captureReviewBaseline(RepairRequest $request, string $context): void
+    private function captureReviewBaseline(RepairRequest $request, ReviewContext $context): void
     {
         $request->review_context = $context;
         $request->review_baseline_version = $request->estimate_version;
         $request->review_baseline_snapshot = $this->estimateSnapshot($request);
+    }
+
+    /** Текущая смета пропущена УК (в СТО или Заказчику). */
+    private function rememberManagerApproved(RepairRequest $request): void
+    {
+        $request->manager_approved_estimate_version = $request->estimate_version;
+        $request->manager_approved_estimate_snapshot = $this->estimateSnapshot($request);
+    }
+
+    /**
+     * Снимок, с которым СТО сравнивала смету, — это смета, пропущенная УК.
+     * Нужен для ЗР, переданных в СТО до появления отдельного снимка.
+     */
+    private function rememberManagerApprovedFromBaseline(RepairRequest $request): void
+    {
+        if ($request->manager_approved_estimate_snapshot !== null || !is_array($request->review_baseline_snapshot)) {
+            return;
+        }
+
+        $request->manager_approved_estimate_version = $request->review_baseline_version;
+        $request->manager_approved_estimate_snapshot = $request->review_baseline_snapshot;
+    }
+
+    /** После возврата УК базой сравнения для СТО становится смета, согласованная УК. */
+    private function restoreManagerApprovedBaseline(RepairRequest $request): void
+    {
+        $request->review_context = ReviewContext::StationChanges;
+
+        if (!is_array($request->manager_approved_estimate_snapshot)) {
+            // Согласованной сметы нет — правки СТО в любом случае идут в УК.
+            $request->review_baseline_version = 0;
+            $request->review_baseline_snapshot = null;
+
+            return;
+        }
+
+        $request->review_baseline_version = (int) $request->manager_approved_estimate_version;
+        $request->review_baseline_snapshot = $request->manager_approved_estimate_snapshot;
     }
 
     /**
