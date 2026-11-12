@@ -1170,15 +1170,6 @@ async function acceptStationSlot() {
   }
 }
 
-/* «ЗЧ от УК»: СТО принимает ЗЧ со склада УК на «Склад от УК». */
-async function acceptManagerParts() {
-  try {
-    await props.perform('acceptManagerParts');
-  } catch {
-    // Родительский компонент уже выводит сообщение API.
-  }
-}
-
 watch(() => props.request.vehicleId, () => {
   loadContacts();
   loadDrivers();
@@ -1226,10 +1217,10 @@ onMounted(() => {
     <!-- ЛК СТО, «Ожидание ТС на СТО»: «ЗЧ от УК» ещё не приняты на склад СТО -->
     <div v-if="request.permissions?.canAcceptManagerParts" class="manager-parts-banner" role="alert">
       <span>
-        <strong>ЗЧ от УК:</strong> примите ЗЧ, перемещаемые со склада УК на «Склад от УК».
+        <strong>ЗЧ от УК:</strong> примите ЗЧ, перемещаемые со склада УК на «Склад от УК», кнопкой
+        «Принять ЗЧ от УК» на вкладке <a href="#" @click.prevent="selectTab('works')">«Работы и ЗЧ»</a>.
         До этого перевести ЗР на этап «В работе» нельзя.
       </span>
-      <button type="button" class="primary-btn" :disabled="busy" @click="acceptManagerParts">Принять ЗЧ от УК</button>
     </div>
 
     <!-- ЛК СТО: нехватка ЗЧ на складе (этапы «Ожидание ТС на СТО» и «В работе») -->
