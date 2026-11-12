@@ -8,6 +8,7 @@ use App\DTO\UserDto;
 use App\Enums\Edo\EdoDocumentType;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
+use App\Enums\ReviewContext;
 use App\Enums\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,7 +30,9 @@ use Illuminate\Support\Str;
  * @property array<string, string>|null $driver_snapshot
  * @property int|null $created_by
  * @property int $estimate_version
- * @property string $review_context
+ * @property ReviewContext $review_context
+ * @property ?int $manager_approved_estimate_version
+ * @property ?array $manager_approved_estimate_snapshot
  * @property int $review_baseline_version
  * @property array<string, mixed>|null $review_baseline_snapshot
  * @property array<string, mixed>|null $work_change
@@ -76,7 +79,10 @@ final class RepairRequest extends Entity
             'driver_snapshot'          => 'array',
             'estimate_version'         => 'integer',
             'review_baseline_version'  => 'integer',
+            'review_context'           => ReviewContext::class,
             'review_baseline_snapshot' => 'array',
+            'manager_approved_estimate_version'  => 'integer',
+            'manager_approved_estimate_snapshot' => 'array',
             'work_change'              => 'array',
             'planned_completion_at'    => 'immutable_datetime',
             'repair_completed_at'      => 'immutable_datetime',
