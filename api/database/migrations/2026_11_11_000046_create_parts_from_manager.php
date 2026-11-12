@@ -39,6 +39,12 @@ return new class () extends Migration {
             $table->foreignId('parts_transfer_document_id')->nullable()->constrained('stock_documents')->nullOnDelete();
         });
 
+        // Строка ЗЧ перемещена от УК: её реализует УК, в документы СТО → УК
+        // она не попадает.
+        Schema::table('request_parts', function (Blueprint $table): void {
+            $table->boolean('from_manager')->default(false);
+        });
+
         // «Склад от УК» у каждой СТО. Склад с таким названием, если он уже
         // заведён вручную, становится системным.
         $stations = DB::table('organizations')->where('kind', OrganizationKind::Station->value)->get(['id', 'tenant_id']);
@@ -65,6 +71,9 @@ return new class () extends Migration {
 
     public function down(): void
     {
+        Schema::table('request_parts', function (Blueprint $table): void {
+            $table->dropColumn('from_manager');
+        });
         Schema::table('repair_requests', function (Blueprint $table): void {
             $table->dropConstrainedForeignId('parts_transfer_document_id');
             $table->dropColumn('parts_from_manager');

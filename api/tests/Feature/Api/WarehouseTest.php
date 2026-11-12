@@ -540,6 +540,17 @@ final class WarehouseTest extends TestCase
         $this->assertSame(120.0, (float) $doc->items()->first()->sale_price);
         $this->assertSame([], $stock->missingForRequest($this->request->refresh()), 'ЗЧ ЗР теперь покрыты складом СТО');
 
+        // Закрывающие документы: ЗЧ от УК реализует УК — у СТО только работы.
+        $docs = collect(app(\App\Services\ClosingDocumentService::class)->generateClosingDocuments($this->request->refresh(), $this->users['manager']))->keyBy(fn ($doc) => $doc->type instanceof \BackedEnum ? $doc->type->value : $doc->type);
+        foreach (['station_work_order', 'station_upd', 'station_invoice'] as $type) {
+            $this->assertSame(['work'], array_values(array_unique(array_column($docs[$type]->payload['rows'], 'kind'))), $type);
+        }
+        foreach (['customer_work_order', 'customer_upd', 'customer_invoice'] as $type) {
+            $this->assertContains('part', array_column($docs[$type]->payload['rows'], 'kind'), $type);
+        }
+        $this->assertSame(900.0, (float) $docs['station_invoice']->amount, 'СТО → УК: работа 1000 за вычетом агентской скидки 10 %');
+        $this->assertSame(900.0, \App\Support\AgentDiscount::summary($this->request->refresh())['stationAmount'], 'К оплате СТО — без ЗЧ от УК');
+
         $this->api('POST', "/requests/{$request['id']}/manager-parts/accept", ['revision' => $request['revision']])->assertForbidden();
         $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => '', 'attachmentIds' => []])
             ->assertOk()->assertJsonPath('request.stage', RepairStage::RepairInProgress->value);

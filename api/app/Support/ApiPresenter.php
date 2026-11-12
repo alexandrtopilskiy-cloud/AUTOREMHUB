@@ -382,6 +382,7 @@ final class ApiPresenter
                     'name'            => $part->name,
                     'article'         => $part->article,
                     'manufacturer'    => $part->manufacturer_snapshot ?? $part->catalogPart?->manufacturer ?? '',
+                    'fromManager' => (bool) $part->from_manager,
                     'purchasePrice' => $part->purchase_price === null ? null : (float) $part->purchase_price,
                     'catalogPartId'   => $part->catalog_part_id !== null
                         ? $part->catalogPart?->uuid ?? ''

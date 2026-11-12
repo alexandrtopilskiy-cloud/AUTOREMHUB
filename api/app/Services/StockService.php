@@ -441,6 +441,8 @@ final class StockService
             }
             // Для СТО цена закупа этих ЗЧ — цена Перемещения.
             $part->purchase_price = $price ?? $part->purchase_price;
+            // Реализацию этих ЗЧ Заказчику делает УК (документы СТО → УК без них).
+            $part->from_manager = true;
             $part->save();
         }
         if ($line === 0) {

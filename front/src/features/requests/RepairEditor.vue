@@ -940,13 +940,16 @@ const agentDiscountTotals = computed(() => {
     sum += amount;
     discount += agentDiscountAmount(amount, lineAgentPercent(work)) ?? 0;
   }
+  // «ЗЧ от УК» реализует УК: в оплату СТО они не входят.
+  let managerParts = 0;
   for (const part of props.request.parts || []) {
     const amount = Number(part.qty || 0) * Number(part.price || 0);
     sum += amount;
     discount += agentDiscountAmount(amount, lineAgentPercent(part)) ?? 0;
+    if (part.fromManager || (props.request.partsFromManager && !props.request.partsTransfer)) managerParts += amount;
   }
   discount = Math.round(discount * 100) / 100;
-  return { discount, station: Math.round((sum - discount) * 100) / 100 };
+  return { discount, station: Math.round((sum - discount - managerParts) * 100) / 100 };
 });
 
 
