@@ -143,6 +143,11 @@ function stockState(row) {
         : { label: `Нет на складе (есть ${stockQty(free)})`, kind: "missing" };
 }
 const hasMissingStock = computed(() => rows.value.some((row) => stockState(row)?.kind === "missing"));
+/* Признак склада строки ЗЧ: УК — ЗЧ от УК (со склада УК), СТО — со склада СТО. */
+function warehouseLabel(row) {
+    const fromManager = row.fromManager || (props.request.partsFromManager && !props.request.partsTransfer);
+    return fromManager ? "УК" : "СТО";
+}
 function missingClass(row) {
     if (stockState(row)?.kind !== "missing") return "";
     return fromManagerStock.value ? "part-missing-manager-stock" : "part-missing-stock";
@@ -399,6 +404,7 @@ async function apply() {
                     <col style="width: 84px" />
                     <col style="width: 88px" />
                     <col style="width: 38px" />
+                    <col v-if="!customerView" style="width: 54px" />
                     <col style="width: 58px" />
                     <col style="width: 74px" />
                     <col v-if="!customerView" style="width: 84px" />
@@ -415,6 +421,7 @@ async function apply() {
                                 'Артикул',
                                 'Производитель',
                                 'Ед.',
+                                ...(!customerView ? ['Склад'] : []),
                                 'Кол-во',
                                 'Цена, ₽',
                                 ...(!customerView
@@ -485,6 +492,11 @@ async function apply() {
                             {{ row.manufacturer || "—" }}
                         </td>
                         <td :title="row.unit">{{ row.unit }}</td>
+                        <td
+                            v-if="!customerView"
+                            class="part-warehouse-cell"
+                            :title="warehouseLabel(row) === 'УК' ? 'Склад УК' : 'Склад СТО'"
+                        >{{ warehouseLabel(row) }}</td>
                         <td>
                             <input
                                 v-if="editable(row)"

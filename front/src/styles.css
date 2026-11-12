@@ -4351,3 +4351,4 @@ input.selection-checkbox, .excel-grid input.selection-checkbox { appearance: aut
   color: #8a3a00;
   font-size: 14px;
 }
+.parts-grid td.part-warehouse-cell { text-align: center; font-weight: 600; }
