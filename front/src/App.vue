@@ -31,6 +31,7 @@ import StockDocumentList from "./features/warehouse/StockDocumentList.vue";
 import StockDocumentEditor from "./features/warehouse/StockDocumentEditor.vue";
 import StockBalanceReport from "./features/warehouse/StockBalanceReport.vue";
 import DeveloperRequestCleanup from "./features/developer/DeveloperRequestCleanup.vue";
+import DeveloperStockCleanup from "./features/developer/DeveloperStockCleanup.vue";
 
 /** Пункты меню «Склад» и «Настройки» (ЛК УК и СТО). */
 const WAREHOUSE_MENU = {
@@ -97,6 +98,7 @@ export default {
         StockDocumentEditor,
         StockBalanceReport,
         DeveloperRequestCleanup,
+        DeveloperStockCleanup,
     },
     data() {
         return {
@@ -266,7 +268,10 @@ export default {
                     key: "developer",
                     title: "Разработчик",
                     icon: "⌘",
-                    items: [{ key: "developerDeleteRequests", label: "Удаление ЗР" }],
+                    items: [
+                        { key: "developerDeleteRequests", label: "Удаление ЗР" },
+                        { key: "developerDeleteStock", label: "Удаление Приходов и Реализаций" },
+                    ],
                 });
             }
             return groups;
@@ -1335,6 +1340,17 @@ export default {
             );
         },
 
+        /** Меню «Разработчик»: складские документы удалены — закрываем их вкладки, обновляем списки. */
+        async developerStockDeleted(ids) {
+            const deleted = new Set(ids);
+            this.tabs = this.tabs.filter((tab) => tab.kind !== "stock-doc" || !deleted.has(tab.id.replace(/^stock-doc:/, "")));
+            for (const tab of this.tabs) if (tab.kind === "stock-list") tab.reloadToken += 1;
+            if (!this.tabs.some((tab) => tab.id === this.activeId)) {
+                if (this.tabs.length) await this.activate(this.tabs[0].id);
+                else this.activeId = "";
+            }
+        },
+
         /** Меню «Разработчик»: ЗР удалены на сервере — закрываем их вкладки и обновляем реестр. */
         async developerRequestsDeleted(ids) {
             const deleted = new Set(ids);
@@ -1492,6 +1508,7 @@ export default {
             if (key === "stockBalance") return this.openSimpleTab("stock-balance", "Остатки на складе", key);
             if (key === "warehouseSettings") return this.openSimpleTab("warehouse-settings", "Складской учёт", key);
             if (key === "developerDeleteRequests") return this.openSimpleTab("developer-delete-requests", "Удаление ЗР", key);
+            if (key === "developerDeleteStock") return this.openSimpleTab("developer-delete-stock", "Удаление Приходов и Реализаций", key);
             return this.openList(key);
         },
         async openSimpleTab(kind, title, menuKey) {
@@ -2597,6 +2614,11 @@ export default {
                         <DeveloperRequestCleanup
                             v-else-if="active?.kind === 'developer-delete-requests'"
                             @deleted="developerRequestsDeleted"
+                            @notify="notify"
+                        />
+                        <DeveloperStockCleanup
+                            v-else-if="active?.kind === 'developer-delete-stock'"
+                            @deleted="developerStockDeleted"
                             @notify="notify"
                         />
                         <div v-else-if="!active" class="workspace-splash">

@@ -25,4 +25,17 @@ final class DeveloperController
     {
         return response()->json($this->tools->deleteRequests($request->user(), $request->input('ids')));
     }
+
+    public function stockDocuments(Request $request): JsonResponse
+    {
+        return response()->json([
+            'documents' => $this->tools->listStockDocuments($request->user()),
+            'maxDelete' => DeveloperToolsService::MAX_DELETE,
+        ]);
+    }
+
+    public function deleteStockDocuments(Request $request): JsonResponse
+    {
+        return response()->json($this->tools->deleteStockDocuments($request->user(), $request->input('ids')));
+    }
 }

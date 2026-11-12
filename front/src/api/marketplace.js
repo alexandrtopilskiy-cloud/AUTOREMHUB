@@ -1336,6 +1336,21 @@ export const marketplaceApi = {
         return http.request("/developer/requests/delete", { method: "POST", body: { ids } });
     },
 
+    /** @returns {Promise<{documents: object[], maxDelete: number}>} */
+    developerStockDocuments() {
+        return http.request("/developer/stock-documents");
+    },
+
+    /**
+     * Удаляет Приходы и Реализации с оплатами и движениями по складу.
+     *
+     * @param {string[]} ids
+     * @returns {Promise<{deletedIds: string[], movements: number, payments: number}>}
+     */
+    developerDeleteStockDocuments(ids) {
+        return http.request("/developer/stock-documents/delete", { method: "POST", body: { ids } });
+    },
+
     /* ─── Склад ─── */
 
     warehouseSettings() {

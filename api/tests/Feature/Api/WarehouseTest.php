@@ -302,6 +302,29 @@ final class WarehouseTest extends TestCase
         $this->assertSame(['out', 'sale_payment', 'Покупка ЗЧ', 'ООО "КУБ"'], [$rows[0]['direction'], $rows[0]['article'], $rows[0]['articleLabel'], $rows[0]['counterparty']]);
         $this->actingAs($this->users['manager']);
         $this->assertSame([], $this->get('/api/reports/cash-flow')->assertOk()->json('rows'));
+
+        // Меню «Разработчик» (только УК): удаление Приходов и Реализаций с оплатами и движениями.
+        $this->documents()->post($user, $sale['id']);
+        $stock = app(\App\Services\StockService::class);
+        $this->assertSame(3.0, $stock->onHand($user->organization_id)[$this->catalog->id]);
+        $this->actingAs($this->users['station']);
+        $this->get('/api/developer/stock-documents')->assertForbidden();
+        $this->api('POST', '/developer/stock-documents/delete', ['ids' => [$sale['id']]])->assertForbidden();
+        $this->actingAs($this->users['manager']);
+        $docs = collect($this->get('/api/developer/stock-documents')->assertOk()->json('documents'))->keyBy('id');
+        $this->assertSame(['receipt', 'sale'], [$docs[$receipt['id']]['type'], $docs[$sale['id']]['type']]);
+        $this->assertSame([1000.0, 1000.0, 2, true], [(float) $docs[$receipt['id']]['amount'], (float) $docs[$receipt['id']]['paid'], $docs[$receipt['id']]['payments'], $docs[$receipt['id']]['posted']]);
+        $this->assertSame('ООО "Альфа"', $docs[$sale['id']]['counterparty']);
+
+        $result = $this->api('POST', '/developer/stock-documents/delete', ['ids' => [$sale['id']]])->assertOk()->json();
+        $this->assertSame([$sale['id']], $result['deletedIds']);
+        $this->assertSame(1, $result['payments']);
+        $this->assertSame(4.0, $stock->onHand($user->organization_id)[$this->catalog->id], 'Реализация отменена — ЗЧ вернулись');
+        $this->api('POST', '/developer/stock-documents/delete', ['ids' => [$receipt['id']]])->assertOk();
+        $this->assertSame([], $stock->onHand($user->organization_id));
+        $this->assertSame([], $this->get('/api/developer/stock-documents')->json('documents'));
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('stock_document_payments')->count());
+        $this->api('POST', '/developer/stock-documents/delete', ['ids' => [$receipt['id']]])->assertNotFound();
     }
 
     public function test_cost_method_drives_prices_write_off_and_balance(): void

@@ -209,10 +209,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 
     /* ─── ЭДО ─── */
 
-    // Меню «Разработчик» (ЛК УК): удаление ЗР со всеми файлами и связанными записями.
+    // Меню «Разработчик» (ЛК УК): удаление ЗР со всеми файлами, удаление Приходов и Реализаций.
     Route::prefix('developer')->name('developer.')->group(function (): void {
         Route::get('/requests', [DeveloperController::class, 'requests'])->name('requests.index');
         Route::post('/requests/delete', [DeveloperController::class, 'deleteRequests'])->name('requests.delete');
+        Route::get('/stock-documents', [DeveloperController::class, 'stockDocuments'])->name('stock-documents.index');
+        Route::post('/stock-documents/delete', [DeveloperController::class, 'deleteStockDocuments'])->name('stock-documents.delete');
     });
 
     Route::get('/request-documents/{documentId}/pdf', [ClosingDocumentController::class, 'pdf'])->whereUuid('documentId')->name('request-documents.pdf');

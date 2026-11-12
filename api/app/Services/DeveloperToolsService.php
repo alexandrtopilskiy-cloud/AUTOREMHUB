@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\RepairRequest;
+use App\Models\StockDocument;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -247,5 +248,110 @@ final class DeveloperToolsService
         }
 
         return ['deletedIds' => array_values($deleted), 'files' => $removedFiles, 'removed' => $removed];
+    }
+
+    /**
+     * Приходы и Реализации всех организаций tenant (УК и СТО) для экрана удаления.
+     * Перемещения «ЗЧ от УК» здесь не показываются: они удаляются вместе со своей ЗР.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listStockDocuments(User $user): array
+    {
+        $this->assertAllowed($user);
+
+        $items = DB::table('stock_document_items')
+            ->selectRaw('stock_document_id, count(*) AS lines, sum(quantity * purchase_price) AS purchase, sum(quantity * coalesce(sale_price, 0)) AS sale')
+            ->groupBy('stock_document_id');
+        $payments = DB::table('stock_document_payments')
+            ->selectRaw('stock_document_id, sum(amount) AS paid, count(*) AS cnt')
+            ->groupBy('stock_document_id');
+
+        return DB::table('stock_documents AS d')
+            ->join('organizations AS o', 'o.id', '=', 'd.organization_id')
+            ->leftJoin('suppliers AS s', 's.id', '=', 'd.supplier_id')
+            ->leftJoin('organizations AS c', 'c.id', '=', 'd.customer_organization_id')
+            ->leftJoin('warehouses AS w', 'w.id', '=', 'd.warehouse_id')
+            ->leftJoinSub($items, 'i', 'i.stock_document_id', '=', 'd.id')
+            ->leftJoinSub($payments, 'p', 'p.stock_document_id', '=', 'd.id')
+            ->where('d.tenant_id', $user->tenantId())
+            ->whereIn('d.type', [StockDocument::RECEIPT, StockDocument::SALE])
+            ->orderByDesc('d.document_date')
+            ->orderByDesc('d.id')
+            ->get([
+                'd.uuid', 'd.type', 'd.number', 'd.status', 'd.document_date', 'o.name AS organization',
+                's.name AS supplier', 'c.name AS customer', 'w.name AS warehouse',
+                'i.lines', 'i.purchase', 'i.sale', 'p.paid', 'p.cnt AS payments',
+            ])
+            ->map(fn ($row): array => [
+                'id'           => $row->uuid,
+                'type'         => $row->type,
+                'number'       => (string) $row->number,
+                'posted'       => $row->status === StockDocument::POSTED,
+                'date'         => (string) $row->document_date,
+                'organization' => (string) $row->organization,
+                'counterparty' => (string) ($row->type === StockDocument::RECEIPT ? ($row->supplier ?? '') : ($row->customer ?? '')),
+                'warehouse'    => (string) ($row->warehouse ?? ''),
+                'lines'        => (int) ($row->lines ?? 0),
+                'amount'       => round((float) ($row->type === StockDocument::RECEIPT ? $row->purchase : $row->sale), 2),
+                'paid'         => round((float) ($row->paid ?? 0), 2),
+                'payments'     => (int) ($row->payments ?? 0),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Удаляет Приходы и Реализации вместе со строками, оплатами и движениями
+     * по складу (проведение отменяется). Остатки пересчитываются от оставшихся
+     * движений: если ЗЧ удалённого Прихода уже списаны, остаток уйдёт в минус.
+     *
+     * @param array<int, mixed> $ids uuid документов
+     *
+     * @return array{deletedIds: array<int, string>, movements: int, payments: int}
+     */
+    public function deleteStockDocuments(User $user, mixed $ids): array
+    {
+        $this->assertAllowed($user);
+
+        $validator = Validator::make(['ids' => $ids], [
+            'ids'   => ['required', 'array', 'list', 'min:1', 'max:' . self::MAX_DELETE],
+            'ids.*' => ['required', 'uuid', 'distinct'],
+        ]);
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+        $uuids = $validator->validated()['ids'];
+
+        return DB::transaction(function () use ($user, $uuids): array {
+            $docs = DB::table('stock_documents')
+                ->where('tenant_id', $user->tenantId())
+                ->whereIn('type', [StockDocument::RECEIPT, StockDocument::SALE])
+                ->whereIn('uuid', $uuids)
+                ->lockForUpdate()
+                ->get(['id', 'uuid', 'type']);
+
+            if ($docs->count() !== count($uuids)) {
+                throw new ApiException(404, 'STOCK_DOCUMENT_NOT_FOUND', 'Часть документов не найдена — обновите список');
+            }
+
+            $movements = 0;
+            foreach ([StockDocument::RECEIPT => StockMovement::SOURCE_RECEIPT, StockDocument::SALE => StockMovement::SOURCE_SALE] as $type => $source) {
+                $ids = $docs->where('type', $type)->pluck('id')->all();
+                if ($ids !== []) {
+                    $movements += DB::table('stock_movements')->where('source_type', $source)->whereIn('source_id', $ids)->delete();
+                }
+            }
+            $docIds = $docs->pluck('id')->all();
+            $payments = DB::table('stock_document_payments')->whereIn('stock_document_id', $docIds)->delete();
+            DB::table('stock_document_items')->whereIn('stock_document_id', $docIds)->delete();
+            DB::table('document_locks')
+                ->where('tenant_id', $user->tenantId())
+                ->whereIn('resource_key', $docs->pluck('uuid')->all())
+                ->delete();
+            DB::table('stock_documents')->whereIn('id', $docIds)->delete();
+
+            return ['deletedIds' => $docs->pluck('uuid')->values()->all(), 'movements' => $movements, 'payments' => $payments];
+        });
     }
 }
