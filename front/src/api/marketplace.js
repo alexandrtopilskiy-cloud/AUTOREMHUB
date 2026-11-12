@@ -1319,6 +1319,23 @@ export const marketplaceApi = {
         return http.request("/reports/cash-flow");
     },
 
+    /* ─── Меню «Разработчик» (ЛК УК) ─── */
+
+    /** @returns {Promise<{requests: object[], maxDelete: number}>} */
+    developerRequests() {
+        return http.request("/developer/requests");
+    },
+
+    /**
+     * Удаляет ЗР со всеми файлами и связанными записями.
+     *
+     * @param {string[]} ids
+     * @returns {Promise<{deletedIds: string[], files: number, removed: object}>}
+     */
+    developerDeleteRequests(ids) {
+        return http.request("/developer/requests/delete", { method: "POST", body: { ids } });
+    },
+
     /* ─── Склад ─── */
 
     warehouseSettings() {

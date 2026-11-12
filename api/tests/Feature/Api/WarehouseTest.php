@@ -554,6 +554,13 @@ final class WarehouseTest extends TestCase
         $this->api('POST', "/requests/{$request['id']}/manager-parts/accept", ['revision' => $request['revision']])->assertForbidden();
         $this->api('POST', "/requests/{$request['id']}/next", ['revision' => $request['revision'], 'comment' => '', 'attachmentIds' => []])
             ->assertOk()->assertJsonPath('request.stage', RepairStage::RepairInProgress->value);
+
+        // Меню «Разработчик»: удаление ЗР отменяет Перемещение — ЗЧ возвращаются на склад УК.
+        $this->actingAs($this->users['manager']);
+        $this->api('POST', '/developer/requests/delete', ['ids' => [$this->request->uuid]])->assertOk();
+        $this->assertSame(5.0, $stock->onHand($managerOrg)[$this->catalog->id]);
+        $this->assertSame([], $stock->onHand($stationOrg, [], $target->id));
+        $this->assertFalse(\App\Models\StockDocument::query()->where('type', 'transfer')->exists());
     }
 
     public function test_station_cannot_accept_parts_missing_on_uk_stock(): void

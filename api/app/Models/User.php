@@ -149,6 +149,7 @@ final class User extends Authenticatable
             'permissions'          => [
                 'canCreateRequest' => $this->role === UserRole::Customer
                     && $this->hasPlatformAccess(),
+                'canUseDeveloperTools' => \App\Services\DeveloperToolsService::allowed($this),
             ],
         ];
     }

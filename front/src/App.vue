@@ -30,6 +30,7 @@ import WarehouseSettings from "./features/warehouse/WarehouseSettings.vue";
 import StockDocumentList from "./features/warehouse/StockDocumentList.vue";
 import StockDocumentEditor from "./features/warehouse/StockDocumentEditor.vue";
 import StockBalanceReport from "./features/warehouse/StockBalanceReport.vue";
+import DeveloperRequestCleanup from "./features/developer/DeveloperRequestCleanup.vue";
 
 /** Пункты меню «Склад» и «Настройки» (ЛК УК и СТО). */
 const WAREHOUSE_MENU = {
@@ -95,6 +96,7 @@ export default {
         StockDocumentList,
         StockDocumentEditor,
         StockBalanceReport,
+        DeveloperRequestCleanup,
     },
     data() {
         return {
@@ -257,6 +259,14 @@ export default {
                     title: "Настройки",
                     icon: "⚙",
                     items: [{ key: "warehouseSettings", label: "Складской учёт" }],
+                });
+            }
+            if (this.user?.role === "manager" && this.user?.permissions?.canUseDeveloperTools) {
+                groups.push({
+                    key: "developer",
+                    title: "Разработчик",
+                    icon: "⌘",
+                    items: [{ key: "developerDeleteRequests", label: "Удаление ЗР" }],
                 });
             }
             return groups;
@@ -1325,6 +1335,20 @@ export default {
             );
         },
 
+        /** Меню «Разработчик»: ЗР удалены на сервере — закрываем их вкладки и обновляем реестр. */
+        async developerRequestsDeleted(ids) {
+            const deleted = new Set(ids);
+            for (const tab of this.tabs) {
+                if (tab.kind === "request" && deleted.has(tab.recordId)) this.releaseTabLock(tab.id);
+            }
+            this.tabs = this.tabs.filter((tab) => tab.kind !== "request" || !deleted.has(tab.recordId));
+            this.store.forgetRequests(ids);
+            if (!this.tabs.some((tab) => tab.id === this.activeId)) {
+                if (this.tabs.length) await this.activate(this.tabs[0].id);
+                else this.activeId = "";
+            }
+        },
+
         async deleteDrafts(ids) {
             const selectedIds = [...new Set(ids)].filter(
                 (id) => this.store.find(id)?.permissions?.canDeleteDraft,
@@ -1467,6 +1491,7 @@ export default {
             if (key === "stockSales") return this.openStockList("sale");
             if (key === "stockBalance") return this.openSimpleTab("stock-balance", "Остатки на складе", key);
             if (key === "warehouseSettings") return this.openSimpleTab("warehouse-settings", "Складской учёт", key);
+            if (key === "developerDeleteRequests") return this.openSimpleTab("developer-delete-requests", "Удаление ЗР", key);
             return this.openList(key);
         },
         async openSimpleTab(kind, title, menuKey) {
@@ -2568,6 +2593,11 @@ export default {
                             v-else-if="active?.kind === 'cash-flow'"
                             :user="user"
                             @open="openCashFlowRow"
+                        />
+                        <DeveloperRequestCleanup
+                            v-else-if="active?.kind === 'developer-delete-requests'"
+                            @deleted="developerRequestsDeleted"
+                            @notify="notify"
                         />
                         <div v-else-if="!active" class="workspace-splash">
                             <img

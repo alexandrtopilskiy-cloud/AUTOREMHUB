@@ -13,7 +13,7 @@
 
     <div v-if="panel.menu" class="area-scroll menu-scroll">
       <span class="nav-caption">Документы</span>
-      <!-- Сверху вниз: Ремонт, Склад, Документы ЭДО, Отчёты, Справочники, Настройки.
+      <!-- Сверху вниз: Ремонт, Склад, Документы ЭДО, Отчёты, Справочники, Настройки, Разработчик (только УК).
            Группы открываются по клику всплывающим списком, набор зависит от ЛК. -->
       <template v-for="entry in entries" :key="entry.key">
         <button
@@ -221,7 +221,8 @@ export default {
         this.reportsGroup,
         group("catalogs"),
         group("settings"),
-        ...this.menuGroups.filter((item) => !["warehouse", "reports", "catalogs", "settings"].includes(item.key)),
+        group("developer"),
+        ...this.menuGroups.filter((item) => !["warehouse", "reports", "catalogs", "settings", "developer"].includes(item.key)),
       ].filter(Boolean);
     },
     openedGroup() {
