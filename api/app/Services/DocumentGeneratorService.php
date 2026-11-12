@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\WorkOrderItemKind;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\VehicleAcceptanceAct;
@@ -27,17 +28,57 @@ final class DocumentGeneratorService
         Organization $sender,
         Organization $receiver
     ): string {
+        $works = [];
+        $parts = [];
+        $totalWorks = 0;
+        $totalParts = 0;
+
+        foreach ($workOrder->items as $item) {
+            // Приводим к числам (на всякий случай)
+            $quantity = (float) $item->quantity;
+            $price = (float) $item->price;
+            $amount = $quantity * $price;
+
+            $row = [
+                'name' => $item->name,
+                'sku'  => $item->supplier_id ?? null, // Если есть артикул, иначе null
+                'quantity' => $quantity,
+                'price' => $price,
+                'amount' => $amount,
+            ];
+
+            // Разделяем по kind
+            if ($item->kind === WorkOrderItemKind::Work) {
+                $works[] = $row;
+                $totalWorks += $amount;
+            } else {
+                $parts[] = $row;
+                $totalParts += $amount;
+            }
+        }
+
+        $totalSum = $totalWorks + $totalParts;
+
+        // Формируем данные для шаблона
         $data = [
-            'request'    => $request,
-            'workOrder'  => $workOrder,
-            'sender'     => $sender,
-            'receiver'   => $receiver,
-            'items'      => $workOrder->items,
-            'total'      => $workOrder->total,
-            'date'       => now()->format('d.m.Y'),
+            'title'   => 'Заказ-наряд',
+            'doc'     => (object)[
+                'number' => $workOrder->number ?? $request->number . '-ЗН',
+                'document_date' => now(),
+            ],
+            'sender'  => $sender,
+            'receiver'=> $receiver,
+            'request' => $request,
+            'vehicle' => $request->vehicleRecord,
+            'works'   => $works,
+            'parts'   => $parts,
+            'totalWorks' => $totalWorks,
+            'totalParts' => $totalParts,
+            'totalSum'   => $totalSum,
         ];
 
-        $pdf = Pdf::loadView('pdf.work_order', $data)
+        // Генерируем PDF
+        $pdf = Pdf::loadView('pdf.closing.work_order', $data)
             ->setPaper(static::PDF_PAPER_NAME, static::PDF_PORTRAIT_ORIENTATION)
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 

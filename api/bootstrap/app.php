@@ -2,8 +2,6 @@
 
 declare(strict_types = 1);
 
-use App\Console\Commands\Edo\EdoRuSmokeCommand;
-use App\Console\Commands\Edo\RegisterEdoOrganizationCommand;
 use App\Exceptions\ApiErrorRenderer;
 use App\Exceptions\ApiException;
 use App\Http\Middleware\ApiHeaders;
@@ -22,15 +20,13 @@ return Application::configure(basePath: dirname(__DIR__))
  ──────────────────────────────────────────────────────────── */
 
     ->withRouting(
+        web: __DIR__.'/../routes/web.php',
         api: __DIR__ . '/../routes/api.php',
         commands: __DIR__ . '/../routes/console.php',
         apiPrefix: 'api',
     )
 
-    ->withCommands([
-        RegisterEdoOrganizationCommand::class,
-        EdoRuSmokeCommand::class,
-    ])
+    ->withCommands([])
 
 /* ────────────────────────────────────────────────────────────
  | Middleware

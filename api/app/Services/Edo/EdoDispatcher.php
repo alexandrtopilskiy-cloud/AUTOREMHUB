@@ -20,6 +20,7 @@ use App\Services\Edo\Drivers\Taxcom\TaxcomMapper;
 use App\Services\Edo\Drivers\Taxcom\TaxcomProvider;
 use App\Services\Edo\Drivers\Sbis\SbisProvider;
 use App\Services\Edo\Drivers\Sbis\SbisClientFactory;
+use Illuminate\Support\Facades\Log;
 
 final class EdoDispatcher
 {
@@ -33,9 +34,8 @@ final class EdoDispatcher
 
     public function forOrganization(Organization $org): EdoOutboundProviderInterface
     {
-        if (config('edo.mock', false)) {
-            return new NullEdoProvider();
-        }
+        $logger = Log::channel('edo');
+        $logger->info('GET PROVIDER BY ORG');
 
         return match (config('edo.default')) {
             EdoProvider::EdoRu->value => new EdoRuProvider(

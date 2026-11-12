@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Edo;
 
+use App\DTO\EdoDocumentDto;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\RepairRequest;
@@ -19,7 +20,7 @@ final class EdoClosingDocumentsService
         private readonly UpdBuilder $updBuilder,
         private readonly WorkOrderBuilder $workOrderBuilder,
         private readonly EdoDispatcher $dispatcher,
-        private readonly EdoDocumentSenderService $sender
+        private readonly EdoDocumentSenderService $sender,
     ) {}
 
     public function generateAllClosingDocuments(RepairRequest $request, bool $validateOnly = false): void
@@ -49,7 +50,10 @@ final class EdoClosingDocumentsService
 
         $dto = $this->updBuilder->build($req, $document, $sto, $uk);
 
-        $this->sender->process($document, $dto, $provider, $validateOnly);
+        $result = $this->sender->process($dto, $provider, $validateOnly);
+        if ($result !== null) {
+            $this->updateEdoDocument($document, $result);
+        }
     }
 
     private function generateAndSendUpdManager(RepairRequest $req, bool $validateOnly): void
@@ -69,7 +73,10 @@ final class EdoClosingDocumentsService
 
         $dto = $this->updBuilder->build($req, $document, $uk, $customer);
 
-        $this->sender->process($document, $dto, $provider, $validateOnly);
+        $result = $this->sender->process($dto, $provider, $validateOnly);
+        if ($result !== null) {
+            $this->updateEdoDocument($document, $result);
+        }
     }
 
     private function generateAndSendZNSto(RepairRequest $req, bool $validateOnly): void
@@ -89,7 +96,10 @@ final class EdoClosingDocumentsService
 
         $dto = $this->workOrderBuilder->build($req, $document, $sto, $uk);
 
-        $this->sender->process($document, $dto, $provider, $validateOnly);
+        $result = $this->sender->process($dto, $provider, $validateOnly);
+        if ($result !== null) {
+            $this->updateEdoDocument($document, $result);
+        }
     }
 
     private function generateAndSendZNManager(RepairRequest $req, bool $validateOnly): void
@@ -109,11 +119,16 @@ final class EdoClosingDocumentsService
 
         $dto = $this->workOrderBuilder->build($req, $document, $uk, $customer);
 
-        $this->sender->process($document, $dto, $provider, $validateOnly);
+        $result = $this->sender->process($dto, $provider, $validateOnly);
+        if ($result !== null) {
+            $this->updateEdoDocument($document, $result);
+        }
     }
 
     private function getEdoDocument(RepairRequest $req, EdoDocumentType $type, string $suffix, int $senderId): EdoDocument
     {
+        Log::channel('edo')->info('GET EDO DOCUMENT FROM DB');
+
         return EdoDocument::firstOrCreate(
             [
                 'source_type'   => RepairRequest::class,
@@ -130,5 +145,18 @@ final class EdoClosingDocumentsService
                 'status'           => 'draft',
             ]
         );
+    }
+
+    private function updateEdoDocument(EdoDocument $document, EdoDocumentDto $result): void
+    {
+        $document->update([
+            'external_id' => $result->externalId,
+            'status'      => $result->status->value ?? 'sended',
+        ]);
+
+        Log::channel('edo')->info("EdoService: Документ обновлен в БД", [
+            'external_id' => $result->externalId,
+            'status'      => $result->status->value
+        ]);
     }
 }

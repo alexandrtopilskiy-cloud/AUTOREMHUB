@@ -87,6 +87,8 @@ class SbisProvider implements EdoOutboundProviderInterface
      */
     public function createNonFormalizedDocument(EdoStructuredRequest $request): EdoDocumentDto
     {
+        $logger = Log::channel('edo');
+        $logger->info('CREATE NON FORMALIZED DOCUMENT');
         $pdfContent = $request->meta['file_content'];
         $fileName = $request->meta['file_name'];
 
@@ -97,12 +99,11 @@ class SbisProvider implements EdoOutboundProviderInterface
         // СБИС требует UUID для идентификатора документа
         $externalId = Str::uuid()->toString();
 
-        // Формируем структуру документа по документации СБИС
         $document = [
             'Идентификатор' => $externalId,
             'Дата'          => $request->date->format('d.m.Y'),
             'Номер'         => $request->number,
-            'Тип'           => 'NonFormalized', // Тип для неформализованного документа
+            'Тип'           => 'SimpleDoc',
             'Примечание'    => 'Документ по заявке (Заказ-наряд)',
 
             // Вложение с PDF-файлом

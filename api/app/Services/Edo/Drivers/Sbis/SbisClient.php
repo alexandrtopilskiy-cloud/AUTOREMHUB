@@ -22,7 +22,7 @@ final class SbisClient
         private readonly Organization $organization,
         private readonly ?string $login,
         private readonly ?string $password,
-        private readonly ?string $sessionId,
+        private ?string $sessionId,
         private readonly int $timeout = 30,
         private readonly int $connectTimeout = 10,
     ) {}
@@ -34,15 +34,14 @@ final class SbisClient
     {
         $logger = Log::channel('edo');
         $logger->info("START $method");
-        $sessionId = $this->resolveSessionId();
-        $logger->info($sessionId);
+        $this->sessionId = $this->resolveSessionId();
 
         $response = $this->rawRequest($method, $params);
 
         // Если сессия истекла (401), пробуем обновить и повторить
         if ($response->status() === 401) {
             $this->forgetSession();
-            $sessionId = $this->resolveSessionId(true);
+            $this->sessionId = $this->resolveSessionId(true);
             $response = $this->rawRequest($method, $params);
         }
 
@@ -61,14 +60,11 @@ final class SbisClient
             return $this->organization->edo_token;
         }
 
-        // В мок-режиме просто возвращаем заглушку
-        if (config('edo.mock')) {
-            return 'mock-session-id';
-        }
-
         // Если нужно обновить, но нет логина/пароля — падаем
         if (empty($this->login) || empty($this->password)) {
-            throw new RuntimeException('Сессия СБИС истекла или отсутствует. Нет логина/пароля для переавторизации.');
+            $message = 'Сессия СБИС истекла или отсутствует. Нет логина/пароля для переавторизации.';
+            $logger->error($message);
+            throw new RuntimeException($message);
         }
 
         // Делаем запрос на авторизацию
@@ -81,6 +77,7 @@ final class SbisClient
      */
     private function login(): ?string
     {
+        $logger = Log::channel('edo');
         $payload = [
             'jsonrpc' => '2.0',
             'method'  => 'СБИС.Аутентифицировать',
@@ -96,12 +93,14 @@ final class SbisClient
             ->post($this->authUrl, $payload);
 
         if ($response->failed()) {
+            $logger->error("Ошибка авторизации в СБИС: \n" . $response->json());
             throw new RuntimeException('Ошибка авторизации в СБИС: ' . $response->body());
         }
 
         $result = $response->json();
 
         if (isset($result['error'])) {
+            $logger->error("Ошибка авторизации в СБИС: \n" . $result['error']['message']);
             throw new RuntimeException("Ошибка СБИС (Auth): {$result['error']['message']}");
         }
 
@@ -109,6 +108,7 @@ final class SbisClient
 
         $expiresIn = 3600 * 3; // Сессия СБИС обычно живет 3 часа (уточнить в доке)
 
+        $logger->info('UPDATE ORGANIZATION');
         DB::table('organizations')
             ->where('id', $this->organization->id)
             ->update([
@@ -130,10 +130,8 @@ final class SbisClient
 
     private function forgetSession(): void
     {
-        if (config('edo.mock')) {
-            return;
-        }
-
+        $logger = Log::channel('edo');
+        $logger->info('ERASE SESSION ID FOR ORG');
         // 1. Очищаем токен в БД
         DB::table('organizations')
             ->where('id', $this->organization->id)
@@ -148,7 +146,9 @@ final class SbisClient
         $this->organization->edo_token_expires_at = null;
         $this->organization->syncOriginal();
 
-        Log::channel('edo')->info("SbisClient: Сессия для организации {$this->organization->id} сброшена.");
+        $this->sessionId = null;
+
+        $logger->info("SbisClient: Сессия для организации {$this->organization->id} сброшена.");
     }
 
     /**
@@ -176,15 +176,16 @@ final class SbisClient
 
     private function decode(Response $response): array
     {
+        $logger = Log::channel('edo');
         if ($response->failed() && $response->status() !== 401) {
-            Log::channel('edo')->error("СБИС API HTTP Error", ['response' => $response->body()]);
+            $logger->error("СБИС API HTTP Error", ['response' => $response->body()]);
             throw new RuntimeException("Ошибка HTTP при запросе к СБИС: {$response->status()}");
         }
 
         $result = $response->json();
 
         if (isset($result['error'])) {
-            Log::channel('edo')->error("СБИС API RPC Error", ['error' => json_encode($result['error'], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)]);
+            $logger->error("СБИС API RPC Error", ['error' => json_encode($result['error'], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)]);
             throw new RuntimeException("Ошибка СБИС: [{$result['error']['code']}] {$result['error']['message']}");
         }
 
