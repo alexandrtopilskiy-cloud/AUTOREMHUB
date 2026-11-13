@@ -12,5 +12,8 @@ if (app()->environment('local')) {
 
         // Просмотр PDF Отчета агента (если нужно)
         Route::get('agent-report/{number}', [EdoPreviewController::class, 'agentReport'])->name('edo.preview.agent_report');
+
+        // Просмотр PDF Счета
+        Route::get('invoice/{number}', [EdoPreviewController::class, 'invoice'])->name('edo.preview.invoice');
     });
 }

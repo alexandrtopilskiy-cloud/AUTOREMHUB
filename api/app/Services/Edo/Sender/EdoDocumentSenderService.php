@@ -18,22 +18,9 @@ final class EdoDocumentSenderService
     ) {}
 
     /**
-     * Обрабатывает документ и возвращает результат (DTO) для обновления в БД.
-     * Если режим --validate, возвращает null.
-     */
-    public function process(EdoStructuredRequest $dto, EdoOutboundProviderInterface $provider, bool $validateOnly): ?EdoDocumentDto
-    {
-        if ($dto->type === EdoDocumentType::NonFormalized) {
-            return $this->processPdf($dto, $provider);
-        }
-
-        return $this->processXml($dto, $provider, $validateOnly);
-    }
-
-    /**
      * Обработка формализованных документов (УПД, СЧФ, УКД).
      */
-    private function processXml(EdoStructuredRequest $dto, EdoOutboundProviderInterface $provider, bool $validateOnly): ?EdoDocumentDto
+    public function processXml(EdoStructuredRequest $dto, EdoOutboundProviderInterface $provider, bool $validateOnly): ?EdoDocumentDto
     {
         $logger = Log::channel('edo');
         $xmlContent = $dto->meta['xml_content'];
@@ -59,7 +46,7 @@ final class EdoDocumentSenderService
     /**
      * Обработка неформализованных документов (Заказ-наряд, Акт в PDF).
      */
-    private function processPdf(EdoStructuredRequest $dto, EdoOutboundProviderInterface $provider): EdoDocumentDto
+    public function processPdf(EdoStructuredRequest $dto, EdoOutboundProviderInterface $provider): EdoDocumentDto
     {
         return $provider->createNonFormalizedDocument($dto);
     }

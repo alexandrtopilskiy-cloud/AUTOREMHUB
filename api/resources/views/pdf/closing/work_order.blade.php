@@ -29,18 +29,29 @@
 <body>
 
     {{-- Шапка с реквизитами --}}
-    <table class="header-table">
+    <table class="header-table" style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
         <tr>
-            <td width="30%">
-                <div class="header-logo">A78</div>
+            {{-- Логотип --}}
+            <td width="25%" style="vertical-align: top;">
+                <div style="font-size: 14px; font-weight: bold; line-height: 1.1; word-wrap: break-word; color: #000;">
+                    ЛОГОТИП<br>
+                    <span style="font-size: 11px; font-weight: normal;">
+                        {{ $sender->short_name ?: $sender->name }}
+                    </span>
+                </div>
             </td>
-            <td width="70%" class="header-req">
-                {{ $sender->name }}<br>
+
+            {{-- Реквизиты --}}
+            <td width="50%" style="text-align: center; font-size: 9px; line-height: 1.3; vertical-align: top;">
+                <strong>{{ $sender->name }}</strong><br>
                 ИНН {{ $sender->inn }}<br>
                 {{ $sender->legal_address }}<br>
-                тел.: {{ $sender->phone }}<br>
-                {{ $sender->email }}
+                @if($sender->phone) тел.: {{ $sender->phone }}<br> @endif
+                @if($sender->email) {{ $sender->email }} @endif
             </td>
+
+            {{-- Пустая колонка для баланса --}}
+            <td width="25%" style="vertical-align: top;"></td>
         </tr>
     </table>
 
@@ -51,8 +62,8 @@
                 <div class="title">{{ $title }} № {{ $doc->number }}</div>
             </td>
             <td style="text-align: right; font-size: 8px;">
-                Принят: {{ now()->format('d.m.Y H:i') }}<br>
-                Закрыт: {{ now()->format('d.m.Y H:i') }}
+                Принят: {{ $request->created_at?->format('d.m.Y H:i') ?? '—' }}<br>
+                Закрыт: {{ $request->repair_completed_at?->format('d.m.Y H:i') ?? '—' }}
             </td>
         </tr>
     </table>
@@ -87,7 +98,13 @@
         </tr>
         <tr>
             <td class="info-label">Причина обращения:</td>
-            <td colspan="3">{{ $request->data['reason'] ?? '—' }}</td>
+            <td colspan="3">{{ $request->number ?? '—' }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Рекомендации:</td>
+            <td colspan="3">
+                {{ $request->recommendations ?? '—' }}
+            </td>
         </tr>
     </table>
 

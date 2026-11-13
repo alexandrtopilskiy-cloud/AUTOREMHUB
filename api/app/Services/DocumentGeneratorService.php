@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\Pdf\InvoicePdfPayload;
 use App\Enums\WorkOrderItemKind;
 use App\Models\Organization;
 use App\Models\RepairRequest;
-use App\Models\VehicleAcceptanceAct;
 use App\Models\WorkOrder;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -86,49 +86,6 @@ final class DocumentGeneratorService
     }
 
     /**
-     * Акт приема-передачи ТС - СТО -> Водители (из доверенности)
-     */
-    public function generateAcceptanceAct(RepairRequest $request, VehicleAcceptanceAct $act): string
-    {
-        $data = [
-            'request' => $request,
-            'act' => $act,
-            'customer' => $request->customerOrganization,
-            'station' => $request->stationRecord?->organization,
-            'uk' => $request->ukOrganization ?? $request->tenant,
-            'vehicle' => $request->vehicleRecord,
-            'date' => now()->format('d.m.Y'),
-        ];
-
-        $pdf = Pdf::loadView('pdf.acceptance_act', $data)
-            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PORTRAIT_ORIENTATION)
-            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
-
-        return $pdf->output();
-    }
-
-    /**
-     * Доверенность на право подписи акта приёмо-передачи ТС - Заказчик -> Водители
-     */
-    public function generatePowerOfAttorney(RepairRequest $request): string
-    {
-        $data = [
-            'request' => $request,
-            'customer' => $request->customerOrganization,
-            'station' => $request->stationRecord?->organization,
-            'vehicle' => $request->vehicleRecord,
-            'driver' => $request->driverRecord,
-            'date' => now()->format('d.m.Y'),
-        ];
-
-        $pdf = Pdf::loadView('pdf.power_of_attorney', $data)
-            ->setPaper(static::PDF_PAPER_NAME,static::PDF_PORTRAIT_ORIENTATION)
-            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
-
-        return $pdf->output();
-    }
-
-    /**
      * Отчет агента - УК -> Заказчик
      */
     public function generateAgentReport(RepairRequest $request): string
@@ -161,6 +118,21 @@ final class DocumentGeneratorService
 
         $pdf = Pdf::loadView('pdf.agent_contract', $data)
             ->setPaper(static::PDF_PAPER_NAME,static::PDF_PORTRAIT_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
+
+        return $pdf->output();
+    }
+
+    public function generateInvoice(InvoicePdfPayload $payload, string $number, \DateTimeInterface $date): string
+    {
+        $data = [
+            'payload' => $payload,
+            'doc'     => (object)['number' => $number, 'document_date' => $date],
+            'title'   => 'Счет на оплату',
+        ];
+
+        $pdf = Pdf::loadView('pdf.closing.invoice', $data)
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PORTRAIT_ORIENTATION)
             ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE);
 
         return $pdf->output();
