@@ -86,7 +86,7 @@ final class RepairRequestResource extends JsonResource
             'createdAt'              => $this->created_at->toISOString(),
             'updatedAt'              => $this->updated_at->toISOString(),
             'estimateVersion'        => $this->estimate_version,
-            'reviewContext'          => $this->review_context,
+            'reviewContext'          => $this->review_context?->value,
             'declinedStationIds'     => $this->data['declinedStationIds'] ?? [],
             'statusLabel'            => Workflow::statusLabel($this->resource),
             'ownerLabel'             => Workflow::ownerLabel($this->resource),

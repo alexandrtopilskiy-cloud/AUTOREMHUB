@@ -13,7 +13,7 @@
 
     <div v-if="panel.menu" class="area-scroll menu-scroll">
       <span class="nav-caption">Документы</span>
-      <!-- Сверху вниз: Ремонт, Склад, Документы ЭДО, Отчёты, Справочники, Настройки.
+      <!-- Сверху вниз: Ремонт, Склад, Документы ЭДО, Отчёты, Справочники, Настройки, Разработчик (только УК).
            Группы открываются по клику всплывающим списком, набор зависит от ЛК. -->
       <template v-for="entry in entries" :key="entry.key">
         <button
@@ -127,7 +127,8 @@ export default {
     user: { type: Object, required: true },
     active: { type: Object, default: null },
     panel: { type: Object, required: true },
-    requests: { type: Array, default: () => [] },
+    /** Число ЗР, доступных пользователю (счётчик реестра с сервера). */
+    requestCount: { type: Number, default: 0 },
     awaiting: { type: Number, default: 0 },
     notifications: { type: Array, default: () => [] },
     unreadNotifications: { type: Number, default: 0 },
@@ -166,7 +167,7 @@ export default {
           {
             key: "requests",
             label: "Заявки на ремонт",
-            count: this.requests.length,
+            count: this.requestCount,
             emit: ["open-list", "requests"],
             isActive: active.key === "requests",
           },
@@ -220,7 +221,8 @@ export default {
         this.reportsGroup,
         group("catalogs"),
         group("settings"),
-        ...this.menuGroups.filter((item) => !["warehouse", "reports", "catalogs", "settings"].includes(item.key)),
+        group("developer"),
+        ...this.menuGroups.filter((item) => !["warehouse", "reports", "catalogs", "settings", "developer"].includes(item.key)),
       ].filter(Boolean);
     },
     openedGroup() {

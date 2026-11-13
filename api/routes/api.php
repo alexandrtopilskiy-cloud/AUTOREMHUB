@@ -7,6 +7,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CatalogImportController;
 use App\Http\Controllers\ChangeRegistryController;
+use App\Http\Controllers\DeveloperController;
 use App\Http\Controllers\DiagnosticController;
 use App\Http\Controllers\DocumentLockController;
 use App\Http\Controllers\EdoDocumentController;
@@ -207,6 +208,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     });
 
     /* ─── ЭДО ─── */
+
+    // Меню «Разработчик» (ЛК УК): удаление ЗР со всеми файлами, удаление Приходов и Реализаций, прочитать все уведомления.
+    Route::prefix('developer')->name('developer.')->group(function (): void {
+        Route::get('/requests', [DeveloperController::class, 'requests'])->name('requests.index');
+        Route::post('/requests/delete', [DeveloperController::class, 'deleteRequests'])->name('requests.delete');
+        Route::get('/stock-documents', [DeveloperController::class, 'stockDocuments'])->name('stock-documents.index');
+        Route::post('/stock-documents/delete', [DeveloperController::class, 'deleteStockDocuments'])->name('stock-documents.delete');
+        Route::get('/notifications', [DeveloperController::class, 'notifications'])->name('notifications.index');
+        Route::post('/notifications/read-all', [DeveloperController::class, 'readAllNotifications'])->name('notifications.read-all');
+    });
 
     Route::get('/request-documents/{documentId}/pdf', [ClosingDocumentController::class, 'pdf'])->whereUuid('documentId')->name('request-documents.pdf');
     Route::get('/reports/requests', [ReportController::class, 'requests'])->name('reports.requests');

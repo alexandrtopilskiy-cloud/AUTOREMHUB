@@ -31,6 +31,7 @@ export default {
     "open-listed",
     "toggle-all-drafts",
     "toggle-draft-selection",
+    "page",
   ],
   props: {
     active: { type: Object, required: true },
@@ -42,6 +43,8 @@ export default {
     selectedDraftIds: { type: Array, default: () => [] },
     allVisibleDraftsSelected: { type: Boolean, default: false },
     activeFiltersApplied: { type: Boolean, default: false },
+    /** Листание реестра ЗР: { page, perPage, total, lastPage } или null. */
+    pager: { type: Object, default: null },
   },
   data() {
     return {
@@ -75,6 +78,19 @@ export default {
         delete fields.laborHourRateOther;
       }
       return fields;
+    },
+
+    /** Сумма строки: лёгкая строка реестра несёт сумму, посчитанную сервером. */
+    amount(item) {
+      return item.summary ? Number(item.total || 0) : total(item);
+    },
+
+    pagerRange() {
+      const { page = 1, perPage = 50, total: count = 0 } = this.pager || {};
+      if (!count) return "Записей нет";
+      const from = (page - 1) * perPage + 1;
+      const to = Math.min(page * perPage, count);
+      return `Показано ${from}–${to} из ${count}`;
     },
 
     requestFilterPlaceholder(key) {
@@ -253,7 +269,7 @@ export default {
                 </small>
               </td>
               <td>
-                {{ money(total(item)) }}
+                {{ money(amount(item)) }}
               </td>
             </template>
             <template v-else>
@@ -277,8 +293,39 @@ export default {
         </tbody>
       </table>
     </div>
+    <div
+      v-if="isRequestList && pager && pager.total > 0"
+      class="registry-pager"
+    >
+      <button
+        type="button"
+        aria-label="Предыдущая страница"
+        :disabled="pager.page <= 1"
+        @click="$emit('page', pager.page - 1)"
+      >
+        ‹
+      </button>
+      <span>{{ pagerRange() }}</span>
+      <span v-if="pager.lastPage > 1" class="registry-pager-pages"
+        >стр. {{ pager.page }} из {{ pager.lastPage }}</span
+      >
+      <button
+        type="button"
+        aria-label="Следующая страница"
+        :disabled="pager.page >= pager.lastPage"
+        @click="$emit('page', pager.page + 1)"
+      >
+        ›
+      </button>
+    </div>
     <div v-if="!listed.length" class="empty-state">
-      <h3>{{ store.loading ? "Загружаем данные…" : "Записей пока нет" }}</h3>
+      <h3>
+        {{
+          store.loading || (isRequestList && store.registry?.loading)
+            ? "Загружаем данные…"
+            : "Записей пока нет"
+        }}
+      </h3>
       <p>
         {{
           activeFiltersApplied

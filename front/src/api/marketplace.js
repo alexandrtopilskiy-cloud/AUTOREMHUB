@@ -21,6 +21,8 @@ const MAX_STAGE = 10;
 
 /** Ключ для сохранения токена только в текущей вкладке браузера. */
 const TOKEN_STORAGE_KEY = "api_token";
+/** Служебные операции меню «Разработчик» (массовое удаление) идут дольше обычных запросов. */
+const DEVELOPER_TIMEOUT_MS = 300_000;
 
 /**
  * @param {string|number} value
@@ -217,12 +219,50 @@ export const marketplaceApi = {
     /* ─── Заявки ─── */
 
     /**
+     * Страница реестра ЗР: лёгкие строки, фильтры колонок применяет сервер.
+     *
+     * @param {{scope?: string, page?: number, perPage?: number, document?: string, vehicle?: string, status?: string, amount?: string}} [params]
+     * @returns {Promise<{requests: object[], meta: {page: number, perPage: number, total: number, lastPage: number}, counts: {all: number, action: number}}>}
+     */
+    async listRequests(params = {}) {
+        const query = new URLSearchParams();
+
+        for (const [key, value] of Object.entries(params)) {
+            if (value !== undefined && value !== null && String(value).trim() !== "") {
+                query.set(key, String(value).trim());
+            }
+        }
+
+        const search = query.toString();
+        const data = await http.request("/requests" + (search ? "?" + search : ""));
+        const requests = data.requests.map(readRequest);
+
+        return {
+            requests,
+            meta: data.meta || { page: 1, perPage: requests.length, total: requests.length, lastPage: 1 },
+            counts: data.counts || { all: requests.length, action: 0 },
+        };
+    },
+
+    /**
+     * Полные ЗР по идентификаторам (открытые вкладки), не более 50 за запрос.
+     *
+     * @param {string[]} ids
      * @returns {Promise<object[]>}
      */
-    async listRequests() {
-        const data = await http.request("/requests");
+    async getRequests(ids) {
+        const unique = [...new Set(ids)].filter(Boolean);
+        const result = [];
 
-        return data.requests.map(readRequest);
+        for (let index = 0; index < unique.length; index += 50) {
+            const chunk = unique.slice(index, index + 50);
+            const data = await http.request(
+                "/requests?ids=" + chunk.map(encodeURIComponent).join(","),
+            );
+            result.push(...data.requests.map(readRequest));
+        }
+
+        return result;
     },
 
     /**
@@ -1279,6 +1319,48 @@ export const marketplaceApi = {
 
     async reportCashFlow() {
         return http.request("/reports/cash-flow");
+    },
+
+    /* ─── Меню «Разработчик» (ЛК УК) ─── */
+
+    /** @returns {Promise<{requests: object[], maxDelete: number}>} */
+    developerRequests() {
+        return http.request("/developer/requests");
+    },
+
+    /**
+     * Удаляет ЗР со всеми файлами и связанными записями.
+     *
+     * @param {string[]} ids
+     * @returns {Promise<{deletedIds: string[], files: number, removed: object}>}
+     */
+    developerDeleteRequests(ids) {
+        return http.request("/developer/requests/delete", { method: "POST", body: { ids }, timeoutMs: DEVELOPER_TIMEOUT_MS });
+    },
+
+    /** @returns {Promise<{documents: object[], maxDelete: number}>} */
+    developerStockDocuments() {
+        return http.request("/developer/stock-documents");
+    },
+
+    /**
+     * Удаляет Приходы и Реализации с оплатами и движениями по складу.
+     *
+     * @param {string[]} ids
+     * @returns {Promise<{deletedIds: string[], movements: number, payments: number}>}
+     */
+    developerDeleteStockDocuments(ids) {
+        return http.request("/developer/stock-documents/delete", { method: "POST", body: { ids }, timeoutMs: DEVELOPER_TIMEOUT_MS });
+    },
+
+    /** @returns {Promise<{users: object[], total: number}>} */
+    developerNotifications() {
+        return http.request("/developer/notifications");
+    },
+
+    /** @returns {Promise<{read: number}>} */
+    developerReadAllNotifications() {
+        return http.request("/developer/notifications/read-all", { method: "POST", body: {}, timeoutMs: DEVELOPER_TIMEOUT_MS });
     },
 
     /* ─── Склад ─── */

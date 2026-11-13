@@ -737,6 +737,34 @@ button:focus-visible,
   overflow-x: auto;
 }
 
+/* Листание реестра ЗР (страницы приходят с сервера). */
+.registry-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.registry-pager button {
+  min-width: 32px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.registry-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .registry {
   width: 100%;
   border-collapse: collapse;

@@ -233,6 +233,114 @@ final class StationDecisionTest extends TestCase
         $this->assertSame(RepairStage::ManagerRouting->value, $response->json('request.stage'));
     }
 
+    /**
+     * Прогон 900 ЗР (12.11.2026): правки СТО, возвращённые УК, после
+     * «Подтвердить» без исправлений уходили Заказчику без согласования УК.
+     */
+    public function test_station_changes_returned_by_manager_need_manager_approval_again(): void
+    {
+        $request = $this->stationChangesReturnedByManager();
+
+        $this->assertSame(RepairStage::StationApproval->value, $request['stage']);
+        $this->assertSame('station_changes', $request['reviewContext']);
+        $this->assertTrue($request['estimateChangedSinceReview']);
+        $this->assertNotificationExists($request['systemId'], 'station_estimate_changed');
+
+        $this->actingAs($this->station);
+        $response = $this->postJson("/api/requests/{$request['id']}/station-decision", [
+            'revision'    => $request['revision'],
+            'decision'    => ApprovalDecision::Confirmed->value,
+            'comment'     => '',
+            'stationSlot' => $request['slot'],
+        ])->assertOk();
+
+        $this->assertSame(RepairStage::ManagerRouting->value, $response->json('request.stage'));
+        $this->assertSame('station_changes', $response->json('request.reviewContext'));
+    }
+
+    public function test_station_reverting_returned_changes_goes_to_customer(): void
+    {
+        $request = $this->stationChangesReturnedByManager();
+
+        $this->actingAs($this->station);
+        $works = $this->editableWorks($request);
+        $works[0]['qty'] = 1;
+        $request = $this->patchJson("/api/requests/{$request['id']}", [
+            'revision' => $request['revision'],
+            'works'    => $works,
+        ])->assertOk()->json('request');
+        $this->assertFalse($request['estimateChangedSinceReview']);
+
+        $response = $this->postJson("/api/requests/{$request['id']}/station-decision", [
+            'revision'    => $request['revision'],
+            'decision'    => ApprovalDecision::Confirmed->value,
+            'comment'     => '',
+            'stationSlot' => $request['slot'],
+        ])->assertOk();
+
+        $this->assertSame(RepairStage::CustomerApproval->value, $response->json('request.stage'));
+    }
+
+    public function test_manager_return_of_station_changes_requires_comment(): void
+    {
+        $request = $this->stationChangesAtManager();
+
+        $this->actingAs($this->manager);
+        $this->postJson("/api/requests/{$request['id']}/return", [
+            'revision'      => $request['revision'],
+            'comment'       => '',
+            'attachmentIds' => [],
+        ])->assertUnprocessable();
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function editableWorks(array $request): array
+    {
+        return array_map(static function (array $work): array {
+            unset($work['normApplicabilityLabel']);
+
+            return $work;
+        }, $request['works']);
+    }
+
+    /** СТО увеличила количество работы и отправила изменения в УК. */
+    private function stationChangesAtManager(): array
+    {
+        $request = $this->requestAtStationResponse();
+
+        $this->actingAs($this->station);
+        $works = $this->editableWorks($request);
+        $works[0]['qty'] = 2;
+        $request = $this->patchJson("/api/requests/{$request['id']}", [
+            'revision' => $request['revision'],
+            'works'    => $works,
+        ])->assertOk()->json('request');
+
+        $request = $this->postJson("/api/requests/{$request['id']}/station-decision", [
+            'revision'    => $request['revision'],
+            'decision'    => ApprovalDecision::Confirmed->value,
+            'comment'     => '',
+            'stationSlot' => $request['slot'],
+        ])->assertOk()->json('request');
+        $this->assertSame('station_changes', $request['reviewContext']);
+
+        return $request;
+    }
+
+    /** УК вернула правки СТО на доработку с комментарием. */
+    private function stationChangesReturnedByManager(): array
+    {
+        $request = $this->stationChangesAtManager();
+
+        $this->actingAs($this->manager);
+
+        return $this->postJson("/api/requests/{$request['id']}/return", [
+            'revision'      => $request['revision'],
+            'comment'       => 'Количество не согласовано',
+            'attachmentIds' => [],
+        ])->assertOk()->json('request');
+    }
+
     /* ─────────────────── Граничные случаи ─────────────────── */
 
     public function test_empty_comment_is_allowed_for_confirmed(): void

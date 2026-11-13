@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\RepairStage;
+use App\Enums\ReviewContext;
 use App\Enums\UserRole;
 use App\Enums\WorkChangeStatus;
 use App\Models\RepairRequest;
@@ -248,8 +249,8 @@ final class Workflow
     {
         if ($request->stage === RepairStage::ManagerRouting) {
             return match ($request->review_context) {
-                'station_changes' => WorkChangeStatus::STATUS_LABEL,
-                'station_declined' => 'Маршрутизация УК (отказ СТО)',
+                ReviewContext::StationChanges => WorkChangeStatus::STATUS_LABEL,
+                ReviewContext::StationDeclined => 'Маршрутизация УК (отказ СТО)',
                 default => $request->stage->label(),
             };
         }
