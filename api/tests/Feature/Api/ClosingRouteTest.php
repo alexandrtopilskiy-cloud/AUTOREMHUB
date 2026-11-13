@@ -372,6 +372,16 @@ final class ClosingRouteTest extends TestCase
         $this->assertSame(count($files), $result['files']);
 
         $this->assertNull(RepairRequest::query()->find($id));
+        // Нумерация продолжается с последней оставшейся ЗР + 1, а не после удалённой.
+        $maxLeft = (int) RepairRequest::query()->max('id');
+        $next = RepairRequest::query()->create([
+            'public_id' => (string) Str::uuid(), 'tenant_id' => $this->request->tenant_id,
+            'customer_organization_id' => $this->request->customer_organization_id, 'vehicle_id' => $this->request->vehicle_id,
+            'stage' => RepairStage::Draft, 'revision' => 0, 'estimate_version' => 1, 'data' => [], 'works' => [], 'history' => [],
+        ]);
+        $this->assertSame($maxLeft + 1, (int) $next->id);
+        $this->assertSame(RepairRequest::documentNumber('ZR', $maxLeft + 1), $next->fresh()->number);
+        $next->delete();
         foreach ([
             'attachments', 'request_documents', 'invoices', 'vehicle_acceptance_acts', 'work_orders',
             'vehicle_service_records', 'request_events', 'request_approvals', 'request_works', 'request_parts', 'request_chats',
