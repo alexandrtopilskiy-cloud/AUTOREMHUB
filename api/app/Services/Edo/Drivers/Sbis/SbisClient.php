@@ -191,4 +191,13 @@ final class SbisClient
 
         return $result['result'] ?? [];
     }
+
+    public function readDocument(string $externalId): array
+    {
+        return $this->request('СБИС.ПрочитатьДокумент', [
+            'Документ' => [
+                'Идентификатор' => $externalId,
+            ]
+        ]);
+    }
 }
