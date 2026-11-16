@@ -1528,7 +1528,9 @@ final class RepairRequestService
             app(StockService::class)->cancelRequestWriteOff($req);
         }
         if ($dto->action === TransitionAction::Next && $to === RepairStage::Issued) {
-            $this->closingDocuments->generateClosingDocuments($req, $user);
+            DB::afterCommit(function () use ($req): void {
+                ClosingDocumentsRequested::dispatch($req);
+            });
         }
 
         $context = new TransitionContext(
@@ -1814,11 +1816,11 @@ final class RepairRequestService
             ) {
                 $this->notifyWorkStarted($req, $event->id);
                 $act = $req->acceptanceAct()->first();
-                if ($act !== null) {
-                    DB::afterCommit(function () use ($req, $act): void {
-                        VehicleAccepted::dispatch($req, $act);
-                    });
-                }
+                // if ($act !== null) {
+                //     DB::afterCommit(function () use ($req, $act): void {
+                //         VehicleAccepted::dispatch($req, $act);
+                //     });
+                // }
             }
 
             if ($context->isReadyForIssue) {
