@@ -75,6 +75,7 @@ export default {
             sort: { key: "createdAt", desc: true },
             showSettings: false,
             signing: null,
+            pdfBusy: "",
             notice: "",
             columns: COLUMNS,
         };
@@ -155,6 +156,33 @@ export default {
             const index = this.rows.findIndex((row) => row.id === document.id);
             if (index >= 0) this.rows.splice(index, 1, document);
             this.notice = `${document.number}: запрос дошёл до СБИС (подпись отключена)`;
+        },
+        /** Бумажная копия: просмотр в новой вкладке или скачивание. */
+        async paperCopy(row, download) {
+            this.pdfBusy = row.id;
+            this.error = "";
+            // Вкладку открываем сразу по клику, иначе браузер заблокирует всплывающее окно.
+            const tab = download ? null : window.open("", "_blank");
+            try {
+                const blob = await marketplaceApi.edoPaperCopy(row.id, download);
+                const url = URL.createObjectURL(blob);
+                if (download) {
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `${String(row.number).replaceAll("/", "-")} ${row.typeLabel} (ЭДО).pdf`;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                } else if (tab) {
+                    tab.location.href = url;
+                } else {
+                    window.open(url, "_blank");
+                }
+            } catch (error) {
+                if (tab) tab.close();
+                this.error = error.message || "Не удалось сформировать PDF";
+            } finally {
+                this.pdfBusy = "";
+            }
         },
         openRequest(row) {
             if (row.request?.id) this.$emit("open-request", row.request.id);
@@ -280,15 +308,20 @@ export default {
                                 title="Открыть в СБИС"
                                 @click.stop
                             >↗</a>
-                            <a
-                                v-if="row.pdfUrl"
-                                :href="row.pdfUrl"
-                                target="_blank"
-                                rel="noopener"
+                            <button
+                                type="button"
                                 class="open-row"
-                                title="Скачать файл документа"
-                                @click.stop
-                            >📄</a>
+                                title="Просмотр PDF (бумажная копия с отметкой ЭДО)"
+                                :disabled="pdfBusy === row.id"
+                                @click.stop="paperCopy(row, false)"
+                            >👁</button>
+                            <button
+                                type="button"
+                                class="open-row"
+                                title="Скачать PDF (бумажная копия с отметкой ЭДО)"
+                                :disabled="pdfBusy === row.id"
+                                @click.stop="paperCopy(row, true)"
+                            >⬇</button>
                         </td>
                     </tr>
                 </tbody>

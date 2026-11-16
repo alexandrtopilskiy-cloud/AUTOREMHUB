@@ -184,6 +184,54 @@ final class SbisSigningTest extends TestCase
             && $request['params']['Документ']['Этап']['Действие'][0]['Название'] === 'Утвердить');
     }
 
+    public function test_paper_copy_renders_pdf_with_sbis_info(): void
+    {
+        config(['edo.mock' => false]);
+        [$sender, $receiver, $senderUser] = $this->participants();
+        $document = $this->document($sender, $receiver, [], EdoDocumentStatus::Signed);
+
+        Http::fake(fn (HttpRequest $request) => match ($request['method']) {
+            'СБИС.ПрочитатьДокумент' => Http::response(['jsonrpc' => '2.0', 'result' => [
+                'Название'  => 'Заказ-наряд ZN-000001/1',
+                'Номер'     => 'ZN-000001/1',
+                'Дата'      => '16.11.2026',
+                'Сумма'     => '1200.00',
+                'Состояние' => ['Код' => '7', 'Название' => 'Выполнение завершено успешно'],
+                'Событие'   => [['ДатаВремя' => '16.11.2026 10.00.00', 'Название' => 'Отправка']],
+                'Вложение'  => [[
+                    'Служебный' => 'Нет',
+                    'Файл'      => ['Имя' => 'ZN-000001-1.pdf'],
+                    'Подпись'   => [['Сертификат' => ['ФИО' => 'Иванов Иван Иванович', 'Должность' => 'Директор', 'Название' => 'СТО', 'ИНН' => '7713026678']]],
+                ]],
+            ]]),
+            default => Http::response(['jsonrpc' => '2.0', 'error' => ['message' => 'unexpected']], 500),
+        });
+
+        $response = $this->actingAs($senderUser)->get("/api/edo/documents/{$document->uuid}/paper?download=1");
+
+        $response->assertOk();
+        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('attachment;', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF', (string) $response->getContent());
+
+        $read = $document->fresh()->meta['sbis_read'];
+        $this->assertSame('Иванов Иван Иванович', $read['signatures'][0]['owner']);
+        $this->assertSame('Выполнение завершено успешно', $read['state']);
+    }
+
+    public function test_paper_copy_works_without_sbis(): void
+    {
+        [$sender, $receiver, , $receiverUser] = $this->participants();
+        $document = $this->document($sender, $receiver, [], EdoDocumentStatus::Sended);
+        Http::fake();
+
+        $response = $this->actingAs($receiverUser)->get("/api/edo/documents/{$document->uuid}/paper");
+
+        $response->assertOk();
+        $this->assertStringStartsWith('inline;', (string) $response->headers->get('Content-Disposition'));
+        Http::assertNothingSent();
+    }
+
     public function test_receiver_does_not_see_sender_draft(): void
     {
         [$sender, $receiver, , $receiverUser] = $this->participants();
