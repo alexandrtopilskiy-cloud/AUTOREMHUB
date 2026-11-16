@@ -2576,7 +2576,10 @@ export default {
                             v-else-if="active?.kind === 'vehicle-history'"
                             :vehicle-id="active.recordId"
                         />
-                        <EdoDocuments v-else-if="active?.kind === 'edo'" />
+                        <EdoDocuments
+                            v-else-if="active?.kind === 'edo'"
+                            @open-request="openRequestById"
+                        />
                         <WarehouseSettings
                             v-else-if="active?.kind === 'warehouse-settings'"
                             @notify="notify"

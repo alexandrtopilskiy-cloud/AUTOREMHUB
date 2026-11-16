@@ -107,6 +107,35 @@ final class SbisClient
         ]);
     }
 
+    /**
+     * Скачивает файл по ссылке СБИС (Файл.Ссылка) с сессией организации.
+     * Возвращает содержимое в base64.
+     */
+    public function downloadBase64(string $url): string
+    {
+        $get = fn (string $sessionId): Response => Http::withHeaders([
+            'X-SBISSessionID' => $sessionId,
+            'User-Agent'      => 'AUTOREMHUB/1.0',
+        ])
+            ->timeout($this->timeout)
+            ->connectTimeout($this->connectTimeout)
+            ->get($url);
+
+        $response = $get($this->sessionId());
+        if ($response->status() === 401 || $response->status() === 403) {
+            $this->forgetSession();
+            $response = $get($this->sessionId());
+        }
+
+        if ($response->failed()) {
+            Log::channel('edo')->error('SBIS: ошибка скачивания файла', ['status' => $response->status()]);
+
+            throw new RuntimeException("Не удалось скачать файл из СБИС: HTTP {$response->status()}");
+        }
+
+        return base64_encode($response->body());
+    }
+
     private function sessionId(): string
     {
         $token = (string) ($this->organization->edo_token ?? '');

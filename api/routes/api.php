@@ -256,6 +256,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::get('/documents/{uuid}/content', [EdoDocumentController::class, 'content'])->whereUuid('uuid')->name('documents.content');
         Route::get('/documents/{uuid}/pdf', [EdoDocumentController::class, 'pdf'])->whereUuid('uuid')->name('documents.pdf');
         Route::post('/documents/{uuid}/retry', [EdoDocumentController::class, 'retry'])->whereUuid('uuid')->name('documents.retry');
+        Route::post('/documents/{uuid}/sbis/prepare', [EdoDocumentController::class, 'sbisPrepare'])->whereUuid('uuid')->name('documents.sbis.prepare');
+        Route::post('/documents/{uuid}/sbis/execute', [EdoDocumentController::class, 'sbisExecute'])->whereUuid('uuid')->name('documents.sbis.execute');
+        Route::post('/sbis/refresh', [EdoDocumentController::class, 'sbisRefresh'])->name('sbis.refresh');
     });
 
     Route::post('/requests/{id}/edo/prepare', [EdoDocumentController::class, 'prepare'])->name('requests.edo.prepare');
