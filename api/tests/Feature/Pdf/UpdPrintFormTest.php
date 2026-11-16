@@ -39,7 +39,7 @@ final class UpdPrintFormTest extends TestCase
         ];
 
         $html = view('pdf.closing.upd', ['doc' => $doc, 'title' => 'УПД', 'payload' => $payload, 'side' => 'station', 'edo' => $edo])->render();
-        $this->assertStringContainsString('Универсальный передаточный документ', $html);
+        $this->assertStringContainsString('Универсальный<br>передаточный<br>документ', $html);
         $this->assertStringContainsString('Счет-фактура № UPD-000001/1', $html);
         $this->assertStringContainsString('Иванов И. И.', $html);
 
