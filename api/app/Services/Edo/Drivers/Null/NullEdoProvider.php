@@ -57,7 +57,11 @@ final class NullEdoProvider implements EdoOutboundProviderInterface
 
     public function code(): string
     {
-        return 'diadoc';
         return 'mock';
+    }
+
+    public function createNonFormalizedDocument(EdoStructuredRequest $request): EdoDocumentDto
+    {
+        // TODO: Implement createNonFormalizedDocument()
     }
 }

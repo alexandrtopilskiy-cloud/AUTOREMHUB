@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\DTO;
 
 use App\Models\RepairRequest;
-use App\Models\User;
 
 final class RequestEventDto
 {
@@ -22,15 +21,15 @@ final class RequestEventDto
 
     public static function fromRequest(
         RepairRequest $request,
-        User $user,
+        UserDto $userDto,
         string $action,
         string $comment = '',
         array $details = []
     ): self {
         return new self(
             requestId: $request->id,
-            userId: $user->id,
-            actorLabel: $user->roleLabel(),
+            userId: $userDto->userId,
+            actorLabel: $userDto->role->label(),
             stage: $request->stage->value,
             revision: $request->revision,
             action: $action,

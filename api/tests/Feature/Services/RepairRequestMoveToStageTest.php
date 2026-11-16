@@ -203,7 +203,7 @@ final class RepairRequestMoveToStageTest extends TestCase
     {
         $method = new ReflectionMethod(RepairRequestService::class, 'moveToStage');
         $method->setAccessible(true);
-        $method->invoke($this->service(), $request, $user, $to);
+        $method->invoke($this->service(), $request, $user->id, $to);
     }
 
     private function service(): RepairRequestService

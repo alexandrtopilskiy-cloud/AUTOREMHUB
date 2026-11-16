@@ -227,7 +227,11 @@ final class CustomerSlotDecisionTest extends TestCase
         // Заказчик перенёс все работы в Рекомендации: ЗР без работ
         // нельзя перевести далее по маршруту.
         $request = $this->requestAtSlotReview();
-        RepairRequest::query()->where('uuid', $request['id'])->firstOrFail()->workLines()->delete();
+        RepairRequest::query()
+            ->where('uuid', $request['id'])
+            ->firstOrFail()
+            ->workLines()
+            ->delete();
 
         $this->actingAs($this->customer);
         $this->postJson(

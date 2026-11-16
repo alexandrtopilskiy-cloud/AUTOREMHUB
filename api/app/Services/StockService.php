@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Models\CatalogPart;
@@ -355,6 +356,8 @@ final class StockService
      */
     public function transferFromManager(RepairRequest $request, User $user): StockDocument
     {
+        $userDto = UserDto::fromUserModel($user);
+
         if (!$request->awaitsManagerParts()) {
             Input::fail('ЗЧ от УК по этой ЗР уже приняты');
         }
@@ -368,7 +371,9 @@ final class StockService
             Input::fail('Недостаточно ЗЧ на складе УК: ' . implode('; ', $missing) . '. Обратитесь в УК.', 'parts');
         }
         $target = WarehouseService::fromManagerWarehouse((int) $stationOrganizationId, (int) $request->tenant_id);
-        $sources = Warehouse::query()->where('organization_id', $managerId)->orderBy('id')->pluck('id')->all();
+        $sources = Warehouse::query()
+            ->where('organization_id', $managerId)
+            ->orderBy('id')->pluck('id')->all();
         if ($sources === []) {
             Input::fail('У УК нет складов');
         }
@@ -420,7 +425,12 @@ final class StockService
                 if ($take <= 0) {
                     continue;
                 }
-                $cost = $this->issueCost($managerId, (int) $part->catalog_part_id, (int) $row->warehouse_id, $take);
+                $cost = $this->issueCost(
+                    $managerId,
+                    (int) $part->catalog_part_id,
+                    (int) $row->warehouse_id,
+                    $take,
+                );
                 // Нет подходящего диапазона наценки — цена строки ЗР.
                 $price = $markup->salePrice($managerId, $cost) ?? round((float) $part->price, 2);
                 $item = StockDocumentItem::query()->create([
@@ -431,8 +441,30 @@ final class StockService
                     'purchase_price' => $cost,
                     'sale_price' => $price,
                 ]);
-                $this->move((int) $request->tenant_id, $managerId, (int) $row->warehouse_id, (int) $part->catalog_part_id, -$take, $cost, $now, StockMovement::SOURCE_TRANSFER, $doc->id, $item->id);
-                $this->move((int) $request->tenant_id, (int) $stationOrganizationId, $target->id, (int) $part->catalog_part_id, $take, $price, $now, StockMovement::SOURCE_TRANSFER, $doc->id, $item->id);
+                $this->move(
+                    (int) $request->tenant_id,
+                    $managerId,
+                    (int) $row->warehouse_id,
+                    (int) $part->catalog_part_id,
+                    -$take,
+                    $cost,
+                    $now,
+                    StockMovement::SOURCE_TRANSFER,
+                    $doc->id,
+                    $item->id,
+                );
+                $this->move(
+                    (int) $request->tenant_id,
+                    (int) $stationOrganizationId,
+                    $target->id,
+                    (int) $part->catalog_part_id,
+                    $take,
+                    $price,
+                    $now,
+                    StockMovement::SOURCE_TRANSFER,
+                    $doc->id,
+                    $item->id,
+                );
                 $firstSource ??= (int) $row->warehouse_id;
                 $need = round($need - $take, 3);
             }

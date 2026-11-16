@@ -54,6 +54,8 @@ final class EdoDispatcher
             EdoProvider::Sbis->value => new SbisProvider(
                 client: $this->sbisClientFactory->make($org)
             ),
+
+            default => new NullEdoProvider(),
         };
     }
 }

@@ -269,8 +269,10 @@ final class DocumentLockServiceTest extends TestCase
             'resourceKey'  => 'parts:def-uuid',
         ]);
 
+        $userDto = UserDto::fromUserModel($this->manager);
+
         $this->service()->releaseResource(
-            $this->manager,
+            $userDto,
             'catalog_record',
             'workTypes:abc-uuid',
         );

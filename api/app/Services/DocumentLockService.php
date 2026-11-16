@@ -113,11 +113,11 @@ final class DocumentLockService
         DocumentLock::query()->where('user_id', $user->id)->delete();
     }
 
-    public function releaseResource(User $user, string $type, string $key): void
+    public function releaseResource(UserDto $userDto, string $type, string $key): void
     {
         DocumentLock::query()
-            ->where('tenant_id', $user->tenantId())
-            ->where('user_id', $user->id)
+            ->where('tenant_id', $userDto->tenantId)
+            ->where('user_id', $userDto->userId)
             ->where('resource_type', $type)
             ->where('resource_key', $key)
             ->delete();

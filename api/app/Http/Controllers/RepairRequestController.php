@@ -25,6 +25,7 @@ use App\Http\Resources\WorkOrderResource;
 use App\Models\RepairRequest;
 use App\Services\RepairRequestService;
 use App\Services\RequestRegistryService;
+use App\Support\ApiInput;
 use App\Support\ApiPresenter;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -192,10 +193,10 @@ final class RepairRequestController
     /** «Принять ЗЧ от УК» (СТО, этап «Ожидание ТС на СТО»). */
     public function acceptManagerParts(Request $request, string $id): RepairRequestResource
     {
-        \App\Support\ApiInput::only($request, ['revision']);
+        ApiInput::only($request, ['revision']);
 
         return new RepairRequestResource(
-            $this->service->acceptManagerParts($request->user(), $id, \App\Support\ApiInput::revision($request)),
+            $this->service->acceptManagerParts($request->user(), $id, ApiInput::revision($request)),
         );
     }
 

@@ -79,7 +79,7 @@ final class RecommendationService
             key: $key,
             revision: $revision,
             action: 'recommendations_deferred',
-            change: function (RepairRequest $req) use ($user, $userDto, $userDto, $selection, &$doc): array {
+            change: function (RepairRequest $req) use ($user, $userDto, $selection, &$doc): array {
                 $this->requests->flag($req, $userDto, 'canDeferRecommendations');
                 if (!$req->vehicle_id) {
                     Input::fail('Сначала выберите ТС');
@@ -330,7 +330,7 @@ final class RecommendationService
                 throw new ApiException(403, 'FORBIDDEN', 'Создать заявку из рекомендаций может только Заказчик');
             }
 
-            $target = $existing ?? $this->requests->createFromRecommendation($user, $first);
+            $target = $existing ?? $this->requests->createFromRecommendation($userDto, $first);
 
             if ($target->vehicle_id !== $first->vehicle_id || $target->vehicleRecord?->vin !== $first->vin) {
                 Input::fail('Рекомендации можно переносить только в заявку для того же VIN');
@@ -341,7 +341,7 @@ final class RecommendationService
                 key: $target->uuid,
                 revision: $existing ? ($requestRevision ?? -1) : $target->revision,
                 action: 'recommendations_restored',
-                change: function (RepairRequest $request) use ($userDto, $dto, $items, $docs): array {
+                change: function (RepairRequest $request) use ($userDto, $items, $docs): array {
                     $this->requests->flag($request, $userDto, 'canRestoreRecommendations');
                     // На стадии «В работе» добавленные позиции — изменение сметы,
                     // которое СТО отправляет на согласование УК и Заказчику.
@@ -354,7 +354,7 @@ final class RecommendationService
                     }
 
                     WorkChangeService::recordRestored($request, $items->pluck('uuid')->all());
-                    $this->requests->recommendationEstimateChanged($request, $dto, true);
+                    $this->requests->recommendationEstimateChanged($request, $userDto, true);
 
                     return [
                         'comment' => 'Позиции добавлены из рекомендаций ' . $docs->pluck('number')->implode(', '),
@@ -362,7 +362,7 @@ final class RecommendationService
                             'recommendationIds' => $docs->pluck('uuid')->all(),
                             'items' => $items->pluck('uuid')->all(),
                         ],
-                        'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $dto->role, $event->id)
+                        'after' => fn ($event) => $this->requests->notifyRecommendationReview($request, $userDto->role, $event->id)
                     ];
                 });
 
