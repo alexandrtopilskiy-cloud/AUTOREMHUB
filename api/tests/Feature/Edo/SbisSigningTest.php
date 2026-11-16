@@ -27,7 +27,7 @@ final class SbisSigningTest extends TestCase
 
     public function test_sender_prepares_signs_and_sends_document(): void
     {
-        [$sender, $receiver, $senderUser] = $this->seed();
+        [$sender, $receiver, $senderUser] = $this->participants();
         $document = $this->document($sender, $receiver);
 
         Http::fake(fn (HttpRequest $request) => match ($request['method']) {
@@ -70,7 +70,7 @@ final class SbisSigningTest extends TestCase
 
     public function test_execute_requires_signature_of_every_prepared_attachment(): void
     {
-        [$sender, $receiver, $senderUser] = $this->seed();
+        [$sender, $receiver, $senderUser] = $this->participants();
         $document = $this->document($sender, $receiver, ['sign' => [
             'side' => 'sender', 'documentId' => 'sbis-1', 'stageId' => 's', 'stageName' => 'Отправка',
             'action' => 'Отправить', 'attachments' => ['att-1', 'att-2'],
@@ -86,7 +86,7 @@ final class SbisSigningTest extends TestCase
 
     public function test_receiver_gets_incoming_document_from_changes_and_can_sign_it(): void
     {
-        [$sender, $receiver, , $receiverUser] = $this->seed();
+        [$sender, $receiver, , $receiverUser] = $this->participants();
         $document = $this->document($sender, $receiver, [], EdoDocumentStatus::Sended);
 
         Http::fake(fn (HttpRequest $request) => match ($request['method']) {
@@ -144,7 +144,7 @@ final class SbisSigningTest extends TestCase
 
     public function test_receiver_does_not_see_sender_draft(): void
     {
-        [$sender, $receiver, , $receiverUser] = $this->seed();
+        [$sender, $receiver, , $receiverUser] = $this->participants();
         $this->document($sender, $receiver);
 
         $this->actingAs($receiverUser)->getJson('/api/edo/documents')
@@ -174,7 +174,7 @@ final class SbisSigningTest extends TestCase
     /**
      * @return array{0: Organization, 1: Organization, 2: User, 3: User}
      */
-    private function seed(): array
+    private function participants(): array
     {
         $tenant = Tenant::query()->create(['name' => 'Test Tenant']);
         $sender = $this->organization($tenant, 'station', 'СТО', '7713026678');
