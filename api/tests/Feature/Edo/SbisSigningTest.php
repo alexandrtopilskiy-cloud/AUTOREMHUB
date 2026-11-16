@@ -25,6 +25,48 @@ final class SbisSigningTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['edo.signing' => 'cryptopro']);
+    }
+
+    public function test_stub_mode_checks_request_in_sbis_without_signing(): void
+    {
+        config(['edo.signing' => 'stub']);
+        [$sender, $receiver, $senderUser] = $this->participants();
+        $document = $this->document($sender, $receiver);
+
+        Http::fake(fn (HttpRequest $request) => match ($request['method']) {
+            'СБИС.ПодготовитьДействие' => Http::response(['jsonrpc' => '2.0', 'result' => [
+                'Этап' => [[
+                    'Идентификатор' => 'stage-1',
+                    'Название'      => 'Отправка',
+                    'Действие'      => [['Название' => 'Отправить']],
+                    'Вложение'      => [['Идентификатор' => 'att-1', 'Файл' => ['Имя' => 'ZN-000001-1.pdf', 'ДвоичныеДанные' => 'MTIz']]],
+                ]],
+            ]]),
+            default => Http::response(['jsonrpc' => '2.0', 'error' => ['message' => 'unexpected ' . $request['method']]], 500),
+        });
+
+        $this->actingAs($senderUser)->postJson("/api/edo/documents/{$document->uuid}/sbis/prepare")
+            ->assertOk()
+            ->assertJsonPath('stub', true)
+            ->assertJsonPath('check.action', 'Отправить')
+            ->assertJsonPath('check.attachments.0.name', 'ZN-000001-1.pdf')
+            ->assertJsonPath('document.status', 'draft')
+            ->assertJsonPath('document.signLabel', 'Проверить в СБИС')
+            ->assertJsonPath('document.signCheck.action', 'Отправить');
+
+        Http::assertNotSent(fn (HttpRequest $request) => $request['method'] === 'СБИС.ВыполнитьДействие');
+        $this->assertArrayNotHasKey('sign', $document->fresh()->meta);
+
+        $this->actingAs($senderUser)
+            ->postJson("/api/edo/documents/{$document->uuid}/sbis/execute", ['signatures' => [['id' => 'att-1', 'signature' => 'U0lH']]])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'EDO_SIGNING_STUB');
+    }
+
     public function test_sender_prepares_signs_and_sends_document(): void
     {
         [$sender, $receiver, $senderUser] = $this->participants();

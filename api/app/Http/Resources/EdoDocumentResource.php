@@ -7,6 +7,7 @@ namespace App\Http\Resources;
 use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoProvider;
 use App\Models\EdoDocument;
+use App\Services\Edo\Drivers\Sbis\SbisDocumentWorkflow;
 use App\Models\RepairRequest;
 use App\Models\RequestDocument;
 use Illuminate\Http\Request;
@@ -85,7 +86,11 @@ final class EdoDocumentResource extends JsonResource
             'externalId'      => $this->external_id,
             'url'             => $outgoing ? ($meta['url'] ?? null) : ($meta['receiver_url'] ?? null),
             'canSign'         => $this->canSign($outgoing),
-            'signLabel'       => $outgoing ? 'Подписать и отправить' : 'Подписать',
+            'signingStub'     => SbisDocumentWorkflow::signingStubbed(),
+            'signLabel'       => SbisDocumentWorkflow::signingStubbed()
+                ? 'Проверить в СБИС'
+                : ($outgoing ? 'Подписать и отправить' : 'Подписать'),
+            'signCheck'       => $meta['sign_check'] ?? null,
             'sbisState'       => $meta['sbis_state']['name'] ?? null,
             'error'           => $meta['error'] ?? null,
             'status'          => $this->status,

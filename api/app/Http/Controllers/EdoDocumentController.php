@@ -99,7 +99,22 @@ final class EdoDocumentController
         $document = EdoDocument::resolveForUser($user, $uuid);
         $organization = Organization::query()->findOrFail($user->organization_id);
 
-        return response()->json($workflow->prepare($document, $organization));
+        $prepared = $workflow->prepare($document, $organization);
+
+        if (SbisDocumentWorkflow::signingStubbed()) {
+            // Отладка ЭДО: запрос до СБИС дошёл, подпись и отправку не выполняем.
+            $check = $workflow->stub($document, $prepared);
+            $document->refresh()->load(['organization', 'counterparty', 'payloadAttachment']);
+            EdoDocumentResource::preloadRequests(collect([$document]));
+
+            return response()->json([
+                'stub'     => true,
+                'check'    => $check,
+                'document' => new EdoDocumentResource($document),
+            ]);
+        }
+
+        return response()->json(['stub' => false, ...$prepared]);
     }
 
     /** СБИС: выполнить подготовленное действие с подписями вложений. */
@@ -110,6 +125,10 @@ final class EdoDocumentController
             'signatures.*.id'        => ['required', 'string', 'max:100'],
             'signatures.*.signature' => ['required', 'string'],
         ]);
+
+        if (SbisDocumentWorkflow::signingStubbed()) {
+            throw new ApiException(422, 'EDO_SIGNING_STUB', 'Подписание УКЕП отключено на время отладки (EDO_SIGNING=stub).');
+        }
 
         $user = $request->user();
         $document = EdoDocument::resolveForUser($user, $uuid);
