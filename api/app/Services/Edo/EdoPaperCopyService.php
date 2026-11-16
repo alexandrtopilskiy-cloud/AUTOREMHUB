@@ -15,14 +15,14 @@ use App\Services\Edo\Drivers\Sbis\SbisClientFactory;
 use App\Services\Edo\Drivers\Sbis\SbisDocumentWorkflow;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * Бумажная копия документа ЭДО (PDF). СБИС отдаёт по документу только
- * сведения (СБИС.ПрочитатьДокумент), поэтому печатная форма собирается из
- * шаблона документа заявки (ЗН, Счёт, УПД — данные из ЗР), а сведения ЭДО
- * (номер/дата у оператора, статус, электронные подписи, события) выводятся
- * отметкой «_edo_stamp» внизу документа.
+ * Бумажная копия документа ЭДО (PDF). ЗН и Счёт отправляются в ЭДО готовым
+ * PDF — его и отдаём, обновляя из СБИС только статус подписи/отправки.
+ * УПД уходит XML-файлом 5.03, поэтому печатается стандартной формой
+ * (pdf.closing.upd, альбомный лист) с отметкой ЭДО «_edo_stamp».
  */
 final class EdoPaperCopyService
 {
@@ -34,16 +34,50 @@ final class EdoPaperCopyService
 
     public function render(EdoDocument $document, Organization $viewer): string
     {
+        // Статус подписи/отправки обновляется из СБИС при каждом просмотре.
         $stamp = $this->stamp($document, $viewer);
         $source = $document->source_type === RequestDocument::class
-            ? RequestDocument::query()->with(['repairRequest', 'seller', 'buyer'])->find($document->source_id)
+            ? RequestDocument::query()->with(['repairRequest', 'seller', 'buyer', 'attachment'])->find($document->source_id)
             : null;
+
+        // ЗН и Счёт уходят в ЭДО готовым PDF — отдаём его как есть.
+        if ($source !== null && !self::isUpd($source->type)) {
+            $stored = $this->storedPdf($source);
+            if ($stored !== null) {
+                return $stored;
+            }
+        }
 
         $pdf = $source !== null
             ? $this->fromRequestDocument($source, $stamp)
             : Pdf::loadView('pdf.closing.edo_copy', ['edo' => $stamp]);
 
-        return $pdf->setPaper('a4', 'portrait')->setOption('defaultFont', 'DejaVu Sans')->output();
+        $orientation = $source !== null && self::isUpd($source->type) ? 'landscape' : 'portrait';
+
+        return $pdf->setPaper('a4', $orientation)->setOption('defaultFont', 'DejaVu Sans')->output();
+    }
+
+    public static function isUpd(RequestDocumentType $type): bool
+    {
+        return $type === RequestDocumentType::StationUpd || $type === RequestDocumentType::CustomerUpd;
+    }
+
+    private function storedPdf(RequestDocument $source): ?string
+    {
+        $attachment = $source->attachment;
+        if ($attachment === null) {
+            return null;
+        }
+
+        try {
+            $disk = Storage::disk($attachment->disk);
+
+            return $disk->exists($attachment->object_key) ? $disk->get($attachment->object_key) : null;
+        } catch (Throwable $e) {
+            Log::channel('edo')->warning("Не удалось прочитать PDF документа {$source->number}", ['error' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     public function fileName(EdoDocument $document): string

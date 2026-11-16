@@ -484,7 +484,7 @@ final class ClosingDocumentService
             'payload' => $payload,
             'side'    => $type->isStationSide() ? 'station' : 'customer',
         ])
-            ->setPaper('a4', 'portrait')
+            ->setPaper('a4', \App\Services\Edo\EdoPaperCopyService::isUpd($type) ? 'landscape' : 'portrait')
             ->setOption('defaultFont', 'DejaVu Sans')
             ->output();
     }
