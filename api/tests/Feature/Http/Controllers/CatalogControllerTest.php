@@ -124,6 +124,62 @@ final class CatalogControllerTest extends TestCase
         $this->assertContains('customers', $kinds);
     }
 
+    public function test_index_with_version_answers_unchanged_until_catalog_changes(): void
+    {
+        $this->actingAs($this->manager);
+
+        $first = $this->getJson('/api/catalogs?version=')
+            ->assertOk()
+            ->assertJsonPath('unchanged', false);
+        $version = $first->json('version');
+        $this->assertIsString($version);
+        $this->assertNotEmpty($first->json('records'));
+
+        $this->getJson('/api/catalogs?version=' . $version)
+            ->assertOk()
+            ->assertExactJson(['unchanged' => true, 'version' => $version]);
+
+        Supplier::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'name'      => 'Новый поставщик',
+            'active'    => true,
+        ]);
+
+        $changed = $this->getJson('/api/catalogs?version=' . $version)
+            ->assertOk()
+            ->assertJsonPath('unchanged', false);
+        $this->assertNotSame($version, $changed->json('version'));
+        $this->assertContains('Новый поставщик', collect($changed->json('records'))->pluck('name')->all());
+    }
+
+    public function test_reference_with_version_wraps_data_and_answers_unchanged(): void
+    {
+        $this->actingAs($this->manager);
+
+        $legacy = $this->getJson('/api/reference-data')->assertOk();
+        $this->assertArrayNotHasKey('version', $legacy->json());
+
+        $first = $this->getJson('/api/reference-data?version=')
+            ->assertOk()
+            ->assertJsonPath('unchanged', false);
+        $this->assertSame($legacy->json(), $first->json('data'));
+
+        $this->getJson('/api/reference-data?version=' . $first->json('version'))
+            ->assertOk()
+            ->assertExactJson(['unchanged' => true, 'version' => $first->json('version')]);
+    }
+
+    public function test_catalog_version_differs_between_users(): void
+    {
+        $this->actingAs($this->manager);
+        $manager = $this->getJson('/api/catalogs?version=')->json('version');
+
+        $this->actingAs($this->customer);
+        $this->getJson('/api/catalogs?version=' . $manager)
+            ->assertOk()
+            ->assertJsonPath('unchanged', false);
+    }
+
     public function test_index_returns_only_own_vehicles_and_people_for_customer(): void
     {
         $this->makeVehicle($this->customerOrg, 'Lada Vesta', 'XTA00000000000001');

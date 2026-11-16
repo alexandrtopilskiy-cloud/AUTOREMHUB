@@ -8,6 +8,7 @@ use App\Enums\CatalogKind;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Services\CatalogService;
+use App\Services\CatalogVersionService;
 use App\Services\TimeNormImporter;
 use App\Support\ApiInput;
 use Illuminate\Http\JsonResponse;
@@ -19,21 +20,66 @@ final class CatalogController
     public function __construct(
         private readonly CatalogService $service,
         private readonly TimeNormImporter $timeNormImporter,
+        private readonly CatalogVersionService $versions,
     ) {
     }
 
+    /**
+     * ?version=<версия из прошлого ответа>: если справочники не менялись,
+     * ответ {unchanged: true, version} без записей (см. CatalogVersionService).
+     */
     public function index(Request $request): JsonResponse
     {
+        $version = $this->versionFor($request);
+
+        if ($version !== null && $this->clientVersion($request) === $version) {
+            return response()->json(['unchanged' => true, 'version' => $version]);
+        }
+
         $records = $this->service->records($request->user());
 
-        return response()->json(['records' => $records]);
+        if ($version === null) {
+            return response()->json(['records' => $records]);
+        }
+
+        return response()->json(['unchanged' => false, 'version' => $version, 'records' => $records]);
     }
 
+    /**
+     * Без ?version — прежний ответ (объект списков). С ?version — обёртка
+     * {unchanged, version, data}, data только если справочники изменились.
+     */
     public function reference(Request $request): JsonResponse
     {
-        $data = $this->service->reference($request->user());
+        $version = $this->versionFor($request);
 
-        return response()->json($data);
+        if ($version === null) {
+            return response()->json($this->service->reference($request->user()));
+        }
+
+        if ($this->clientVersion($request) === $version) {
+            return response()->json(['unchanged' => true, 'version' => $version]);
+        }
+
+        return response()->json([
+            'unchanged' => false,
+            'version'   => $version,
+            'data'      => $this->service->reference($request->user()),
+        ]);
+    }
+
+    private function versionFor(Request $request): ?string
+    {
+        return $request->query->has('version')
+            ? $this->versions->version($request->user())
+            : null;
+    }
+
+    private function clientVersion(Request $request): string
+    {
+        $value = $request->query('version');
+
+        return is_string($value) ? $value : '';
     }
 
     public function update(Request $request, string $id): JsonResponse

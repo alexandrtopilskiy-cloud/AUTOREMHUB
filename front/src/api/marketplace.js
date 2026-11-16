@@ -513,6 +513,29 @@ export const marketplaceApi = {
     },
 
     /**
+     * Справочники «только если изменились»: сервер сравнивает версию из
+     * прошлого ответа и при совпадении не собирает записи.
+     *
+     * @param {string} [version]
+     * @returns {Promise<{unchanged: boolean, version: string, records?: object[]}>}
+     */
+    async catalogDelta(version = "") {
+        const data = await http.request(`/catalogs?version=${encodeURIComponent(version)}`);
+
+        return { unchanged: data.unchanged === true, version: data.version || "", records: data.records };
+    },
+
+    /**
+     * @param {string} [version]
+     * @returns {Promise<{unchanged: boolean, version: string, data?: object}>}
+     */
+    async referencesDelta(version = "") {
+        const data = await http.request(`/reference-data?version=${encodeURIComponent(version)}`);
+
+        return { unchanged: data.unchanged === true, version: data.version || "", data: data.data };
+    },
+
+    /**
      * @param {string} key
      * @param {object} patch
      * @returns {Promise<object>}
