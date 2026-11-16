@@ -10,6 +10,7 @@ use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\RequestApproval;
 use App\Models\RequestEvent;
+use App\Models\RequestDocument;
 use App\Models\RequestPart;
 use App\Models\RequestStatusPeriod;
 use App\Models\RequestWork;
@@ -22,6 +23,7 @@ use App\Models\VehicleAcceptanceAct;
 use App\Models\WorkType;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
+use App\Jobs\Edo\GenerateClosingDocumentsJob;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -49,8 +51,10 @@ final class ClosingRouteTest extends TestCase
         parent::setUp();
         Storage::fake('local');
         Storage::fake('media');
-        // Отправка в ЭДО идёт очередью и в этом тесте не проверяется.
-        Queue::fake();
+        // Прочие ЭДО-листенеры не проверяются; джоба закрывающих документов
+        // (ЗН, Счёт, УПД + ЭДО в тестовом режиме) выполняется сразу.
+        config(['queue.default' => 'sync', 'edo.mock' => true]);
+        Queue::fake()->except([GenerateClosingDocumentsJob::class]);
 
         $tenant = Tenant::query()->create(['name' => 'Closing route']);
         $orgs = [];
@@ -197,6 +201,15 @@ final class ClosingRouteTest extends TestCase
         $this->assertEquals(250, $docs['customer_invoice']['vatAmount']);
         $this->assertStringContainsString("ZN-{$suffix}/1", $docs['station_upd']['basis']);
         $this->get("/api/request-documents/{$docs['customer_upd']['id']}/pdf")->assertOk();
+        // ЗН, Счёт, УПД записаны в ЭДО (тестовый режим), отчёт агента — нет.
+        $this->assertSame('written', $docs['station_work_order']['edo']['state']);
+        $this->assertTrue($docs['station_work_order']['edo']['mock']);
+        $this->assertNotEmpty($docs['station_work_order']['edo']['externalId']);
+        $this->assertSame('written', $docs['customer_invoice']['edo']['state']);
+        $this->assertNotNull($docs['station_upd']['edo']);
+        $this->assertNull($docs['agent_report']['edo']);
+        $this->assertContains($request['closing']['generation']['state'], ['done', 'edo_error']);
+        $this->assertSame(6, \Illuminate\Support\Facades\DB::table('edo_documents')->where('source_type', RequestDocument::class)->count());
 
         // Заказчик не видит документы СТО → УК.
         $this->actingAs($this->users['customer']);

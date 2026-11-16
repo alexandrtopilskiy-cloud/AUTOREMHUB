@@ -1505,4 +1505,22 @@ export const marketplaceApi = {
 
         return http.request(uri, data);
     },
+
+    /** Подключение организации пользователя к ЭДО: оператор, логин, ИдУчастника. */
+    async getEdoSettings() {
+        const response = await http.request("/edo/settings");
+
+        return response.settings;
+    },
+
+    /**
+     * Привязка организации к СБИС.
+     * @param {{login: string, password: string, ediCode: string}} credentials
+     */
+    async connectSbisOrganization({ login, password, ediCode }) {
+        return http.request("/edo/connect", {
+            method: "POST",
+            body: { login, password, edi_code: ediCode },
+        });
+    },
 };

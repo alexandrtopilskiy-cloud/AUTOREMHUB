@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Edo\Drivers\Null;
 
+use App\Contracts\Edo\EdoNonFormalizedProviderInterface;
 use App\Contracts\Edo\EdoOutboundProviderInterface;
 use App\DTO\EdoDocumentDto;
 use App\DTO\EdoFile;
@@ -13,14 +14,37 @@ use App\Enums\Edo\EdoDocumentStatus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-final class NullEdoProvider implements EdoOutboundProviderInterface
+final class NullEdoProvider implements EdoOutboundProviderInterface, EdoNonFormalizedProviderInterface
 {
     public function createStructuredDocument(EdoStructuredRequest $request): EdoDocumentDto
     {
-        $externalId = 'MOCK-' . Str::uuid()->toString();
+        $externalId = (string) ($request->meta['external_id'] ?? '') ?: 'MOCK-' . Str::uuid()->toString();
 
         Log::info('MOCK: Создан структурированный документ', [
             'type' => $request->type->value,
+            'externalId' => $externalId,
+        ]);
+
+        return new EdoDocumentDto(
+            externalId: $externalId,
+            externalUuid: null,
+            type: $request->type,
+            status: EdoDocumentStatus::Draft,
+            number: $request->number,
+            date: $request->date,
+            senderName: $request->sender->name ?? null,
+            receiverName: $request->receiver->name ?? null,
+            content: null,
+            raw: ['status' => 'success', 'mock' => true],
+        );
+    }
+
+    public function createNonFormalizedDocument(EdoStructuredRequest $request): EdoDocumentDto
+    {
+        $externalId = (string) ($request->meta['external_id'] ?? '') ?: 'MOCK-' . Str::uuid()->toString();
+
+        Log::info('MOCK: Создан неформализованный документ', [
+            'number'     => $request->number,
             'externalId' => $externalId,
         ]);
 

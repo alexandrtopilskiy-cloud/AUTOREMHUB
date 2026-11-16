@@ -25,6 +25,7 @@ use App\Enums\TransitionAction;
 use App\Enums\UserRole;
 use App\Enums\WorkOrderItemKind;
 use App\Events\RepairRequests\RepairRequestWaitingVehicle;
+use App\Events\RepairRequests\ClosingDocumentsRequested;
 use App\Events\RepairRequests\ReadyForIssue;
 use App\Events\RepairRequests\VehicleAccepted;
 use App\Events\RepairRequests\WorkOrderCompleted;
@@ -1514,7 +1515,14 @@ final class RepairRequestService
             app(StockService::class)->cancelRequestWriteOff($request);
         }
         if ($dto->action === TransitionAction::Next && $to === RepairStage::Issued) {
-            $this->closingDocuments->generateClosingDocuments($request, $user);
+            // ЗН, Счёт, УПД (+ отчёт агента) формирует джоба в очереди «edo»
+            // и отправляет ЗН, Счёт и УПД оператору ЭДО.
+            $this->closingDocuments->markGenerationQueued($request);
+            $requestId = $request->id;
+            $userId = $user->id;
+            DB::afterCommit(static function () use ($requestId, $userId): void {
+                ClosingDocumentsRequested::dispatch($requestId, $userId);
+            });
         }
 
         $context = new TransitionContext(

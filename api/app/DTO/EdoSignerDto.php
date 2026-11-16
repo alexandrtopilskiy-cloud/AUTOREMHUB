@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\DTO;
 
 use App\Exceptions\EdoException;
+use App\Models\Organization;
 
 /**
  * Подписант документа ЭДО (XML УПД/УКД).
@@ -33,6 +34,22 @@ final readonly class EdoSignerDto
         if (! in_array($this->signatureType, ['1', '2', '3'], true)) {
             throw EdoException::validation("EdoSignerDto: signatureType={$this->signatureType} недопустим");
         }
+    }
+
+    /**
+     * Подписант из реквизитов организации: руководитель (director_name);
+     * ИП определяется по 12-значному ИНН.
+     */
+    public static function fromOrganization(Organization $org): self
+    {
+        $isIp = strlen((string) $org->inn) === 12;
+        $fullName = trim((string) $org->director_name);
+
+        if ($fullName === '' && $isIp) {
+            $fullName = trim((string) preg_replace('/^ИП\s+/u', '', (string) $org->name));
+        }
+
+        return self::fromFullName($fullName, $isIp ? 'Индивидуальный предприниматель' : 'Руководитель');
     }
 
     public static function fromFullName(string $fullName, string $title = ''): self

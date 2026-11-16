@@ -40,6 +40,26 @@ const showPart = (name) => props.part === 'all' || props.part === name;
 const showAct = computed(() => showPart('act') && Boolean(act.value));
 const showDocuments = computed(() => showPart('documents') && Boolean(documents.value.length || permissions.value.canGenerateDocuments && props.request.stage === 7));
 const invoices = computed(() => documents.value.filter((doc) => doc.type.endsWith('invoice')));
+/** ЗН, Счёт и УПД уходят в ЭДО (СБИС) черновиками. */
+const edoTypes = ['station_work_order', 'station_upd', 'station_invoice', 'customer_work_order', 'customer_upd', 'customer_invoice'];
+const generation = computed(() => closing.value.generation || null);
+const generationText = computed(() => {
+  switch (generation.value?.state) {
+    case 'queued': return 'Документы поставлены в очередь на формирование и отправку в ЭДО. Список обновится автоматически.';
+    case 'generating': return 'Документы формируются и отправляются в ЭДО…';
+    case 'error': return 'Не удалось сформировать документы.';
+    case 'edo_error': return 'Документы сформированы, но часть не записана в ЭДО.';
+    default: return '';
+  }
+});
+
+function edoLabel(edo) {
+  const provider = edo.providerLabel && edo.provider !== 'none' ? edo.providerLabel : 'ЭДО';
+  if (edo.state === 'skipped') return 'ЭДО не подключено';
+  if (edo.state === 'error') return `${provider}: ошибка`;
+  if (edo.state === 'queued') return `${provider}: в очереди`;
+  return `${provider}: ${String(edo.statusLabel || '').toLowerCase()}${edo.mock ? ' (тест)' : ''}`;
+}
 const showPayment = computed(() => showPart('payments') && Boolean(payableInvoice.value));
 /** Вкладка «Взаиморасчёты»: сводка по счетам ЗР, без дублирования в режиме all. */
 const showSettlements = computed(() => props.part === 'payments' && invoices.value.length > 0);
@@ -254,6 +274,10 @@ async function download(doc) {
         </button>
       </div>
 
+      <p v-if="generationText" class="info-banner" :class="{ 'closing-generation-error': generation?.error }">
+        {{ generationText }}<template v-if="generation?.error"> {{ generation.error }}</template>
+      </p>
+
       <template v-for="group in [
         { key: 'station', title: 'СТО → УК (с учётом агентской скидки)', rows: stationDocuments },
         { key: 'customer', title: stationDocuments.length ? 'УК → Заказчик (без агентской скидки)' : '', rows: customerDocuments },
@@ -264,7 +288,7 @@ async function download(doc) {
             <thead>
               <tr>
                 <th>Документ</th><th>Номер, дата</th><th>Исполнитель</th><th>Заказчик</th>
-                <th class="num">Сумма, ₽</th><th class="num">НДС, ₽</th><th>Оплата</th><th></th>
+                <th class="num">Сумма, ₽</th><th class="num">НДС, ₽</th><th>Оплата</th><th>ЭДО</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -278,6 +302,16 @@ async function download(doc) {
                 <td>
                   <span v-if="doc.paidAt" class="closing-state done">Оплачен {{ formatDate(doc.paidAt) }}</span>
                   <span v-else-if="doc.type.endsWith('invoice')" class="closing-state">Не оплачен</span>
+                </td>
+                <td>
+                  <template v-if="doc.edo">
+                    <span class="closing-state" :class="{ done: doc.edo.state === 'written', 'closing-state-error': doc.edo.state === 'error' }" :title="doc.edo.error || ''">
+                      {{ edoLabel(doc.edo) }}
+                    </span>
+                    <small v-if="doc.edo.externalId" class="closing-edo-id" :title="doc.edo.externalUuid || ''">ID {{ doc.edo.externalId }}</small>
+                    <small v-if="doc.edo.error">{{ doc.edo.error }}</small>
+                  </template>
+                  <span v-else-if="edoTypes.includes(doc.type)" class="muted">—</span>
                 </td>
                 <td><button type="button" class="ghost-btn" :disabled="busy" @click="download(doc)">PDF</button></td>
               </tr>
@@ -351,6 +385,9 @@ async function download(doc) {
 .closing-head small, td small, dd small { display: block; color: var(--muted); font-size: 12px; }
 .closing-state { padding: 4px 10px; border-radius: 999px; background: #fff5de; color: #815c18; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .closing-state.done { background: #e8eef7; color: #173863; }
+.closing-state.closing-state-error { background: #fdecea; color: #a12a1f; }
+.closing-edo-id { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.closing-generation-error { background: #fdecea; color: #a12a1f; }
 .closing-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; margin: 0; }
 .closing-facts dt { font-size: 12px; color: var(--muted); }
 .closing-facts dd { margin: 2px 0 0; font-weight: 600; }

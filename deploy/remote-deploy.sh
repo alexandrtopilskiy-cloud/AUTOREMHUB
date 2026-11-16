@@ -46,6 +46,9 @@ ln -sfn "$DIR" "$BASE/current.new"
 mv -Tf "$BASE/current.new" "$BASE/current"
 sudo -n systemctl reload "$FPM"
 
+echo "==> Перезапуск воркеров очереди (supervisor поднимет их на новом релизе)"
+"${ARTISAN[@]}" queue:restart || echo "::warning::queue:restart не выполнен"
+
 echo "==> Удаление старых релизов (оставляем $KEEP)"
 ls -1dt "$BASE"/releases/*/ | tail -n +$((KEEP + 1)) | xargs -r rm -rf
 

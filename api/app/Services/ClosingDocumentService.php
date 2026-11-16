@@ -11,12 +11,15 @@ use App\Enums\OrganizationKind;
 use App\Enums\RequestDocumentType;
 use App\Enums\UserRole;
 use App\Models\Attachment;
+use App\Models\EdoDocument;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\RequestDocument;
 use App\Models\RequestPart;
 use App\Models\RequestWork;
 use App\Models\User;
+use App\Services\Edo\Builders\Closing\InvoiceBuilder as ClosingInvoiceBuilder;
+use App\Services\Edo\Builders\Closing\WorkOrderBuilder as ClosingWorkOrderBuilder;
 use App\Support\AgentDiscount;
 use App\Support\DomainInput as Input;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -183,6 +186,30 @@ final class ClosingDocumentService
         return $documents;
     }
 
+    /**
+     * Отметка в ЗР: документы поставлены в очередь (сохраняется вызывающим кодом).
+     */
+    public function markGenerationQueued(RepairRequest $request): void
+    {
+        $request->data = array_replace($request->data ?? [], [
+            'closingDocumentsStatus' => ['state' => 'queued', 'at' => now()->toISOString(), 'error' => null],
+        ]);
+    }
+
+    /**
+     * Состояние формирования из джобы: без изменения ревизии ЗР, чтобы
+     * не конфликтовать с открытой у пользователя карточкой.
+     */
+    public function saveGenerationState(RepairRequest $request, string $state, ?string $error = null): void
+    {
+        $data = RepairRequest::query()->whereKey($request->id)->value('data');
+        $data = is_array($data) ? $data : (json_decode((string) $data, true) ?: []);
+        $data['closingDocumentsStatus'] = ['state' => $state, 'at' => now()->toISOString(), 'error' => $error];
+
+        RepairRequest::query()->whereKey($request->id)->update(['data' => json_encode($data, JSON_UNESCAPED_UNICODE)]);
+        $request->data = $data;
+    }
+
     public function hasClosingDocuments(RepairRequest $request): bool
     {
         $types = $request->documents()->pluck('type')->map(fn ($type) => $type instanceof RequestDocumentType ? $type->value : (string) $type)->all();
@@ -278,13 +305,28 @@ final class ClosingDocumentService
             ->values();
 
         $transfer = $visible->first(fn (RequestDocument $doc): bool => $doc->type === RequestDocumentType::TransferAct);
+        $edo = $visible->isEmpty() ? collect() : EdoDocument::query()
+            ->where('source_type', RequestDocument::class)
+            ->whereIn('source_id', $visible->pluck('id'))
+            ->get()
+            ->keyBy('source_id');
+        $generation = $request->data['closingDocumentsStatus'] ?? null;
 
         return [
             'documents' => $visible
                 ->reject(fn (RequestDocument $doc): bool => $doc->type === RequestDocumentType::TransferAct)
-                ->map(fn (RequestDocument $doc): array => $this->presentDocument($doc))
+                ->map(fn (RequestDocument $doc): array => [
+                    ...$this->presentDocument($doc),
+                    'edo' => $this->presentEdo($edo->get($doc->id)),
+                ])
                 ->values()
                 ->all(),
+            // Формирование ЗН/Счёт/УПД и отправка в ЭДО идут джобой в очереди.
+            'generation' => is_array($generation) ? [
+                'state' => (string) ($generation['state'] ?? ''),
+                'at'    => $generation['at'] ?? null,
+                'error' => $dto->role === UserRole::Manager ? ($generation['error'] ?? null) : null,
+            ] : null,
             'transferAct' => $transfer ? [
                 ...$this->presentDocument($transfer),
                 'driver' => $transfer->payload['driver'] ?? null,
@@ -322,6 +364,35 @@ final class ClosingDocumentService
     }
 
     /**
+     * Состояние документа у оператора ЭДО (СБИС): записан черновиком,
+     * ошибка или ЭДО не настроено у отправителя.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function presentEdo(?EdoDocument $edo): ?array
+    {
+        if ($edo === null) {
+            return null;
+        }
+
+        $meta = is_array($edo->meta) ? $edo->meta : [];
+
+        return [
+            'provider'      => $edo->provider->value,
+            'providerLabel' => $edo->provider->label(),
+            'state'         => (string) ($meta['state'] ?? 'written'),
+            'status'        => $edo->status->value,
+            'statusLabel'   => $edo->status->label(),
+            'mock'          => (bool) ($meta['mock'] ?? false),
+            'externalId'    => $edo->external_id,
+            'externalUuid'  => $edo->external_uuid,
+            'error'         => $meta['error'] ?? null,
+            'url'           => $meta['url'] ?? null,
+            'sentAt'        => $edo->sent_at?->toISOString(),
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     private function store(
@@ -353,15 +424,7 @@ final class ClosingDocumentService
         ]);
         $document->save();
 
-        $pdf = Pdf::loadView($type->view(), [
-            'doc'     => $document,
-            'title'   => $type->label(),
-            'payload' => $payload,
-            'side'    => $type->isStationSide() ? 'station' : 'customer',
-        ])
-            ->setPaper('a4', 'portrait')
-            ->setOption('defaultFont', 'DejaVu Sans')
-            ->output();
+        $pdf = $this->renderPdf($request, $document, $type, $seller, $buyer, $payload);
 
         $previous = $document->attachment_id ? Attachment::query()->find($document->attachment_id) : null;
         $objectKey = 'documents/' . $request->uuid . '/' . $type->value . '-' . Str::uuid() . '.pdf';
@@ -389,6 +452,41 @@ final class ClosingDocumentService
         }
 
         return $document->refresh();
+    }
+
+    /**
+     * PDF документа. Заказ-наряд и счёт на оплату — шаблонами и билдерами
+     * из feature/sbis_edo (они же уходят в ЭДО), остальные — прежними шаблонами.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function renderPdf(
+        RepairRequest $request,
+        RequestDocument $document,
+        RequestDocumentType $type,
+        ?Organization $seller,
+        ?Organization $buyer,
+        array $payload,
+    ): string {
+        if ($seller !== null && $buyer !== null) {
+            if ($type === RequestDocumentType::StationWorkOrder || $type === RequestDocumentType::CustomerWorkOrder) {
+                return app(ClosingWorkOrderBuilder::class)->pdf($request, $document, $seller, $buyer);
+            }
+
+            if ($type === RequestDocumentType::StationInvoice || $type === RequestDocumentType::CustomerInvoice) {
+                return app(ClosingInvoiceBuilder::class)->pdf($document, $seller, $buyer);
+            }
+        }
+
+        return Pdf::loadView($type->view(), [
+            'doc'     => $document,
+            'title'   => $type->label(),
+            'payload' => $payload,
+            'side'    => $type->isStationSide() ? 'station' : 'customer',
+        ])
+            ->setPaper('a4', 'portrait')
+            ->setOption('defaultFont', 'DejaVu Sans')
+            ->output();
     }
 
     /**
