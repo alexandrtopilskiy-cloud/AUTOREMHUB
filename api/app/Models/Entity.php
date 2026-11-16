@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\UsesSchemaColumnCache;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -18,6 +19,8 @@ use Illuminate\Support\Str;
  */
 abstract class Entity extends Model
 {
+    use UsesSchemaColumnCache;
+
     /**
      * Поля, недоступные для массового присваивания.
      *

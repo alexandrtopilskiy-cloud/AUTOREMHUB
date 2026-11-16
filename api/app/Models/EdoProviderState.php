@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\Edo\EdoProvider as EdoProviderEnum;
+use App\Models\Concerns\UsesSchemaColumnCache;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 final class EdoProviderState extends Model
 {
+    use UsesSchemaColumnCache;
+
     protected $table = 'edo_provider_state';
 
     protected $guarded = ['id'];

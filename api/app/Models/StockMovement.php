@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\UsesSchemaColumnCache;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -19,6 +20,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 final class StockMovement extends Model
 {
+    use UsesSchemaColumnCache;
+
     public const SOURCE_RECEIPT = 'receipt';
     public const SOURCE_SALE = 'sale';
     public const SOURCE_REQUEST = 'repair_request';

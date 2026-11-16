@@ -62,6 +62,15 @@ use Illuminate\Support\Str;
 final class RepairRequest extends Entity
 {
     use HasFactory;
+
+    /**
+     * Блокировка строки ЗР на время изменения. FOR NO KEY UPDATE взаимоисключает
+     * изменения одной ЗР так же, как FOR UPDATE, но не мешает вставке дочерних
+     * строк (события, вложения, согласования, уведомления): проверка внешнего
+     * ключа берёт FOR KEY SHARE, а он конфликтует только с FOR UPDATE.
+     */
+    public const ROW_LOCK = 'for no key update';
+
     /**
      * @return array<string, string>
      */
@@ -269,7 +278,7 @@ final class RepairRequest extends Entity
         }
 
         if ($lock) {
-            $query->lockForUpdate();
+            $query->lock(self::ROW_LOCK);
         }
 
         return $query->firstOrFail();
@@ -317,7 +326,7 @@ final class RepairRequest extends Entity
             : $q->where('number', $key));
 
         if ($lock) {
-            $query->lockForUpdate();
+            $query->lock(self::ROW_LOCK);
         }
 
         return $query->firstOrFail();
