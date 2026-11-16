@@ -15,6 +15,8 @@ use App\Services\Edo\Drivers\EdoRu\EdoRuProvider;
 use App\Services\Edo\Xml\Upd503Builder;
 use App\Services\Edo\Drivers\Diadoc\DiadocClientFactory;
 use App\Services\Edo\Drivers\Null\NullEdoProvider;
+use App\Services\Edo\Drivers\Sbis\SbisClientFactory;
+use App\Services\Edo\Drivers\Sbis\SbisProvider;
 use App\Services\Edo\Drivers\Taxcom\TaxcomClientFactory;
 use App\Services\Edo\Drivers\Taxcom\TaxcomMapper;
 use App\Services\Edo\Drivers\Taxcom\TaxcomProvider;
@@ -48,7 +50,10 @@ final class EdoDispatcher
                 $this->diadocClientFactory->make($org),
                 new DiadocMapper(),
             ),
-            default => throw new \RuntimeException("Оператор ЭДО не настроен: {$org->edo_provider}"),
+            EdoProvider::Sbis => new SbisProvider(
+                app(SbisClientFactory::class)->make($org),
+            ),
+            default => throw new \RuntimeException('Оператор ЭДО не настроен для организации «' . $org->name . '»'),
         };
     }
 

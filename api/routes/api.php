@@ -247,6 +247,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     Route::get('/warehouse/station-stock', [WarehouseController::class, 'requestStock'])->defaults('id', 'new')->name('warehouse.station-stock');
 
     Route::prefix('edo')->name('edo.')->group(function (): void {
+        Route::get('/settings', [EdoSettingsController::class, 'settings'])->name('settings');
         Route::post('/connect', [EdoSettingsController::class, 'connect']);
         Route::get('/documents', [EdoDocumentController::class, 'index'])->name('documents.index');
         Route::get('/documents/{uuid}', [EdoDocumentController::class, 'show'])->whereUuid('uuid')->name('documents.show');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\Pdf\InvoicePdfPayload;
 use App\Models\Invoice;
 use App\Models\Organization;
 use App\Models\RepairRequest;
@@ -17,6 +18,36 @@ final class DocumentGeneratorService
     private const PDF_OPTION_FONT_VALUE = 'DejaVu Sans';
     private const PDF_PAPER_NAME = 'a4';
     private const PDF_PAPER_ORIENTATION = 'portrait';
+
+    /**
+     * Заказ-наряд закрытия ЗР (СТО → УК или УК → Заказчик), шаблон
+     * pdf.closing.work_order (из feature/sbis_edo).
+     *
+     * @param array<string, mixed> $data см. ClosingWorkOrderBuilder::viewData()
+     */
+    public function generateClosingWorkOrder(array $data): string
+    {
+        return Pdf::loadView('pdf.closing.work_order', $data)
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE)
+            ->output();
+    }
+
+    /**
+     * Счёт на оплату закрытия ЗР, шаблон pdf.closing.invoice (из feature/sbis_edo).
+     */
+    public function generateClosingInvoice(InvoicePdfPayload $payload, string $number, \DateTimeInterface $date): string
+    {
+        return Pdf::loadView('pdf.closing.invoice', [
+            'payload' => $payload,
+            'doc'     => (object) ['number' => $number, 'document_date' => $date],
+            'title'   => 'Счёт на оплату',
+        ])
+            ->setPaper(static::PDF_PAPER_NAME, static::PDF_PAPER_ORIENTATION)
+            ->setOption(static::PDF_OPTION_ATTRIBUTE_NAME, static::PDF_OPTION_FONT_VALUE)
+            ->output();
+    }
+
     /**
      * Генерирует PDF счёта.
      * Возвращает бинарное содержимое файла (string).

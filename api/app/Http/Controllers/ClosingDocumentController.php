@@ -8,6 +8,7 @@ use App\DTO\UserDto;
 use App\Enums\AttachmentPurpose;
 use App\Enums\RepairStage;
 use App\Enums\RequestDocumentType;
+use App\Events\RepairRequests\ClosingDocumentsRequested;
 use App\Exceptions\ApiException;
 use App\Models\RepairRequest;
 use App\Models\RequestDocument;
@@ -20,6 +21,7 @@ use App\Support\DomainInput as Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -55,9 +57,14 @@ final class ClosingDocumentController
                     return ['comment' => 'Сформирован лист приёма-передачи ТС (выдача) ' . $act->number];
                 }
 
-                $this->documents->generateClosingDocuments($repairRequest, $user);
+                $this->documents->markGenerationQueued($repairRequest);
+                $requestId = $repairRequest->id;
+                $userId = $user->id;
+                DB::afterCommit(static function () use ($requestId, $userId): void {
+                    ClosingDocumentsRequested::dispatch($requestId, $userId);
+                });
 
-                return ['comment' => 'Сформированы документы по заявке'];
+                return ['comment' => 'Документы по заявке поставлены на формирование и отправку в ЭДО'];
             },
         );
 

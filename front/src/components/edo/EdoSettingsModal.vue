@@ -1,21 +1,35 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import FormAlert from "../FormAlert.vue";
 import { marketplaceApi } from "../../api/marketplace";
 
+/*
+ * Подключение организации пользователя к оператору ЭДО (EDO_PROVIDER на сервере):
+ *  - СБИС: логин и пароль кабинета СБИС + идентификатор участника ЭДО;
+ *  - Диадок: BoxId и refresh token.
+ */
 const emit = defineEmits(["close", "connected"]);
 
+const settings = ref(null);
 const clientId = ref("");
 const refreshToken = ref("");
+const login = ref("");
+const password = ref("");
+const ediCode = ref("");
 const submitting = ref(false);
 const error = ref("");
 const success = ref("");
+
+const isSbis = computed(() => settings.value?.provider === "sbis");
 
 const submitButtonText = computed(() => {
     return submitting.value ? "Подключение..." : "Подключить";
 });
 
 const isFormValid = computed(() => {
+    if (isSbis.value) {
+        return login.value.trim() !== "" && (password.value.trim() !== "" || settings.value?.connected);
+    }
     return clientId.value.trim() !== "" && refreshToken.value.trim() !== "";
 });
 
@@ -24,24 +38,38 @@ const submitBtnClass = computed(() => ({
     "loading-btn": submitting.value,
 }));
 
+onMounted(async () => {
+    try {
+        settings.value = await marketplaceApi.getEdoSettings();
+        login.value = settings.value?.login || "";
+        ediCode.value = settings.value?.ediCode || "";
+    } catch (e) {
+        error.value = e.message;
+    }
+});
+
 const submit = async () => {
     error.value = "";
     success.value = "";
 
-    // Используем computed для проверки
     if (!isFormValid.value) {
-        error.value = "Заполните оба поля";
+        error.value = isSbis.value ? "Укажите логин и пароль СБИС" : "Заполните оба поля";
         return;
     }
 
     submitting.value = true;
     try {
-        await marketplaceApi.connectEdoOrganization(
-            clientId.value,
-            refreshToken.value,
-        );
-
-        success.value = "Организация успешно подключена к Диадоку!";
+        if (isSbis.value) {
+            const result = await marketplaceApi.connectSbisOrganization({
+                login: login.value.trim(),
+                password: password.value,
+                ediCode: ediCode.value.trim(),
+            });
+            success.value = result?.message || "Организация подключена к СБИС";
+        } else {
+            await marketplaceApi.connectEdoOrganization(clientId.value, refreshToken.value);
+            success.value = "Организация успешно подключена к Диадоку!";
+        }
         emit("connected");
 
         setTimeout(() => {
@@ -66,28 +94,60 @@ const submit = async () => {
             <div class="modal-body">
                 <FormAlert v-if="error" class="error-banner">{{ error }}</FormAlert>
                 <FormAlert v-if="success" class="success-banner">{{ success }}</FormAlert>
-                <p class="hint">
-                    Введите данные из Кабинета интегратора Контура. Токен будет
-                    зашифрован и сохранен в базе данных.
-                </p>
+                <template v-if="isSbis">
+                    <p class="hint">
+                        Оператор ЭДО — СБИС{{ settings?.mock ? " (тестовый режим: документы в СБИС не уходят)" : "" }}.
+                        Организация: {{ settings?.organization || "—" }}.
+                        <template v-if="settings?.connected"> Подключено, логин {{ settings.login }}.</template>
+                        Пароль шифруется и хранится в базе данных; закрывающие документы
+                        записываются в СБИС черновиками от имени этой организации.
+                    </p>
 
-                <label class="field">
-                    <span>BoxId (Идентификатор ящика)</span>
-                    <input
-                        v-model="clientId"
-                        type="text"
-                        placeholder="Например: bc664699-a7cf-4c80-b221-a34a0c97d22c"
-                    />
-                </label>
+                    <label class="field">
+                        <span>Логин СБИС</span>
+                        <input v-model="login" type="text" autocomplete="username" placeholder="Логин кабинета СБИС" />
+                    </label>
 
-                <label class="field">
-                    <span>Refresh Token</span>
-                    <textarea
-                        v-model="refreshToken"
-                        rows="3"
-                        placeholder="Вставьте длинный токен из кабинета"
-                    ></textarea>
-                </label>
+                    <label class="field">
+                        <span>Пароль СБИС</span>
+                        <input
+                            v-model="password"
+                            type="password"
+                            autocomplete="new-password"
+                            :placeholder="settings?.connected ? 'Оставьте пустым, чтобы не менять' : 'Пароль кабинета СБИС'"
+                        />
+                    </label>
+
+                    <label class="field">
+                        <span>Идентификатор участника ЭДО</span>
+                        <input v-model="ediCode" type="text" placeholder="Например: 2BE1234567890123456789012345678901" />
+                    </label>
+                </template>
+
+                <template v-else>
+                    <p class="hint">
+                        Введите данные из Кабинета интегратора Контура. Токен будет
+                        зашифрован и сохранен в базе данных.
+                    </p>
+
+                    <label class="field">
+                        <span>BoxId (Идентификатор ящика)</span>
+                        <input
+                            v-model="clientId"
+                            type="text"
+                            placeholder="Например: bc664699-a7cf-4c80-b221-a34a0c97d22c"
+                        />
+                    </label>
+
+                    <label class="field">
+                        <span>Refresh Token</span>
+                        <textarea
+                            v-model="refreshToken"
+                            rows="3"
+                            placeholder="Вставьте длинный токен из кабинета"
+                        ></textarea>
+                    </label>
+                </template>
 
             </div>
 

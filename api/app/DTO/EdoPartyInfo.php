@@ -13,5 +13,7 @@ final readonly class EdoPartyInfo
         public ?string $address = null,
         public ?string $regionCode = null,
         public ?string $ediCode = null,
+        public bool $isIndividual = false,
+        public ?string $ogrnip = null,
     ) {}
 }

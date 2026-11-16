@@ -182,7 +182,11 @@ final class DeveloperToolsService
             $count('edoDocuments', DB::table('edo_documents')
                 ->where('source_type', RepairRequest::class)
                 ->whereIn('source_id', $ids)
-                ->delete());
+                ->delete()
+                + DB::table('edo_documents')
+                    ->where('source_type', \App\Models\RequestDocument::class)
+                    ->whereIn('source_id', DB::table('request_documents')->whereIn('repair_request_id', $ids)->select('id'))
+                    ->delete());
 
             // Документы закрытия (ZN/UPD/SCH/AO/APP) с оплатами, счета, акты приёма-передачи.
             $count('requestDocuments', DB::table('request_documents')->whereIn('repair_request_id', $ids)->delete());

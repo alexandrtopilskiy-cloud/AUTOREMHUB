@@ -62,7 +62,29 @@ return [
             'client_id' => env('DIADOC_CLIENT_ID'),
             'client_secret' => env('DIADOC_CLIENT_SECRET'),
         ],
+        /*
+        | СБИС (Тензор), JSON-RPC API. Логин/пароль — у организации
+        | (php artisan edo:sbis-connect <id организации> <логин>).
+        */
+        EdoProvider::Sbis->value => [
+            'base_url' => env('SBIS_BASE_URL', 'https://online.sbis.ru/service/?srv=1'),
+            'auth_url' => env('SBIS_AUTH_URL', 'https://online.sbis.ru/auth/service/'),
+            'http' => [
+                'timeout'         => (int) env('SBIS_TIMEOUT', 30),
+                'connect_timeout' => (int) env('SBIS_CONNECT_TIMEOUT', 10),
+            ],
+        ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Очередь закрывающих документов (ЗН, Счёт, УПД → ЭДО)
+    |--------------------------------------------------------------------------
+    |
+    | Worker должен слушать эту очередь: php artisan queue:work --queue=edo,default
+    |
+    */
+    'queue' => env('EDO_QUEUE', 'edo'),
 
     /*
     |--------------------------------------------------------------------------
