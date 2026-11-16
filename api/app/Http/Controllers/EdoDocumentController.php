@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\DTO\UserDto;
+use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoDocumentType;
+use App\Enums\Edo\EdoProvider;
 use App\Exceptions\ApiException;
 use App\Http\Requests\Edo\PrepareEdoDocumentRequest;
 use App\Http\Requests\Edo\SignAndSendEdoDocumentRequest;
@@ -32,37 +34,56 @@ final class EdoDocumentController
         private readonly MediaService $media,
     ) {}
 
+    /** Сколько последних документов отдаёт реестр «Документы ЭДО». */
+    private const LIST_LIMIT = 1000;
+
+    /**
+     * Реестр «Документы ЭДО»: только документы, записанные у оператора ЭДО
+     * (есть идентификатор оператора, не тестовый режим), новые сверху.
+     * Получатель не видит черновики отправителя — они ещё не отправлены.
+     */
     public function index(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $organizationId = $user->organization_id;
+        $organizationId = $request->user()->organization_id;
+        $unsent = [
+            EdoDocumentStatus::Draft->value,
+            EdoDocumentStatus::ToSign->value,
+            EdoDocumentStatus::Prepared->value,
+            EdoDocumentStatus::WaitingForSend->value,
+        ];
 
         $query = EdoDocument::query()
-            ->where(function ($q) use ($organizationId) {
+            ->where(function ($q) use ($organizationId, $unsent) {
                 $q
                     ->where('organization_id', $organizationId)
-                    ->orWhere('counterparty_id', $organizationId);
+                    ->orWhere(fn ($incoming) => $incoming
+                        ->where('counterparty_id', $organizationId)
+                        ->whereNotIn('status', $unsent));
             })
+            ->where('provider', '<>', EdoProvider::None->value)
+            ->whereNotNull('external_id')
+            ->whereRaw("coalesce(meta->>'mock', 'false') <> 'true'")
             ->with(['counterparty', 'organization', 'payloadAttachment'])
+            ->orderByDesc('created_at')
             ->orderByDesc('id');
 
-        // Фильтр по статусу
         if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
         }
 
-        // Фильтр по типу
         if ($request->filled('type')) {
             $query->where('document_type', $request->input('type'));
         }
 
-        // Фильтр по контрагенту
         if ($request->filled('counterparty_id')) {
             $query->where('counterparty_id', $request->input('counterparty_id'));
         }
 
+        $documents = $query->limit(self::LIST_LIMIT)->get();
+        EdoDocumentResource::preloadRequests($documents);
+
         return response()->json([
-            'documents' => EdoDocumentResource::collection($query->paginate(50)),
+            'documents' => EdoDocumentResource::collection($documents),
         ]);
     }
 
@@ -254,12 +275,12 @@ final class EdoDocumentController
             ->firstOrFail();
 
 
-        if (!in_array($document->status, ['rejected', 'unknown'], true)) {
+        if (!in_array($document->status, [EdoDocumentStatus::Rejected, EdoDocumentStatus::Unknown], true)) {
             throw new ApiException(422, 'VALIDATION_ERROR', 'Документ нельзя отправить повторно');
         }
 
         // Сбрасываем статус и отправляем событие заново
-        $document->update(['status' => 'draft']);
+        $document->update(['status' => EdoDocumentStatus::Draft]);
 
         // В зависимости от типа документа, диспатчим нужное событие
         // (можно взять из meta или source)
