@@ -38,6 +38,7 @@ chmod -R g+w "$DIR/api/bootstrap/cache"
 
 echo "==> Миграции и кеш настроек"
 "${ARTISAN[@]}" migrate --force
+"${ARTISAN[@]}" sto:schema-cache
 "${ARTISAN[@]}" config:cache
 "${ARTISAN[@]}" route:cache
 

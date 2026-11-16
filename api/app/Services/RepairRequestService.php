@@ -1865,20 +1865,14 @@ final class RepairRequestService
             $message .= '. Подтверждённое время: ' . $slot;
         }
 
-        foreach ($recipients as $recipient) {
-            RequestNotification::query()->firstOrCreate(
-                [
-                    'user_id'          => $recipient->id,
-                    'request_event_id' => $eventId,
-                    'kind'             => 'work_started',
-                ],
-                [
-                    'repair_request_id' => $request->id,
-                    'title'             => 'Работы по ' . $request->number . ' начаты',
-                    'message'           => $message,
-                ],
-            );
-        }
+        $this->notifyUsers(NotificationDto::fromRequest(
+            $recipients,
+            $request->id,
+            $eventId,
+            'work_started',
+            'Работы по ' . $request->number . ' начаты',
+            $message,
+        ));
     }
 
     private function notifySlotChanged(RepairRequest $request, int $eventId): void
@@ -1891,20 +1885,14 @@ final class RepairRequestService
             ->get();
         $slot = (string) ($request->data['stationSlot'] ?? '');
 
-        foreach ($recipients as $recipient) {
-            RequestNotification::query()->firstOrCreate(
-                [
-                    'user_id'          => $recipient->id,
-                    'request_event_id' => $eventId,
-                    'kind'             => 'station_slot_changed',
-                ],
-                [
-                    'repair_request_id' => $request->id,
-                    'title'             => 'Время посещения СТО изменено',
-                    'message'           => "По заявке {$request->number} СТО предложила новое время: $slot",
-                ],
-            );
-        }
+        $this->notifyUsers(NotificationDto::fromRequest(
+            $recipients,
+            $request->id,
+            $eventId,
+            'station_slot_changed',
+            'Время посещения СТО изменено',
+            "По заявке {$request->number} СТО предложила новое время: $slot",
+        ));
     }
 
     /**
@@ -2280,23 +2268,31 @@ final class RepairRequestService
     }
 
     /**
-     * @param iterable<int, User> $recipients
+     * Уведомления всем получателям одной вставкой. Повтор того же события
+     * пропускается уникальным индексом (user_id, request_event_id, kind),
+     * как раньше при firstOrCreate, но без SELECT и INSERT на каждого.
      */
     public function notifyUsers(NotificationDto $dto): void
     {
+        $now = CarbonImmutable::now();
+        $rows = [];
+
         foreach ($dto->recipients as $recipient) {
-            RequestNotification::query()->firstOrCreate(
-                [
-                    'user_id'          => $recipient->id,
-                    'request_event_id' => $dto->eventId,
-                    'kind'             => $dto->kind,
-                ],
-                [
-                    'repair_request_id' => $dto->requestId,
-                    'title'             => $dto->title,
-                    'message'           => $dto->message,
-                ],
-            );
+            $rows[$recipient->id] = [
+                'uuid'              => (string) Str::uuid(),
+                'user_id'           => $recipient->id,
+                'request_event_id'  => $dto->eventId,
+                'repair_request_id' => $dto->requestId,
+                'kind'              => $dto->kind,
+                'title'             => $dto->title,
+                'message'           => $dto->message,
+                'created_at'        => $now,
+                'updated_at'        => $now,
+            ];
+        }
+
+        if ($rows !== []) {
+            RequestNotification::query()->insertOrIgnore(array_values($rows));
         }
     }
 
