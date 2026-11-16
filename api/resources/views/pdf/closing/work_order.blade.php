@@ -210,5 +210,6 @@
         </tr>
     </table>
 
+    @include('pdf.closing._edo_stamp')
 </body>
 </html>

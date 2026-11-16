@@ -1541,6 +1541,31 @@ export const marketplaceApi = {
         });
     },
 
+    /**
+     * Бумажная копия документа ЭДО (PDF): шаблон документа + сведения из ЭДО.
+     * @param {string} uuid
+     * @param {boolean} download
+     * @returns {Promise<Blob>}
+     */
+    async edoPaperCopy(uuid, download = false) {
+        const response = await fetch(
+            `${apiConfig.baseUrl}/edo/documents/${encodeId(uuid)}/paper${download ? "?download=1" : ""}`,
+            { headers: { Authorization: `Bearer ${http.getToken()}` } },
+        );
+
+        if (!response.ok) {
+            let message = "Не удалось сформировать PDF документа ЭДО";
+            try {
+                message = (await response.json())?.error?.message || message;
+            } catch {
+                // ответ не JSON
+            }
+            throw new ApiError(message, response.status);
+        }
+
+        return response.blob();
+    },
+
     /** СБИС: забрать изменения документов своей организации сейчас. */
     refreshSbisChanges() {
         return http.request("/edo/sbis/refresh", { method: "POST" });

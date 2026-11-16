@@ -23,10 +23,12 @@ use App\DTO\EdoSignature;
 use App\DTO\EdoSignerInfo;
 use App\Services\Edo\Drivers\Sbis\SbisChangesPuller;
 use App\Services\Edo\Drivers\Sbis\SbisDocumentWorkflow;
+use App\Services\Edo\EdoPaperCopyService;
 use App\Services\Edo\EdoService;
 use App\Services\MediaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class EdoDocumentController
@@ -144,6 +146,30 @@ final class EdoDocumentController
         EdoDocumentResource::preloadRequests(collect([$document]));
 
         return new EdoDocumentResource($document);
+    }
+
+    /**
+     * Бумажная копия документа ЭДО (PDF): печатная форма документа заявки +
+     * отметка со сведениями из СБИС. ?download=1 — скачать, иначе просмотр.
+     */
+    public function paperCopy(Request $request, string $uuid, EdoPaperCopyService $copies): Response
+    {
+        $user = $request->user();
+        $document = EdoDocument::resolveForUser($user, $uuid);
+
+        if (SbisDocumentWorkflow::side($document, (int) $user->organization_id) === null) {
+            throw new ApiException(404, 'NOT_FOUND', 'Документ не найден');
+        }
+
+        $document->load(['organization', 'counterparty']);
+        $organization = Organization::query()->findOrFail($user->organization_id);
+        $name = $copies->fileName($document);
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return response($copies->render($document, $organization), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => $disposition . '; filename="document.pdf"; filename*=UTF-8\'\'' . rawurlencode($name),
+        ]);
     }
 
     /** СБИС: забрать изменения документов своей организации сейчас. */

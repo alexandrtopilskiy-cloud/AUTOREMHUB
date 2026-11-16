@@ -258,6 +258,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::post('/documents/{uuid}/retry', [EdoDocumentController::class, 'retry'])->whereUuid('uuid')->name('documents.retry');
         Route::post('/documents/{uuid}/sbis/prepare', [EdoDocumentController::class, 'sbisPrepare'])->whereUuid('uuid')->name('documents.sbis.prepare');
         Route::post('/documents/{uuid}/sbis/execute', [EdoDocumentController::class, 'sbisExecute'])->whereUuid('uuid')->name('documents.sbis.execute');
+        Route::get('/documents/{uuid}/paper', [EdoDocumentController::class, 'paperCopy'])->whereUuid('uuid')->name('documents.paper');
         Route::post('/sbis/refresh', [EdoDocumentController::class, 'sbisRefresh'])->name('sbis.refresh');
     });
 
