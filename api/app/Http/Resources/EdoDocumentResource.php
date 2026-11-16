@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources;
 
 use App\Enums\Edo\EdoDocumentStatus;
+use App\Enums\Edo\EdoProvider;
 use App\Models\EdoDocument;
 use App\Models\RepairRequest;
 use App\Models\RequestDocument;
@@ -82,7 +83,10 @@ final class EdoDocumentResource extends JsonResource
             'provider'        => $this->provider,
             'providerLabel'   => $this->provider->label(),
             'externalId'      => $this->external_id,
-            'url'             => $meta['url'] ?? null,
+            'url'             => $outgoing ? ($meta['url'] ?? null) : ($meta['receiver_url'] ?? null),
+            'canSign'         => $this->canSign($outgoing),
+            'signLabel'       => $outgoing ? 'Подписать и отправить' : 'Подписать',
+            'sbisState'       => $meta['sbis_state']['name'] ?? null,
             'error'           => $meta['error'] ?? null,
             'status'          => $this->status,
             'statusLabel'     => $this->status->label(),
@@ -112,6 +116,20 @@ final class EdoDocumentResource extends JsonResource
                 ? "/api/attachments/{$this->payloadAttachment->uuid}/download"
                 : null,
         ];
+    }
+
+    /** Подписать УКЕП из реестра можно документ СБИС, ждущий действия этой стороны. */
+    private function canSign(bool $outgoing): bool
+    {
+        if ($this->provider !== EdoProvider::Sbis || $this->external_id === null) {
+            return false;
+        }
+
+        $statuses = $outgoing
+            ? [EdoDocumentStatus::Draft, EdoDocumentStatus::ToSign, EdoDocumentStatus::Prepared]
+            : [EdoDocumentStatus::Sended, EdoDocumentStatus::Delivered, EdoDocumentStatus::Received, EdoDocumentStatus::OnAgreement];
+
+        return in_array($this->status, $statuses, true);
     }
 
     /**

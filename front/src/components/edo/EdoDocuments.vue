@@ -3,6 +3,7 @@ import { marketplaceApi } from "../../api/marketplace.js";
 import { formatDateTime } from "../../data/permissions.js";
 import { matchesReference } from "../../utils/referenceSearch.js";
 import EdoSettingsModal from "./EdoSettingsModal.vue";
+import EdoSignModal from "./EdoSignModal.vue";
 
 /** Столбцы реестра: ключ → заголовок. Порядок = порядок в таблице. */
 const COLUMNS = {
@@ -62,7 +63,7 @@ function sortValue(row, key) {
  */
 export default {
     name: "EdoDocuments",
-    components: { EdoSettingsModal },
+    components: { EdoSettingsModal, EdoSignModal },
     emits: ["open-request"],
     data() {
         return {
@@ -73,6 +74,8 @@ export default {
             selection: "",
             sort: { key: "createdAt", desc: true },
             showSettings: false,
+            signing: null,
+            notice: "",
             columns: COLUMNS,
         };
     },
@@ -102,9 +105,20 @@ export default {
     methods: {
         formatDateTime,
         cell: edoCellText,
-        async load() {
+        /** «Обновить»: сначала забираем изменения из СБИС, затем список. */
+        async refresh() {
             this.loading = true;
             this.error = "";
+            try {
+                await marketplaceApi.refreshSbisChanges();
+            } catch (error) {
+                this.error = "СБИС: " + (error.message || "не удалось получить изменения");
+            }
+            await this.load(false);
+        },
+        async load(resetError = true) {
+            this.loading = true;
+            if (resetError) this.error = "";
             try {
                 const response = await marketplaceApi.listEdoDocuments();
                 const documents = response.documents?.data ?? response.documents;
@@ -131,6 +145,12 @@ export default {
         statusColor(row) {
             return STATUS_COLORS[row.status] || "gray";
         },
+        signed(document) {
+            const index = this.rows.findIndex((row) => row.id === document.id);
+            if (index >= 0) this.rows.splice(index, 1, document);
+            this.notice = `${document.number}: ${document.statusLabel}`;
+            this.signing = null;
+        },
         openRequest(row) {
             if (row.request?.id) this.$emit("open-request", row.request.id);
         },
@@ -148,7 +168,7 @@ export default {
                 </h1>
             </div>
             <div class="list-heading-actions">
-                <button class="ghost-btn" :disabled="loading" @click="load">
+                <button class="ghost-btn" :disabled="loading" @click="refresh">
                     {{ loading ? "Загрузка…" : "Обновить" }}
                 </button>
                 <button
@@ -169,6 +189,7 @@ export default {
             </template>
         </p>
         <div v-if="error" class="edo-error">{{ error }}</div>
+        <div v-if="notice" class="edo-notice">{{ notice }}</div>
         <div class="registry-wrap">
             <table class="registry edo-table">
                 <thead>
@@ -234,6 +255,13 @@ export default {
                             <template v-else>{{ cell(row, key) }}</template>
                         </td>
                         <td class="edo-row-actions">
+                            <button
+                                v-if="row.canSign"
+                                type="button"
+                                class="primary-btn edo-sign-btn"
+                                :title="`${row.signLabel} УКЕП`"
+                                @click.stop="signing = row"
+                            >✍ {{ row.signLabel }}</button>
                             <a
                                 v-if="row.url"
                                 :href="row.url"
@@ -267,6 +295,12 @@ export default {
                 }}
             </p>
         </div>
+        <EdoSignModal
+            v-if="signing"
+            :document="signing"
+            @close="signing = null"
+            @signed="signed"
+        />
         <EdoSettingsModal
             v-if="showSettings"
             @close="showSettings = false"
@@ -334,6 +368,21 @@ export default {
 
 .edo-row-actions .open-row {
     text-decoration: none;
+}
+
+.edo-notice {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    background: #dcf1e8;
+    color: #267353;
+}
+
+.edo-sign-btn {
+    min-height: 28px;
+    padding: 3px 10px;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
 .edo-error {

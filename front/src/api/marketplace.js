@@ -1523,4 +1523,26 @@ export const marketplaceApi = {
             body: { login, password, edi_code: ediCode },
         });
     },
+
+    /** СБИС: подготовить подписание документа, вернёт вложения (base64) для подписи. */
+    prepareSbisSigning(uuid) {
+        return http.request(`/edo/documents/${uuid}/sbis/prepare`, { method: "POST" });
+    },
+
+    /**
+     * СБИС: выполнить подготовленное действие с подписями вложений.
+     * @param {string} uuid
+     * @param {Array<{id: string, signature: string}>} signatures
+     */
+    executeSbisSigning(uuid, signatures) {
+        return http.request(`/edo/documents/${uuid}/sbis/execute`, {
+            method: "POST",
+            body: { signatures },
+        });
+    },
+
+    /** СБИС: забрать изменения документов своей организации сейчас. */
+    refreshSbisChanges() {
+        return http.request("/edo/sbis/refresh", { method: "POST" });
+    },
 };

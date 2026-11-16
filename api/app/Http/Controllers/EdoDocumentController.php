@@ -21,6 +21,8 @@ use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\DTO\EdoSignature;
 use App\DTO\EdoSignerInfo;
+use App\Services\Edo\Drivers\Sbis\SbisChangesPuller;
+use App\Services\Edo\Drivers\Sbis\SbisDocumentWorkflow;
 use App\Services\Edo\EdoService;
 use App\Services\MediaService;
 use Illuminate\Http\JsonResponse;
@@ -85,6 +87,56 @@ final class EdoDocumentController
         return response()->json([
             'documents' => EdoDocumentResource::collection($documents),
         ]);
+    }
+
+    /**
+     * СБИС: подготовить подписание (отправитель — «Отправить», получатель —
+     * утверждение). Возвращает вложения в base64 для подписи в браузере.
+     */
+    public function sbisPrepare(Request $request, string $uuid, SbisDocumentWorkflow $workflow): JsonResponse
+    {
+        $user = $request->user();
+        $document = EdoDocument::resolveForUser($user, $uuid);
+        $organization = Organization::query()->findOrFail($user->organization_id);
+
+        return response()->json($workflow->prepare($document, $organization));
+    }
+
+    /** СБИС: выполнить подготовленное действие с подписями вложений. */
+    public function sbisExecute(Request $request, string $uuid, SbisDocumentWorkflow $workflow): EdoDocumentResource
+    {
+        $data = $request->validate([
+            'signatures'             => ['required', 'array', 'min:1'],
+            'signatures.*.id'        => ['required', 'string', 'max:100'],
+            'signatures.*.signature' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        $document = EdoDocument::resolveForUser($user, $uuid);
+        $organization = Organization::query()->findOrFail($user->organization_id);
+
+        $signatures = [];
+        foreach ($data['signatures'] as $row) {
+            $signatures[(string) $row['id']] = (string) $row['signature'];
+        }
+
+        $workflow->execute($document, $organization, $signatures);
+        $document->refresh()->load(['organization', 'counterparty', 'payloadAttachment']);
+        EdoDocumentResource::preloadRequests(collect([$document]));
+
+        return new EdoDocumentResource($document);
+    }
+
+    /** СБИС: забрать изменения документов своей организации сейчас. */
+    public function sbisRefresh(Request $request, SbisChangesPuller $puller): JsonResponse
+    {
+        $organization = Organization::query()->findOrFail($request->user()->organization_id);
+
+        if ((bool) config('edo.mock', true) || $organization->edo_provider !== EdoProvider::Sbis || $organization->edo_client_id === null) {
+            return response()->json(['documents' => 0, 'matched' => 0, 'skipped' => true]);
+        }
+
+        return response()->json($puller->pull($organization));
     }
 
     public function show(Request $request, string $uuid): EdoDocumentResource

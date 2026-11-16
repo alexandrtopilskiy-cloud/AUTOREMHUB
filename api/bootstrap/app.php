@@ -94,8 +94,13 @@ return Application::configure(basePath: dirname(__DIR__))
     })
 
     ->withSchedule(function (Schedule $schedule): void {
-        $schedule->command('edo:sync-status')->everyFiveMinutes()->withoutOverlapping();
-        $schedule->command('edo:pull-events')->everyMinute()->withoutOverlapping();
+        // Старые синки (СберКорус и др.) ставят джобы в очередь default; для СБИС
+        // события забирает edo:sbis-changes напрямую.
+        $legacy = fn (): bool => config('edo.default') !== 'sbis';
+        $schedule->command('edo:sync-status')->everyFiveMinutes()->withoutOverlapping()->when($legacy);
+        $schedule->command('edo:pull-events')->everyMinute()->withoutOverlapping()->when($legacy);
+        $schedule->command('edo:sbis-changes')->everyTwoMinutes()->withoutOverlapping()
+            ->when(fn (): bool => config('edo.default') === 'sbis');
     })
 
     ->create();

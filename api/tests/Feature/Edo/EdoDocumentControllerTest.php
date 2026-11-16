@@ -30,12 +30,28 @@ final class EdoDocumentControllerTest extends TestCase
             'document_type'   => EdoDocumentType::UpdSf->value,
             'status'          => EdoDocumentStatus::Draft->value,
             'provider'        => 'sberkorus',
+            'external_id'     => 'ext-1',
             'number'          => 'УПД-1',
             'document_date'   => now()->format('Y-m-d'),
             'source_type'     => RepairRequest::class,
             'source_id'       => $request->id,
             'meta'            => [],
         ]);
+        // Не у оператора (нет внешнего ID) и тестовый режим — в реестр не попадают.
+        foreach ([['УПД-2', null, []], ['УПД-3', 'ext-3', ['mock' => true]]] as [$number, $externalId, $meta]) {
+            EdoDocument::query()->create([
+                'tenant_id'       => $tenant->id,
+                'organization_id' => $org->id,
+                'counterparty_id' => $org->id,
+                'document_type'   => EdoDocumentType::UpdSf->value,
+                'status'          => EdoDocumentStatus::Draft->value,
+                'provider'        => 'sberkorus',
+                'external_id'     => $externalId,
+                'number'          => $number,
+                'document_date'   => now()->format('Y-m-d'),
+                'meta'            => $meta,
+            ]);
+        }
 
         $response = $this->actingAs($user)->getJson('/api/edo/documents');
 
@@ -51,6 +67,10 @@ final class EdoDocumentControllerTest extends TestCase
             ],
         ]);
         $response->assertJsonCount(1, 'documents');
+        $response->assertJsonPath('documents.0.number', 'УПД-1');
+        $response->assertJsonPath('documents.0.request.number', $request->fresh()->number);
+        $response->assertJsonPath('documents.0.expectedAction', 'Подписать и отправить получателю');
+        $response->assertJsonPath('documents.0.actionOwner', 'me');
     }
 
     public function test_show_returns_document(): void
