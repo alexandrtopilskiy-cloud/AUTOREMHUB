@@ -42,6 +42,43 @@ final class SbisDocumentWorkflow
         private readonly SbisClientFactory $clients,
     ) {}
 
+    /** Подписание отключено заглушкой (EDO_SIGNING=stub). */
+    public static function signingStubbed(): bool
+    {
+        return config('edo.signing', 'stub') !== 'cryptopro';
+    }
+
+    /**
+     * Заглушка подписания: ПодготовитьДействие в СБИС выполнен (prepare()),
+     * подпись и ВыполнитьДействие пропускаются, результат проверки — в meta.
+     *
+     * @param array{side: string, action: string, stage: string, attachments: array<int, array{id: string, name: string, content: string}>} $prepared
+     *
+     * @return array<string, mixed>
+     */
+    public function stub(EdoDocument $document, array $prepared): array
+    {
+        $check = [
+            'at'          => now()->toISOString(),
+            'side'        => $prepared['side'],
+            'action'      => $prepared['action'],
+            'stage'       => $prepared['stage'],
+            'attachments' => array_map(
+                fn (array $a): array => ['id' => $a['id'], 'name' => $a['name'], 'bytes' => (int) floor(strlen($a['content']) * 3 / 4)],
+                $prepared['attachments'],
+            ),
+        ];
+
+        $meta = $this->meta($document);
+        unset($meta['sign']);
+        $meta['sign_check'] = $check;
+        $document->forceFill(['meta' => $meta])->save();
+
+        Log::channel('edo')->info("SBIS: заглушка подписи {$document->number} — СБИС подготовил «{$check['action']}», подпись и отправка пропущены", ['side' => $check['side'], 'attachments' => count($check['attachments'])]);
+
+        return $check;
+    }
+
     /** Сторона документооборота организации: отправитель или получатель. */
     public static function side(EdoDocument $document, int $organizationId): ?string
     {

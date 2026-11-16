@@ -16,7 +16,7 @@ export default {
     props: {
         document: { type: Object, required: true },
     },
-    emits: ["close", "signed"],
+    emits: ["close", "signed", "checked"],
     data() {
         return {
             certificates: [],
@@ -25,19 +25,28 @@ export default {
             busy: false,
             step: "",
             error: "",
+            check: null,
         };
     },
     computed: {
         selected() {
             return this.certificates.find((item) => item.thumbprint === this.thumbprint) || null;
         },
+        stub() {
+            return Boolean(this.document.signingStub);
+        },
         title() {
+            if (this.stub) return "Проверка отправки в СБИС (без УКЕП)";
             return this.document.direction === "outgoing"
                 ? "Подписать и отправить"
                 : "Подписать входящий документ";
         },
     },
     async mounted() {
+        if (this.stub) {
+            this.loading = false;
+            return;
+        }
         try {
             this.certificates = await listCertificates();
             this.thumbprint = this.certificates.find((item) => item.valid)?.thumbprint || "";
@@ -66,6 +75,23 @@ export default {
         },
         formatDate(value) {
             return value ? new Date(value).toLocaleDateString("ru-RU") : "—";
+        },
+        /** Заглушка подписи: запрос ПодготовитьДействие в СБИС без подписи и отправки. */
+        async runCheck() {
+            if (this.busy) return;
+            this.busy = true;
+            this.error = "";
+            this.step = "Отправляем запрос в СБИС…";
+            try {
+                const response = await marketplaceApi.prepareSbisSigning(this.document.id);
+                this.check = response.check || null;
+                if (response.document) this.$emit("checked", response.document);
+            } catch (error) {
+                this.error = error.message || "Ошибка СБИС";
+            } finally {
+                this.busy = false;
+                this.step = "";
+            }
         },
         async sign() {
             if (!this.selected || this.busy) return;
@@ -102,7 +128,23 @@ export default {
                 <span v-if="document.request"> · {{ document.request.number }}</span>
                 <span> · {{ document.counterparty }}</span>
             </p>
-            <p v-if="loading" class="edo-sign-muted">Ищем сертификаты КриптоПро…</p>
+            <template v-if="stub">
+                <p class="edo-sign-muted">
+                    Подписание УКЕП отключено на время отладки ЭДО. Будет выполнен
+                    только запрос «ПодготовитьДействие» в СБИС: так видно, что документ
+                    дошёл и СБИС готов его отправить. Документ не подписывается и
+                    не уходит получателю.
+                </p>
+                <div v-if="check" class="edo-sign-check">
+                    <strong>СБИС ответил: действие «{{ check.action }}»<template v-if="check.stage">, этап «{{ check.stage }}»</template></strong>
+                    <ul>
+                        <li v-for="item in check.attachments" :key="item.id">
+                            {{ item.name }} · {{ Math.max(1, Math.round(item.bytes / 1024)) }} КБ
+                        </li>
+                    </ul>
+                </div>
+            </template>
+            <p v-else-if="loading" class="edo-sign-muted">Ищем сертификаты КриптоПро…</p>
             <template v-else-if="certificates.length">
                 <label class="edo-sign-label" for="edo-sign-cert">Сертификат подписи</label>
                 <select id="edo-sign-cert" v-model="thumbprint" :disabled="busy">
@@ -114,7 +156,13 @@ export default {
             </template>
             <p v-if="step" class="edo-sign-step">{{ step }}</p>
             <p v-if="error" class="edo-sign-error">{{ error }}</p>
-            <footer class="edo-sign-actions">
+            <footer v-if="stub" class="edo-sign-actions">
+                <button class="ghost-btn" :disabled="busy" @click="$emit('close')">Закрыть</button>
+                <button class="primary-btn" :disabled="busy" @click="runCheck">
+                    {{ busy ? "Проверяем…" : check ? "Проверить ещё раз" : "Проверить в СБИС" }}
+                </button>
+            </footer>
+            <footer v-else class="edo-sign-actions">
                 <button class="ghost-btn" :disabled="loading || busy" @click="reloadCertificates">Обновить список</button>
                 <button class="primary-btn" :disabled="!selected || busy" @click="sign">
                     {{ busy ? "Подписываем…" : document.signLabel || "Подписать" }}
@@ -187,6 +235,19 @@ export default {
     background: #fbe3e2;
     color: #a32d29;
     white-space: pre-line;
+}
+
+.edo-sign-check {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    background: #dcf1e8;
+    color: #267353;
+}
+
+.edo-sign-check ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
 }
 
 .edo-sign-actions {

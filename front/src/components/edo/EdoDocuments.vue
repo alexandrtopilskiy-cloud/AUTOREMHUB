@@ -151,6 +151,11 @@ export default {
             this.notice = `${document.number}: ${document.statusLabel}`;
             this.signing = null;
         },
+        checked(document) {
+            const index = this.rows.findIndex((row) => row.id === document.id);
+            if (index >= 0) this.rows.splice(index, 1, document);
+            this.notice = `${document.number}: запрос дошёл до СБИС (подпись отключена)`;
+        },
         openRequest(row) {
             if (row.request?.id) this.$emit("open-request", row.request.id);
         },
@@ -252,6 +257,10 @@ export default {
                                 class="edo-action"
                                 :class="row.actionOwner ? `edo-action-${row.actionOwner}` : 'edo-action-none'"
                             >{{ row.expectedAction }}</span>
+                            <small
+                                v-if="key === 'expectedAction' && row.signCheck"
+                                class="edo-checked"
+                            >Проверено в СБИС {{ formatDateTime(row.signCheck.at) }}: «{{ row.signCheck.action }}»</small>
                             <template v-else>{{ cell(row, key) }}</template>
                         </td>
                         <td class="edo-row-actions">
@@ -259,7 +268,7 @@ export default {
                                 v-if="row.canSign"
                                 type="button"
                                 class="primary-btn edo-sign-btn"
-                                :title="`${row.signLabel} УКЕП`"
+                                :title="row.signingStub ? 'Проверить, что документ дошёл до СБИС (без подписи)' : `${row.signLabel} УКЕП`"
                                 @click.stop="signing = row"
                             >✍ {{ row.signLabel }}</button>
                             <a
@@ -300,6 +309,7 @@ export default {
             :document="signing"
             @close="signing = null"
             @signed="signed"
+            @checked="checked"
         />
         <EdoSettingsModal
             v-if="showSettings"
@@ -338,6 +348,12 @@ export default {
     font-weight: 650;
     text-decoration: underline;
     cursor: pointer;
+}
+
+.edo-checked {
+    display: block;
+    color: #267353;
+    font-size: 11px;
 }
 
 .edo-action {
