@@ -9,6 +9,7 @@ use App\Events\Organizations\AgentContractRequested;
 use App\Models\EdoDocument;
 use App\Services\Edo\EdoAgentContractService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Exceptions\EdoNotConnectedException;
 use Illuminate\Support\Facades\Log;
 
 final class SendAgentContractToEdo implements ShouldQueue
@@ -36,6 +37,11 @@ final class SendAgentContractToEdo implements ShouldQueue
 
         try {
             $this->edoService->sendContract($customer);
+        } catch (EdoNotConnectedException $e) {
+            // Организация не подключена к оператору — повторы не помогут, пропускаем.
+            Log::channel('edo')->warning('ЭДО: Агентский договор не отправлен — ' . $e->getMessage());
+
+            return;
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки Агентского договора', [
                 'organization_id' => $customer->id,

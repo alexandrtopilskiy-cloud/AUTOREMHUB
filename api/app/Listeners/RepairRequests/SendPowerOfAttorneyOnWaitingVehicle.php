@@ -8,6 +8,7 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Events\RepairRequests\RepairRequestWaitingVehicle;
 use App\Services\Edo\EdoPowerOfAttorneyService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Exceptions\EdoNotConnectedException;
 use Illuminate\Support\Facades\Log;
 
 final class SendPowerOfAttorneyOnWaitingVehicle implements ShouldQueue
@@ -34,6 +35,11 @@ final class SendPowerOfAttorneyOnWaitingVehicle implements ShouldQueue
 
         try {
             $this->edoPowerOfAttorneyService->sendPowerOfAttorney($request);
+        } catch (EdoNotConnectedException $e) {
+            // Организация не подключена к оператору — повторы не помогут, пропускаем.
+            Log::channel('edo')->warning('ЭДО: доверенность не отправлена — ' . $e->getMessage());
+
+            return;
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки доверенности', [
                 'request_id' => $request->id,

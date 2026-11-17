@@ -52,7 +52,7 @@ final class EdoInvoiceService
                     'tenant_id'         => $request->tenant_id,
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
-                    'provider'          => $ukOrg->edo_provider ?? 'diadoc',
+                    'provider'          => $this->dispatcher->providerFor($ukOrg)->value,
                     'number'            => $invoice->number,
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
@@ -95,11 +95,11 @@ final class EdoInvoiceService
 
             // 2. Привязываем файл к документу ЭДО
             $document->update([
-                'status'                => EdoDocumentStatus::Sended,
+                'status'                => $this->dispatchedStatus($result),
                 'external_id'           => $result->externalId,
                 'sent_at'               => now(),
                 'payload_attachment_id' => $attachment->id, // 👈 Ссылка на файл
-                'meta'                  => array_merge($document->meta ?? [], ['local_file' => $objectKey]),
+                'meta'                  => array_merge($document->meta ?? [], ['local_file' => $objectKey], $this->dispatchedMeta($result)),
             ]);
 
             return $document->refresh();
