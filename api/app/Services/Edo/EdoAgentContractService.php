@@ -40,7 +40,7 @@ final class EdoAgentContractService
                 [
                     'tenant_id'         => $customer->tenant_id,
                     'organization_id'   => $ukTenant->id,
-                    'provider'          => $ukTenant->edo_provider,
+                    'provider'          => $this->dispatcher->providerFor($ukTenant)->value,
                     'number'            => RepairRequest::documentNumber('AD', (int) $customer->id),
                     'document_date'     => now()->toDateString(),
                     'status'            => 'draft',
@@ -67,9 +67,10 @@ final class EdoAgentContractService
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
 
             $document->update([
-                'status'      => EdoDocumentStatus::Sended,
+                'status'      => $this->dispatchedStatus($result),
                 'external_id' => $result->externalId,
                 'sent_at'     => now(),
+                'meta'        => array_merge($document->meta ?? [], $this->dispatchedMeta($result)),
             ]);
 
             return $document->refresh();

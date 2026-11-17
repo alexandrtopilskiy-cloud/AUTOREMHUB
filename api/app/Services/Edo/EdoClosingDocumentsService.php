@@ -88,7 +88,8 @@ final class EdoClosingDocumentsService
         try {
             $provider = $this->dispatcher->forOrganization($sender);
         } catch (Throwable $e) {
-            $this->mark($edo, 'skipped', EdoDocumentStatus::Unknown, 'ЭДО не настроено у «' . $sender->name . '»');
+            $logger->warning("ЭДО: документ {$document->number} не отправлен — {$e->getMessage()}");
+            $this->mark($edo, 'skipped', EdoDocumentStatus::Unknown, $e->getMessage());
 
             return 'skipped';
         }
@@ -154,7 +155,7 @@ final class EdoClosingDocumentsService
             'source_id'   => $document->id,
         ]);
 
-        $provider = $sender->edo_provider instanceof EdoProvider ? $sender->edo_provider : EdoProvider::None;
+        $provider = $this->dispatcher->providerFor($sender);
         if ($edo->exists && $edo->provider !== $provider) {
             // Сменился оператор — документ у нового оператора создаётся заново.
             $edo->external_id = null;

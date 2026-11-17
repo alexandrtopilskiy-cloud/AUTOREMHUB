@@ -8,6 +8,7 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Events\RepairRequests\DiagnosticReportSaved;
 use App\Services\Edo\EdoEstimateService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Exceptions\EdoNotConnectedException;
 use Illuminate\Support\Facades\Log;
 
 final class SendEstimateToEdo implements ShouldQueue
@@ -27,6 +28,11 @@ final class SendEstimateToEdo implements ShouldQueue
 
         try {
             $this->edoService->sendEstimate($event->request);
+        } catch (EdoNotConnectedException $e) {
+            // Организация не подключена к оператору — повторы не помогут, пропускаем.
+            Log::channel('edo')->warning('ЭДО: предварительный заказ-наряд не отправлен — ' . $e->getMessage());
+
+            return;
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки предварительного заказ-наряда', [
                 'request_id' => $event->request->id,

@@ -6,6 +6,7 @@ namespace App\Services\Edo;
 
 use App\Contracts\Edo\EdoOutboundProviderInterface;
 use App\Enums\Edo\EdoProvider;
+use App\Exceptions\EdoNotConnectedException;
 use App\Models\Organization;
 use App\Services\Edo\Drivers\Diadoc\DiadocMapper;
 use App\Services\Edo\Drivers\Diadoc\DiadocProvider;
@@ -29,23 +30,57 @@ final class EdoDispatcher
         private readonly DiadocClientFactory $diadocClientFactory,
     ) {}
 
+    /**
+     * Оператор ЭДО для организации: выбранный в .env (EDO_PROVIDER) — один на
+     * всю систему. Если EDO_PROVIDER не задан — оператор из настроек организации.
+     */
+    public function providerFor(Organization $org): EdoProvider
+    {
+        $configured = EdoProvider::tryFrom((string) config('edo.default', EdoProvider::None->value)) ?? EdoProvider::None;
+
+        if ($configured !== EdoProvider::None) {
+            return $configured;
+        }
+
+        return $org->edo_provider instanceof EdoProvider ? $org->edo_provider : EdoProvider::None;
+    }
+
+    /** Организация подключена к оператору: выбран тот же оператор и есть логин/ключ. */
+    public function isConnected(Organization $org): bool
+    {
+        $provider = $this->providerFor($org);
+
+        return $provider !== EdoProvider::None
+            && $org->edo_provider === $provider
+            && trim((string) $org->edo_client_id) !== '';
+    }
+
+    /**
+     * @throws EdoNotConnectedException организация не подключена к оператору из EDO_PROVIDER
+     */
     public function forOrganization(Organization $org): EdoOutboundProviderInterface
     {
-        // 👇 Если включен режим отладки в .env (EDO_MOCK=true), отдаем мок
+        // Режим отладки (EDO_MOCK=true) — мок без обращения к оператору
         if (config('edo.mock', false)) {
             return new NullEdoProvider();
         }
 
-        return match ($org->edo_provider) {
+        $provider = $this->providerFor($org);
+
+        if (!$this->isConnected($org)) {
+            throw EdoNotConnectedException::for($org, $provider);
+        }
+
+        return match ($provider) {
             EdoProvider::EdoRu => new EdoRuProvider(
                 $this->edoRuClientFactory->make($org),
                 new EdoRuMapper(),
                 $this->upd503Builder
             ),
-             EdoProvider::Taxcom => new TaxcomProvider(
-                 app(TaxcomClientFactory::class)->make($org),
-                 new TaxcomMapper(),
-             ),
+            EdoProvider::Taxcom => new TaxcomProvider(
+                app(TaxcomClientFactory::class)->make($org),
+                new TaxcomMapper(),
+            ),
             EdoProvider::Diadoc => new DiadocProvider(
                 $this->diadocClientFactory->make($org),
                 new DiadocMapper(),
@@ -53,7 +88,7 @@ final class EdoDispatcher
             EdoProvider::Sbis => new SbisProvider(
                 app(SbisClientFactory::class)->make($org),
             ),
-            default => throw new \RuntimeException('Оператор ЭДО не настроен для организации «' . $org->name . '»'),
+            default => throw EdoNotConnectedException::for($org, $provider),
         };
     }
 

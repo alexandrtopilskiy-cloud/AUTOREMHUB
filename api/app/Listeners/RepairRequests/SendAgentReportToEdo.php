@@ -8,6 +8,7 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Events\RepairRequests\ReadyForIssue;
 use App\Services\Edo\EdoAgentReportService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Exceptions\EdoNotConnectedException;
 use Illuminate\Support\Facades\Log;
 
 final class SendAgentReportToEdo implements ShouldQueue
@@ -26,6 +27,11 @@ final class SendAgentReportToEdo implements ShouldQueue
 
         try {
             $this->edoService->sendAgentReport($event->request);
+        } catch (EdoNotConnectedException $e) {
+            // Организация не подключена к оператору — повторы не помогут, пропускаем.
+            Log::channel('edo')->warning('ЭДО: Отчёт агента не отправлен — ' . $e->getMessage());
+
+            return;
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки Отчета агента', [
                 'request_id' => $event->request->id,

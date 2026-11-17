@@ -45,7 +45,7 @@ final class EdoActService
                     'tenant_id'         => $request->tenant_id,
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
-                    'provider'          => $sender->edo_provider ?? 'diadoc',
+                    'provider'          => $this->dispatcher->providerFor($sender)->value,
                     'number'            => $request->numberWithPrefix('AVR'),
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,

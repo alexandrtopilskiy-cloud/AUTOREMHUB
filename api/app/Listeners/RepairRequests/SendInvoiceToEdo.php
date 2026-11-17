@@ -8,6 +8,7 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Events\RepairRequests\InvoiceIssued;
 use App\Services\Edo\EdoInvoiceService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Exceptions\EdoNotConnectedException;
 use Illuminate\Support\Facades\Log;
 
 final class SendInvoiceToEdo implements ShouldQueue
@@ -27,6 +28,11 @@ final class SendInvoiceToEdo implements ShouldQueue
 
         try {
             $this->edoService->sendInvoice($event->request, $event->invoice);
+        } catch (EdoNotConnectedException $e) {
+            // Организация не подключена к оператору — повторы не помогут, пропускаем.
+            Log::channel('edo')->warning('ЭДО: Счёт-фактура на вознаграждение не отправлен — ' . $e->getMessage());
+
+            return;
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки Счёта-фактуры на вознаграждение', [
                 'request_id' => $event->request->id,

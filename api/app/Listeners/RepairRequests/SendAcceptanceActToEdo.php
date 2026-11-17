@@ -8,6 +8,7 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Events\RepairRequests\VehicleAccepted;
 use App\Services\Edo\EdoAcceptanceActService;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Exceptions\EdoNotConnectedException;
 use Illuminate\Support\Facades\Log;
 
 final class SendAcceptanceActToEdo implements ShouldQueue
@@ -27,6 +28,11 @@ final class SendAcceptanceActToEdo implements ShouldQueue
 
         try {
             $this->edoService->send($event->request, $event->act);
+        } catch (EdoNotConnectedException $e) {
+            // Организация не подключена к оператору — повторы не помогут, пропускаем.
+            Log::channel('edo')->warning('ЭДО: Акт приёма-передачи не отправлен — ' . $e->getMessage());
+
+            return;
         } catch (\Throwable $e) {
             Log::channel('edo')->error('Ошибка отправки Акта приёма-передачи', [
                 'request_id' => $event->request->id,
