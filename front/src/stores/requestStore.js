@@ -9,6 +9,9 @@ import { requestFields } from "../data/permissions.js";
 
 /* Фоновое обновление справочников и references (ЗЧ, поставщики…), мс. */
 const CATALOG_REFRESH_MS = 60_000;
+// Раз в 10 минут справочники берутся целиком, без сверки версии, — страховка
+// на случай изменения, которое версия не заметила.
+const CATALOG_FULL_RELOAD_MS = 10 * 60_000;
 let catalogsRefreshedAt = 0;
 
 /**
@@ -182,6 +185,30 @@ export function createRequestStore(api) {
 
     /** Номер последнего запроса реестра: устаревший ответ не применяется. */
     let registrySeq = 0;
+
+    // Версии справочников из прошлого ответа (см. CatalogVersionService на API).
+    let catalogVersion = "";
+    let referencesVersion = "";
+    let catalogsFullAt = 0;
+
+    const fullCatalogReload = () => Date.now() - catalogsFullAt >= CATALOG_FULL_RELOAD_MS;
+
+    // Ответ справочников: rows === null — не изменились. Версию запоминает
+    // вызывающий после проверки generation, чтобы ответ, пришедший после
+    // выхода из кабинета, не записал версию без данных.
+    /** @returns {Promise<{rows: object[]|null, version: string}>} */
+    async function fetchCatalogs(force) {
+        if (typeof api.catalogDelta !== "function") return { rows: await api.listCatalogs(), version: "" };
+        const result = await api.catalogDelta(force ? "" : catalogVersion);
+        return { rows: result.unchanged ? null : result.records || [], version: result.version || "" };
+    }
+
+    /** @returns {Promise<{rows: object|null, version: string}>} */
+    async function fetchReferences(force) {
+        if (typeof api.referencesDelta !== "function") return { rows: await api.references(), version: "" };
+        const result = await api.referencesDelta(force ? "" : referencesVersion);
+        return { rows: result.unchanged ? null : result.data || {}, version: result.version || "" };
+    }
 
     /** @type {Map<string, Promise<object|undefined>>} */
     const loads = new Map();
@@ -414,11 +441,12 @@ export function createRequestStore(api) {
 
             try {
                 const ids = this.requests.map((request) => request.id);
+                const force = fullCatalogReload();
                 const [remote, , records, refs, notifications, chats] = await Promise.all([
                     api.getRequests(ids),
                     this.loadRegistry().then(() => null),
-                    api.listCatalogs(),
-                    api.references(),
+                    fetchCatalogs(force),
+                    fetchReferences(force),
                     api.listNotifications(),
                     api.chatSummary(),
                 ]);
@@ -429,8 +457,11 @@ export function createRequestStore(api) {
 
                 applyRemoteRequests(this, remote, since, ids);
 
-                this.records = records;
-                this.references = refs;
+                if (force) catalogsFullAt = Date.now();
+                catalogVersion = records.version;
+                referencesVersion = refs.version;
+                if (records.rows !== null) this.records = records.rows;
+                if (refs.rows !== null) this.references = refs.rows;
                 this.notifications = notifications;
                 this.chatSummaries = chats.chats;
                 this.chatUnreadTotal = chats.unreadTotal;
@@ -493,10 +524,11 @@ export function createRequestStore(api) {
         async refreshCatalogs(includeReferences = false) {
             const version = this.generation;
             if (includeReferences) catalogsRefreshedAt = Date.now();
-            const tasks = [api.listCatalogs()];
+            const force = fullCatalogReload();
+            const tasks = [fetchCatalogs(force)];
 
             if (includeReferences) {
-                tasks.push(api.references());
+                tasks.push(fetchReferences(force));
             }
 
             const [records, references] = await Promise.all(tasks);
@@ -505,10 +537,15 @@ export function createRequestStore(api) {
                 return;
             }
 
-            this.records = records;
+            // Без справочных списков версия /reference-data не сверялась —
+            // полная загрузка засчитывается, только если взяли оба ответа.
+            if (force && includeReferences) catalogsFullAt = Date.now();
+            catalogVersion = records.version;
+            if (records.rows !== null) this.records = records.rows;
 
             if (includeReferences) {
-                this.references = references;
+                referencesVersion = references.version;
+                if (references.rows !== null) this.references = references.rows;
             }
         },
 
@@ -865,6 +902,9 @@ export function createRequestStore(api) {
             this.requests = [];
             this.registry = emptyRegistry();
             this.records = [];
+            catalogVersion = "";
+            referencesVersion = "";
+            catalogsFullAt = 0;
             this.notifications = [];
             this.chatSummaries = [];
             this.chatUnreadTotal = 0;
