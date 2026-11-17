@@ -51,7 +51,7 @@ final class EdoEstimateService
                     'tenant_id'         => $request->tenant_id,
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
-                    'provider'          => $this->dispatcher->providerFor($ukOrg)->value,
+                    'provider'          => $this->dispatcher->providerFor($sender)->value,
                     'number'            => 'EST-' . $request->number,
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
