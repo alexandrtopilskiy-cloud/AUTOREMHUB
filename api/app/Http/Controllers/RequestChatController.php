@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\RepairRequest;
@@ -50,18 +51,20 @@ final class RequestChatController
     public function summary(Request $request): JsonResponse
     {
         $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+
         $chats = DB::table('request_chats as c')
             ->join('repair_requests as r', 'r.id', '=', 'c.repair_request_id')
-            ->leftJoin('request_chat_reads as read', function (JoinClause $join) use ($user): void {
+            ->leftJoin('request_chat_reads as read', function (JoinClause $join) use ($userDto): void {
                 $join->on('read.request_chat_id', '=', 'c.id')
-                    ->where('read.user_id', '=', $user->id);
+                    ->where('read.user_id', '=', $userDto->userId);
             })
-            ->leftJoin('request_chat_messages as m', function (JoinClause $join) use ($user): void {
+            ->leftJoin('request_chat_messages as m', function (JoinClause $join) use ($userDto): void {
                 $join->on('m.request_chat_id', '=', 'c.id')
-                    ->where('m.sender_id', '<>', $user->id)
+                    ->where('m.sender_id', '<>', $userDto->userId)
                     ->whereRaw('m.id > COALESCE(read.last_read_message_id, 0)');
             })
-            ->whereIn('r.id', RepairRequest::forChatUser($user)->select('id'))
+            ->whereIn('r.id', RepairRequest::forChatUser($userDto)->select('id'))
             ->groupBy('c.id', 'r.id', 'r.uuid', 'r.number')
             ->orderByDesc('r.id')
             ->select('r.uuid as request_id', 'r.number as request_number')
@@ -81,8 +84,13 @@ final class RequestChatController
 
     public function show(Request $request, string $id): JsonResponse
     {
-        $document = RepairRequest::resolveChatFor($request->user(), $id);
-        $chat = RequestChat::query()->where('repair_request_id', $document->id)->first();
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+        
+        $document = RepairRequest::resolveChatFor($userDto, $id);
+        $chat = RequestChat::query()
+            ->where('repair_request_id', $document->id)
+            ->first();
 
         if ($chat === null) {
             return response()->json(['created' => false, 'messages' => [], 'hasMore' => false]);
@@ -131,9 +139,10 @@ final class RequestChatController
     public function create(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
 
-        [$chat, $created] = DB::transaction(function () use ($user, $id): array {
-            $document = RepairRequest::resolveChatFor($user, $id, true);
+        [$chat, $created] = DB::transaction(function () use ($userDto, $id): array {
+            $document = RepairRequest::resolveChatFor($userDto, $id, true);
             $chat = RequestChat::query()->where('repair_request_id', $document->id)->first();
 
             if ($chat !== null) {
@@ -142,7 +151,7 @@ final class RequestChatController
 
             return [RequestChat::query()->create([
                 'repair_request_id' => $document->id,
-                'created_by'        => $user->id,
+                'created_by'        => $userDto->userId,
             ]), true];
         });
 
@@ -152,8 +161,12 @@ final class RequestChatController
     public function send(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        $document = RepairRequest::resolveChatFor($user, $id);
-        $chat = RequestChat::query()->where('repair_request_id', $document->id)->firstOrFail();
+        $userDto = UserDto::fromUserModel($user);
+
+        $document = RepairRequest::resolveChatFor($userDto, $id);
+        $chat = RequestChat::query()
+            ->where('repair_request_id', $document->id)
+            ->firstOrFail();
         $validated = $request->validate([
             'text'    => ['nullable', 'string', 'max:5000'],
             'files'   => ['sometimes', 'array', 'max:10'],
@@ -205,12 +218,12 @@ final class RequestChatController
                 ];
             }
 
-            $message = DB::transaction(function () use ($chat, $user, $text, $stored): RequestChatMessage {
+            $message = DB::transaction(function () use ($chat, $userDto, $text, $stored): RequestChatMessage {
                 $message = RequestChatMessage::query()->create([
                     'request_chat_id' => $chat->id,
-                    'sender_id'       => $user->id,
-                    'sender_name'     => mb_substr($user->fullName(), 0, 255),
-                    'sender_role'     => $user->role->value,
+                    'sender_id'       => $userDto->userId,
+                    'sender_name'     => mb_substr($userDto->fullName, 0, 255),
+                    'sender_role'     => $userDto->role->value,
                     'body'            => $text,
                 ]);
 
@@ -246,7 +259,10 @@ final class RequestChatController
 
     public function read(Request $request, string $id): JsonResponse
     {
-        $document = RepairRequest::resolveChatFor($request->user(), $id);
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+
+        $document = RepairRequest::resolveChatFor($userDto, $id);
         $chat = RequestChat::query()->where('repair_request_id', $document->id)->firstOrFail();
         $validated = $request->validate(['lastMessageId' => ['required', 'integer', 'min:1']]);
         $messageId = (int) $validated['lastMessageId'];
@@ -272,13 +288,16 @@ final class RequestChatController
 
     public function download(Request $request, string $fileId): StreamedResponse
     {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+
         $file = RequestChatFile::query()
             ->where('uuid', $fileId)
             ->whereIn('request_chat_message_id', RequestChatMessage::query()
                 ->select('id')
                 ->whereIn('request_chat_id', RequestChat::query()
                     ->select('id')
-                    ->whereIn('repair_request_id', RepairRequest::forChatUser($request->user())->select('id'))))
+                    ->whereIn('repair_request_id', RepairRequest::forChatUser($userDto)->select('id'))))
             ->firstOrFail();
 
         if (!Storage::disk($file->disk)->exists($file->object_key)) {

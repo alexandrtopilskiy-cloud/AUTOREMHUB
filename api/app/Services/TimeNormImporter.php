@@ -71,11 +71,11 @@ final class TimeNormImporter
     public function import(
         int $tenantId,
         string $path,
-        ?User $actor = null,
+        ?UserDto $actorDto = null,
         bool $dryRun = false,
     ): array
     {
-        if ($actor !== null && ($actor->role !== UserRole::Manager || $actor->tenantId() !== $tenantId)) {
+        if ($actorDto !== null && ($actorDto->role !== UserRole::Manager || $actorDto->tenantId !== $tenantId)) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -84,14 +84,12 @@ final class TimeNormImporter
             );
         }
 
-        $dto = UserDto::fromUserModel($actor);
-
         $rows = $this->normalizeRows($this->reader->read(
             $path,
             [self::WORK_HEADERS, self::HOURS_HEADERS],
         ));
 
-        return DB::transaction(function () use ($tenantId, $rows, $dto, $dryRun): array {
+        return DB::transaction(function () use ($tenantId, $rows, $actorDto, $dryRun): array {
             Tenant::query()->whereKey($tenantId)->lockForUpdate()->firstOrFail();
 
             $general = $dryRun
@@ -136,7 +134,7 @@ final class TimeNormImporter
                     ]);
 
                     $this->audit->record(
-                        $dto,
+                        $actorDto,
                         CatalogKind::WorkTypes,
                         $workType,
                         'import_create',
@@ -191,7 +189,7 @@ final class TimeNormImporter
                 $norm->save();
 
                 $this->audit->record(
-                    $dto,
+                    $actorDto,
                     CatalogKind::TimeNorms,
                     $norm,
                     $before === null ? 'import_create' : 'import_update',

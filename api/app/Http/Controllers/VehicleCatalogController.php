@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Exceptions\ApiException;
 use App\Services\VehicleCatalogService;
 use App\Support\ApiInput;
@@ -21,12 +22,14 @@ final class VehicleCatalogController
     {
         ApiInput::only($request, ['record']);
         $payload = $request->json('record');
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
 
         if (!is_array($payload)) {
             throw new ApiException(422, 'VALIDATION_ERROR', 'Передайте объект record');
         }
 
-        $result = $this->service->create($request->user(), $payload);
+        $result = $this->service->create($userDto, $payload);
 
         return response()->json($result, 201);
     }
@@ -34,10 +37,11 @@ final class VehicleCatalogController
     public function update(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['patch']);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json(
             $this->service->update(
-                $request->user(),
+                $userDto,
                 $id,
                 ApiInput::patch($request),
             ),
@@ -47,15 +51,18 @@ final class VehicleCatalogController
     public function destroy(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, []);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json(
-            $this->service->delete($request->user(), $id),
+            $this->service->delete($userDto, $id),
         );
     }
 
     public function review(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['decision', 'comment']);
+        $userDto = UserDto::fromUserModel($request->user());
+
         $validated = $request->validate([
             'decision' => ['required', 'in:approved,rejected'],
             'comment'  => ['present', 'string', 'max:10000'],
@@ -63,7 +70,7 @@ final class VehicleCatalogController
 
         return response()->json([
             'record' => $this->service->review(
-                $request->user(),
+                $userDto,
                 $id,
                 $validated['decision'],
                 $validated['comment'],

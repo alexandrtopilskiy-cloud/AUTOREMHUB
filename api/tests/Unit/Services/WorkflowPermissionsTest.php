@@ -7,7 +7,6 @@ namespace Tests\Unit\Services;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
 use App\Models\RepairRequest;
-use App\Models\User;
 use App\Services\Workflow;
 use PHPUnit\Framework\TestCase;
 use App\DTO\UserDto;
@@ -181,7 +180,10 @@ final class WorkflowPermissionsTest extends TestCase
             tenantId: 1,
             organizationId: 1,
             role: $role,
-            organizationName: 'Test Organization',
+            organizationName: 'test',
+            fullName: 'Иван Иванович Иванов',
+            phone: null,
+            displayName: 'Test Organization',
         );
 
         return Workflow::permissions($request, $dto);

@@ -34,18 +34,34 @@ final class VehicleReferenceService
     }
 
     /** Последовательные варианты из фактически существующих записей каталога. */
-    public function selectionOptions(User $user, string $makeId, string $step, array $filters): array
+    public function selectionOptions(UserDto $userDto, string $makeId, string $step, array $filters): array
     {
-        $this->assertReader($user);
-        $keys = ['model', 'generation', 'engineType', 'engineIndex', 'horsepower',
-            'engineVolumeLiters', 'transmission', 'driveType'];
+        $this->assertReader($userDto);
+        $keys = [
+            'model',
+            'generation',
+            'engineType',
+            'engineIndex',
+            'horsepower',
+            'engineVolumeLiters',
+            'transmission',
+            'driveType'
+        ];
         $position = array_search($step, $keys, true);
         if ($position === false || array_diff(array_keys($filters), array_slice($keys, 0, $position + 1))) {
             Input::fail('Неверная последовательность технических признаков');
         }
-        $make = VehicleMake::query()->where('uuid', $makeId)->where('active', true)->firstOrFail();
-        $records = VehicleModel::query()->with('make')->where('vehicle_make_id', $make->id)
-            ->where('active', true)->orderBy('id')->get()
+
+        $make = VehicleMake::query()
+            ->where('uuid', $makeId)
+            ->where('active', true)
+            ->firstOrFail();
+        $records = VehicleModel::query()
+            ->with('make')
+            ->where('vehicle_make_id', $make->id)
+            ->where('active', true)
+            ->orderBy('id')
+            ->get()
             ->map(fn (VehicleModel $model): array => $this->presentModel($model));
         $value = static function (array $record, string $key): string {
             if ($key === 'generation') {
@@ -56,6 +72,7 @@ final class VehicleReferenceService
             }
             return $record[$key] === null || $record[$key] === '' ? '__unknown__' : (string) $record[$key];
         };
+
         foreach ($filters as $key => $filter) {
             $records = $records->filter(fn (array $record): bool => $value($record, $key) === $filter);
         }
@@ -66,12 +83,13 @@ final class VehicleReferenceService
                 : ($key === '__unknown__' ? 'Не указано в источнике' : $key);
             return ['value' => $key, 'label' => $label ?: 'Поколение не указано'];
         })->unique('value')->sortBy('label')->values()->all();
+
         return ['options' => $options, 'variant' => $step === 'driveType' && $records->count() === 1 ? $records->first() : null];
     }
 
-    public function makes(User $user, string $search, int $limit): array
+    public function makes(UserDto $userDto, string $search, int $limit): array
     {
-        $this->assertReader($user);
+        $this->assertReader($userDto);
         $prefix = self::normalizeName($search);
 
         return VehicleMake::query()
@@ -91,27 +109,24 @@ final class VehicleReferenceService
      * @return array<int, array<string, mixed>>
      */
     public function models(
-        User $user,
+        UserDto $userDto,
         string $makeId,
         string $search,
         int $limit,
         bool $uniqueNames = false,
     ): array {
-        $this->assertReader($user);
-        $make = VehicleMake::query()->where('uuid', $makeId)->firstOrFail();
+        $this->assertReader($userDto);
+        $make = VehicleMake::query()
+            ->where('uuid', $makeId)
+            ->firstOrFail();
         $prefix = self::normalizeName($search);
 
         return VehicleModel::query()
             ->with('make')
-            ->when($uniqueNames, fn ($query) => $query->selectRaw(
-                'DISTINCT ON (vehicle_models.normalized_name) vehicle_models.*',
-            ))
+            ->when($uniqueNames, fn ($query) => $query->selectRaw('DISTINCT ON (vehicle_models.normalized_name) vehicle_models.*'))
             ->where('vehicle_make_id', $make->id)
             ->where('active', true)
-            ->when(
-                $prefix !== '',
-                fn ($query) => ReferenceSearch::apply($query, $prefix, ['normalized_name']),
-            )
+            ->when( $prefix !== '', fn ($query) => ReferenceSearch::apply($query, $prefix, ['normalized_name']))
             ->orderBy('normalized_name')
             ->orderBy('model_year_from')
             ->orderBy('engine_index')
@@ -126,12 +141,12 @@ final class VehicleReferenceService
      * @return array<int, array<string, mixed>>
      */
     public function generations(
-        User $user,
+        UserDto $userDto,
         string $modelId,
         string $search,
         int $limit,
     ): array {
-        $this->assertReader($user);
+        $this->assertReader($userDto);
         $model = VehicleModel::query()
             ->where('uuid', $modelId)
             ->where('active', true)
@@ -167,13 +182,13 @@ final class VehicleReferenceService
      * @return array<int, array<string, mixed>>
      */
     public function engines(
-        User $user,
+        UserDto $userDto,
         string $modelId,
         ?string $generationId,
         string $search,
         int $limit,
     ): array {
-        $this->assertReader($user);
+        $this->assertReader($userDto);
         $model = VehicleModel::query()
             ->where('uuid', $modelId)
             ->where('active', true)
@@ -226,9 +241,9 @@ final class VehicleReferenceService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function transmissions(User $user, string $search, int $limit): array
+    public function transmissions(UserDto $userDto, string $search, int $limit): array
     {
-        $this->assertReader($user);
+        $this->assertReader($userDto);
 
         return $this->vehicleAttributeOptions(
             VehicleTransmissionType::query(),
@@ -240,9 +255,9 @@ final class VehicleReferenceService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function drives(User $user, string $search, int $limit): array
+    public function drives(UserDto $userDto, string $search, int $limit): array
     {
-        $this->assertReader($user);
+        $this->assertReader($userDto);
 
         return $this->vehicleAttributeOptions(
             VehicleDriveType::query(),
@@ -256,11 +271,9 @@ final class VehicleReferenceService
      *
      * @return array<string, mixed>
      */
-    public function create(User $user, array $payload, bool $rejectDuplicate = false): array
+    public function create(UserDto $userDto, array $payload, bool $rejectDuplicate = false): array
     {
-        $dto = UserDto::fromUserModel($user);
-
-        if (!in_array($dto->role, [UserRole::Customer, UserRole::Manager], true)) {
+        if (!in_array($userDto->role, [UserRole::Customer, UserRole::Manager], true)) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -336,7 +349,7 @@ final class VehicleReferenceService
             );
         }
 
-        return DB::transaction(function () use ($dto, $payload, $rejectDuplicate): array {
+        return DB::transaction(function () use ($userDto, $payload, $rejectDuplicate): array {
             $makeName = self::cleanName((string) $payload['make']);
             $modelName = self::cleanName((string) $payload['model']);
 
@@ -384,7 +397,7 @@ final class VehicleReferenceService
                 ));
 
                 $this->audit->record(
-                    $dto,
+                    $userDto,
                     CatalogKind::VehicleModels,
                     $model,
                     'create',
@@ -539,12 +552,12 @@ final class VehicleReferenceService
      * }
      */
     public function catalog(
-        User $user,
+        UserDto $userDto,
         array $filters,
         int $page,
         int $perPage,
     ): array {
-        if ($user->role !== UserRole::Manager) {
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -628,9 +641,9 @@ final class VehicleReferenceService
         return compact('records', 'total', 'page', 'perPage');
     }
 
-    private function assertReader(User $user): void
+    private function assertReader(UserDto $userDto): void
     {
-        if (!in_array($user->role, [UserRole::Customer, UserRole::Manager], true)) {
+        if (!in_array($userDto->role, [UserRole::Customer, UserRole::Manager], true)) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -644,11 +657,8 @@ final class VehicleReferenceService
      *
      * @return array<int, array<string, mixed>>
      */
-    private function vehicleAttributeOptions(
-        Builder $query,
-        string $search,
-        int $limit,
-    ): array {
+    private function vehicleAttributeOptions(Builder $query, string $search, int $limit): array
+     {
         $prefix = self::normalizeName($search);
 
         return $query

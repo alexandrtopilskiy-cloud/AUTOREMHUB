@@ -113,7 +113,7 @@ final class DiagnosticControllerTest extends TestCase
         )->assertCreated();
 
         $report = DiagnosticReport::query()
-        ->where('repair_request_id', $request['systemId'])
+            ->where('repair_request_id', $request['systemId'])
             ->firstOrFail();
 
         $this->assertSame('Требуется замена масла', $report->conclusion);

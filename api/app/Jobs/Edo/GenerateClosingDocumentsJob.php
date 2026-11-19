@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Edo;
 
+use App\DTO\UserDto;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
@@ -55,6 +56,8 @@ final class GenerateClosingDocumentsJob implements ShouldQueue
     {
         $logger = Log::channel('edo');
         $request = RepairRequest::query()->find($this->requestId);
+        $user = $this->actor($request);
+        $userDto = UserDto::fromUserModel($user);
 
         if ($request === null) {
             $logger->warning("Закрывающие документы: ЗР #{$this->requestId} не найдена");
@@ -73,8 +76,8 @@ final class GenerateClosingDocumentsJob implements ShouldQueue
         $documents->saveGenerationState($request, 'generating');
 
         try {
-            DB::transaction(function () use ($documents, $request): void {
-                $documents->generateClosingDocuments($request, $this->actor($request));
+            DB::transaction(function () use ($documents, $request, $userDto): void {
+                $documents->generateClosingDocuments($request, $userDto);
             });
         } catch (Throwable $e) {
             $logger->error("Закрывающие документы: ошибка формирования ЗР {$request->number}", ['message' => $e->getMessage()]);

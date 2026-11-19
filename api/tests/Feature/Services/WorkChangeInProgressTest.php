@@ -6,6 +6,7 @@ namespace Tests\Feature\Services;
 
 use App\DTO\TransitionDto;
 use App\DTO\UpdateRepairRequestDto;
+use App\DTO\UserDto;
 use App\Enums\ApprovalDecision;
 use App\Enums\RepairStage;
 use App\Enums\TransitionAction;
@@ -141,8 +142,9 @@ final class WorkChangeInProgressTest extends TestCase
     private function document(User $user): array
     {
         $this->actingAs($user);
+        $userDto = UserDto::fromUserModel($user);
 
-        return app(ApiPresenter::class)->document($this->request->fresh(), $user);
+        return app(ApiPresenter::class)->document($this->request->fresh(), $userDto);
     }
 
     private function patchLines(User $user, array $patch): array
@@ -332,9 +334,10 @@ final class WorkChangeInProgressTest extends TestCase
     {
         $doc = $this->document($this->station);
         $this->assertTrue($doc['permissions']['canDeferRecommendations']);
+        $stationDto = UserDto::fromUserModel($this->station);
 
         $result = app(RecommendationService::class)->defer(
-            $this->station,
+            $stationDto,
             $this->request->uuid,
             $this->revision(),
             ['workIds' => [], 'partIds' => [$doc['parts'][0]['id']]],
@@ -362,10 +365,11 @@ final class WorkChangeInProgressTest extends TestCase
         $doc = $this->patchLines($this->station, ['works' => [...$doc['works'], $added]]);
         $this->assertSame('editing', $doc['workChange']['status']);
         $this->assertFalse($doc['permissions']['canAdvance']);
+        $stationDto = UserDto::fromUserModel($this->station);
 
         $newId = collect($doc['works'])->first(static fn (array $work): bool => !in_array($work['id'], $originalIds, true))['id'];
         $result = app(RecommendationService::class)->defer(
-            $this->station,
+            $stationDto,
             $this->request->uuid,
             $this->revision(),
             ['workIds' => [$newId], 'partIds' => []],
@@ -389,10 +393,11 @@ final class WorkChangeInProgressTest extends TestCase
         $added['name'] = 'Доп. работа';
         $originalIds = array_column($doc['works'], 'id');
         $doc = $this->patchLines($this->station, ['works' => [...$doc['works'], $added]]);
+        $stationDto = UserDto::fromUserModel($this->station);
 
         $original = $originalIds[0];
         $result = app(RecommendationService::class)->defer(
-            $this->station,
+            $stationDto,
             $this->request->uuid,
             $this->revision(),
             ['workIds' => [$original], 'partIds' => []],

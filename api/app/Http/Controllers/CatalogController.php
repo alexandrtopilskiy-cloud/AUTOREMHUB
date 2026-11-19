@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
@@ -31,12 +32,13 @@ final class CatalogController
     public function index(Request $request): JsonResponse
     {
         $version = $this->versionFor($request);
+        $userDto = UserDto::fromUserModel($request->user());
 
         if ($version !== null && $this->clientVersion($request) === $version) {
             return response()->json(['unchanged' => true, 'version' => $version]);
         }
 
-        $records = $this->service->records($request->user());
+        $records = $this->service->records($userDto);
 
         if ($version === null) {
             return response()->json(['records' => $records]);
@@ -52,9 +54,10 @@ final class CatalogController
     public function reference(Request $request): JsonResponse
     {
         $version = $this->versionFor($request);
+        $userDto = UserDto::fromUserModel($request->user());
 
         if ($version === null) {
-            return response()->json($this->service->reference($request->user()));
+            return response()->json($this->service->reference($userDto));
         }
 
         if ($this->clientVersion($request) === $version) {
@@ -64,14 +67,16 @@ final class CatalogController
         return response()->json([
             'unchanged' => false,
             'version'   => $version,
-            'data'      => $this->service->reference($request->user()),
+            'data'      => $this->service->reference($userDto),
         ]);
     }
 
     private function versionFor(Request $request): ?string
     {
+        $userDto = UserDto::fromUserModel($request->user());
+
         return $request->query->has('version')
-            ? $this->versions->version($request->user())
+            ? $this->versions->version($userDto)
             : null;
     }
 
@@ -85,9 +90,10 @@ final class CatalogController
     public function update(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['patch']);
+        $userDto = UserDto::fromUserModel($request->user());
 
         $record = $this->service->update(
-            $request->user(),
+            $userDto,
             $id,
             ApiInput::patch($request),
         );
@@ -98,6 +104,8 @@ final class CatalogController
     public function store(Request $request, string $kind): JsonResponse
     {
         ApiInput::only($request, ['record']);
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
 
         $payload = $request->json('record');
 
@@ -111,13 +119,15 @@ final class CatalogController
             throw new ApiException(422, 'VALIDATION_ERROR', 'Неизвестный справочник');
         }
 
-        $record = $this->service->create($request->user(), $catalogKind, $payload);
+        $record = $this->service->create($userDto, $catalogKind, $payload);
 
         return response()->json(['record' => $record], 201);
     }
 
     public function history(Request $request): JsonResponse
     {
+        $userDto = UserDto::fromUserModel($request->user());
+
         $validated = $request->validate([
             'kind'     => ['sometimes', 'string', 'max:80'],
             'recordId' => ['sometimes', 'uuid'],
@@ -130,7 +140,7 @@ final class CatalogController
 
         return response()->json([
             'events' => $this->service->history(
-                $request->user(),
+                $userDto,
                 $kind,
                 $validated['recordId'] ?? null,
             ),
@@ -139,7 +149,9 @@ final class CatalogController
 
     public function importTimeNorms(Request $request): JsonResponse
     {
-        if ($request->user()->role !== UserRole::Manager) {
+        $userDto = UserDto::fromUserModel($request->user());
+
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',
@@ -162,9 +174,9 @@ final class CatalogController
         }
 
         $result = $this->timeNormImporter->import(
-            $request->user()->tenantId(),
+            $userDto->tenantId,
             (string) $file->getRealPath(),
-            $request->user(),
+            $userDto,
         );
 
         return response()->json(['result' => $result]);

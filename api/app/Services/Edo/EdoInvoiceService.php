@@ -52,7 +52,7 @@ final class EdoInvoiceService
                     'tenant_id'         => $request->tenant_id,
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
-                    'provider'          => $this->dispatcher->providerFor($ukOrg)->value,
+                    'provider'          => $this->dispatcher->providerFor($sender)->value,
                     'number'            => $invoice->number,
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
@@ -77,12 +77,15 @@ final class EdoInvoiceService
                 certificateFingerprint : 'mock-cert',
             );
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
+            
+            /** @var User $user */
+            $user = auth();
 
             // 1. Создаем запись в Attachment, чтобы файл появился в карточке заявки
             $attachment = Attachment::create([
                 'uuid'                      => Str::uuid(),
                 'repair_request_id'         => $request->id,
-                'uploaded_by'               => auth()->id() ?? $request->created_by, // Или системный пользователь
+                'uploaded_by'               => $user->id() ?? $request->created_by, // Или системный пользователь
                 'request_status_period_id'  => $request->periods()->whereNull('exited_at')->first()?->id,
                 'disk'                      => 'local',
                 'object_key'                => $objectKey,

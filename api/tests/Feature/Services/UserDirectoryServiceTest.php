@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\CatalogChangeEvent;
@@ -11,11 +12,13 @@ use App\Models\Organization;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\UserDirectoryService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Feature-тест для UserDirectoryService.
@@ -74,8 +77,9 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_records_returns_all_users_of_tenant_for_manager(): void
     {
         $this->makeUser($this->customerOrg, 'customer', 'another-customer');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $records = $this->service()->records($this->manager);
+        $records = $this->service()->records($managerDto);
 
         $logins = array_column($records, 'login');
         $this->assertContains('manager-login', $logins);
@@ -87,12 +91,14 @@ final class UserDirectoryServiceTest extends TestCase
     {
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Справочник пользователей доступен только УК');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->records($this->customer);
+        $this->service()->records($customerDto);
     }
 
     public function test_records_does_not_include_users_from_other_tenants(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $otherTenant = Tenant::query()->create(['name' => 'Другой контур']);
         $otherOrg = Organization::query()->create([
             'tenant_id' => $otherTenant->id,
@@ -101,7 +107,7 @@ final class UserDirectoryServiceTest extends TestCase
         ]);
         $otherUser = $this->makeUser($otherOrg, 'customer', 'foreign-login');
 
-        $records = $this->service()->records($this->manager);
+        $records = $this->service()->records($managerDto);
 
         $logins = array_column($records, 'login');
         $this->assertNotContains('foreign-login', $logins);
@@ -141,7 +147,8 @@ final class UserDirectoryServiceTest extends TestCase
 
     public function test_create_persists_user_with_hashed_password(): void
     {
-        $record = $this->service()->create($this->manager, [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $record = $this->service()->create($managerDto, [
             'lastName'        => 'Иванов',
             'firstName'       => 'Иван',
             'middleName'      => 'Иванович',
@@ -170,10 +177,11 @@ final class UserDirectoryServiceTest extends TestCase
 
     public function test_create_creates_audit_event(): void
     {
-        $this->service()->create($this->manager, $this->validPayload());
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $this->service()->create($managerDto, $this->validPayload());
 
         $this->assertSame(1, CatalogChangeEvent::query()
-        ->where('catalog_kind', 'users')
+            ->where('catalog_kind', 'users')
             ->where('action', 'create')
             ->count());
     }
@@ -181,8 +189,9 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_create_rejects_duplicate_login(): void
     {
         $this->expectException(ValidationException::class);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->create($this->manager, $this->validPayload([
+        $this->service()->create($managerDto, $this->validPayload([
             'login' => 'customer-login',  // уже занят
         ]));
     }
@@ -195,10 +204,11 @@ final class UserDirectoryServiceTest extends TestCase
             'kind'      => 'customer',
             'name'      => 'Другой',
         ]);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
-        $this->service()->create($this->manager, $this->validPayload([
+        $this->service()->create($managerDto, $this->validPayload([
             'organizationId' => $otherOrg->uuid,
         ]));
     }
@@ -207,8 +217,9 @@ final class UserDirectoryServiceTest extends TestCase
     {
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Телефон должен быть указан в формате +7 ххх ххх хх хх');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->create($this->manager, $this->validPayload([
+        $this->service()->create($managerDto, $this->validPayload([
             'phone' => '+7 (999) 12',
         ]));
     }
@@ -216,8 +227,9 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_create_rejects_short_password(): void
     {
         $this->expectException(ValidationException::class);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->create($this->manager, $this->validPayload([
+        $this->service()->create($managerDto, $this->validPayload([
             'password' => 'short',
         ]));
     }
@@ -225,8 +237,9 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_create_rejects_unknown_access_right(): void
     {
         $this->expectException(ValidationException::class);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->create($this->manager, $this->validPayload([
+        $this->service()->create($managerDto, $this->validPayload([
             'accessRights' => ['unknown.right'],
         ]));
     }
@@ -235,15 +248,18 @@ final class UserDirectoryServiceTest extends TestCase
     {
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Справочник пользователей доступен только УК');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->create($this->customer, $this->validPayload());
+        $this->service()->create($customerDto, $this->validPayload());
     }
 
     /* ─────────────────── update ─────────────────── */
 
     public function test_update_changes_name_and_contact_fields(): void
     {
-        $record = $this->service()->update($this->manager, $this->customer, [
+        $managerDto = UserDto::fromUserModel($this->manager);
+
+        $record = $this->service()->update($managerDto, $this->customer, [
             'lastName'  => 'Петров',
             'firstName' => 'Пётр',
             'middleName' => 'Петрович',
@@ -262,8 +278,9 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_update_ignores_password_mask(): void
     {
         $before = $this->customer->password;
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->update($this->manager, $this->customer, [
+        $this->service()->update($managerDto, $this->customer, [
             'password' => UserDirectoryService::PASSWORD_MASK,
         ]);
 
@@ -272,10 +289,11 @@ final class UserDirectoryServiceTest extends TestCase
 
     public function test_update_changes_password_and_revokes_tokens(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $token = $this->customer->createToken('api')->plainTextToken;
         $this->assertSame(1, $this->customer->tokens()->count());
 
-        $this->service()->update($this->manager, $this->customer, [
+        $this->service()->update($managerDto, $this->customer, [
             'password' => 'new-password-long-value',
         ]);
 
@@ -288,10 +306,11 @@ final class UserDirectoryServiceTest extends TestCase
 
     public function test_update_revokes_access_and_tokens(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $this->customer->createToken('api');
         $this->assertSame(1, $this->customer->tokens()->count());
 
-        $this->service()->update($this->manager, $this->customer, [
+        $this->service()->update($managerDto, $this->customer, [
             'accessRevokedAt' => '2026-09-25',
         ]);
 
@@ -304,8 +323,9 @@ final class UserDirectoryServiceTest extends TestCase
     public function test_update_deactivates_user_and_revokes_tokens(): void
     {
         $this->customer->createToken('api');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->update($this->manager, $this->customer, [
+        $this->service()->update($managerDto, $this->customer, [
             'active' => false,
         ]);
 
@@ -322,8 +342,9 @@ final class UserDirectoryServiceTest extends TestCase
             'kind'      => 'customer',
             'name'      => 'Новая организация',
         ]);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->service()->update($this->manager, $this->customer, [
+        $this->service()->update($managerDto, $this->customer, [
             'organizationId' => $newOrg->uuid,
         ]);
 
@@ -340,17 +361,19 @@ final class UserDirectoryServiceTest extends TestCase
             'name'      => 'Другой',
         ]);
         $otherUser = $this->makeUser($otherOrg, 'customer', 'other-login');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class);
+        $this->expectException(NotFoundHttpException::class);
 
-        $this->service()->update($this->manager, $otherUser, [
+        $this->service()->update($managerDto, $otherUser, [
             'lastName' => 'Смит',
         ]);
     }
 
     public function test_update_creates_audit_event(): void
     {
-        $this->service()->update($this->manager, $this->customer, [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $this->service()->update($managerDto, $this->customer, [
             'lastName' => 'Петров',
         ]);
 
@@ -362,9 +385,10 @@ final class UserDirectoryServiceTest extends TestCase
 
     public function test_update_forbidden_for_customer(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
         $this->expectException(ApiException::class);
 
-        $this->service()->update($this->customer, $this->customer, [
+        $this->service()->update($customerDto, $this->customer, [
             'lastName' => 'Петров',
         ]);
     }

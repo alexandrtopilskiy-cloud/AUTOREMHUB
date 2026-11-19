@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
+use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Services\VehicleReferenceService;
 use App\Support\ApiInput;
@@ -40,10 +42,11 @@ final class VehicleReferenceController
             'search' => ['sometimes', 'string', 'max:255'],
             'limit'  => ['sometimes', 'integer', 'between:1,100'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json([
             'makes' => $this->service->makes(
-                $request->user(),
+                $userDto,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 50),
             ),
@@ -58,10 +61,11 @@ final class VehicleReferenceController
             'search' => ['sometimes', 'string', 'max:255'],
             'limit'  => ['sometimes', 'integer', 'between:1,200'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json([
             'models' => $this->service->models(
-                $request->user(),
+                $userDto,
                 (string) $validated['makeId'],
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 100),
@@ -77,10 +81,11 @@ final class VehicleReferenceController
             'search'  => ['sometimes', 'string', 'max:255'],
             'limit'   => ['sometimes', 'integer', 'between:1,200'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json([
             'generations' => $this->service->generations(
-                $request->user(),
+                $userDto,
                 (string) $validated['modelId'],
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 100),
@@ -96,10 +101,11 @@ final class VehicleReferenceController
             'search'       => ['sometimes', 'string', 'max:255'],
             'limit'        => ['sometimes', 'integer', 'between:1,200'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json([
             'engines' => $this->service->engines(
-                $request->user(),
+                $userDto,
                 (string) $validated['modelId'],
                 isset($validated['generationId'])
                     ? (string) $validated['generationId']
@@ -116,10 +122,11 @@ final class VehicleReferenceController
             'search' => ['sometimes', 'string', 'max:255'],
             'limit'  => ['sometimes', 'integer', 'between:1,100'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json([
             'transmissions' => $this->service->transmissions(
-                $request->user(),
+                $userDto,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 50),
             ),
@@ -132,10 +139,11 @@ final class VehicleReferenceController
             'search' => ['sometimes', 'string', 'max:255'],
             'limit'  => ['sometimes', 'integer', 'between:1,100'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json([
             'drives' => $this->service->drives(
-                $request->user(),
+                $userDto,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 50),
             ),
@@ -159,6 +167,7 @@ final class VehicleReferenceController
             'driveType'     => ['sometimes', 'string', 'max:100'],
             'engineType'    => ['sometimes', 'string', 'max:100'],
         ]);
+        $userDto = UserDto::fromUserModel($request->user());
 
         $filters = array_intersect_key($validated, array_flip([
             'make',
@@ -175,7 +184,7 @@ final class VehicleReferenceController
         ]));
 
         return response()->json($this->service->catalog(
-            $request->user(),
+            $userDto,
             $filters,
             (int) ($validated['page'] ?? 1),
             (int) ($validated['perPage'] ?? 100),
@@ -184,7 +193,9 @@ final class VehicleReferenceController
 
     public function storeCatalog(Request $request): JsonResponse
     {
-        if ($request->user()->role !== \App\Enums\UserRole::Manager) {
+        $userDto = UserDto::fromUserModel($request->user());
+
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(403, 'FORBIDDEN', 'Добавлять записи справочника может только УК');
         }
         ApiInput::only($request, ['record']);
@@ -192,11 +203,13 @@ final class VehicleReferenceController
         if (!is_array($record)) {
             throw new ApiException(422, 'VALIDATION_ERROR', 'Передайте объект record');
         }
-        return response()->json(['model' => $this->service->create($request->user(), $record, true)], 201);
+        return response()->json(['model' => $this->service->create($userDto, $record, true)], 201);
     }
 
     public function store(Request $request): JsonResponse
     {
+        $userDto = UserDto::fromUserModel($request->user());
+
         ApiInput::only($request, ['record']);
         $record = $request->json('record');
 
@@ -209,7 +222,7 @@ final class VehicleReferenceController
         }
 
         return response()->json([
-            'model' => $this->service->create($request->user(), $record),
+            'model' => $this->service->create($userDto, $record),
         ], 201);
     }
 }

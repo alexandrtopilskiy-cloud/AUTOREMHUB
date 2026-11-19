@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Models\Organization;
 use App\Models\RepairRequest;
 use App\Models\RequestNotification;
@@ -213,14 +214,20 @@ final class VehicleAcceptanceActTest extends TestCase
 
         // Представитель СТО — пользователь ЛК СТО, который выгружает лист.
         $stationUser = $this->user($stationOrganization, 'station');
-        $stationUser->forceFill(['last_name' => 'Соколов', 'first_name' => 'Максим', 'middle_name' => 'Николаевич'])->save();
+        $stationUser->forceFill([
+            'last_name' => 'Соколов',
+            'first_name' => 'Максим',
+            'middle_name' => 'Николаевич'
+        ])->save();
+        $stationUserDto = UserDto::fromUserModel($stationUser);
         $this->assertSame(
             $stationUser->refresh()->fullName(),
-            $service->handoverSheet($request, 'out', $stationUser)['stationRepresentative']['fullName'],
+            $service->handoverSheet($request, 'out', $stationUserDto)['stationRepresentative']['fullName'],
         );
         $this->assertStringContainsString('Соколов', $stationUser->fullName());
+        $customerDto = UserDto::fromUserModel($customer);
         // Для ЛК Заказчика/УК — контактное лицо СТО.
-        $this->assertSame('Смирнов Алексей', $service->handoverSheet($request, 'in', $customer)['stationRepresentative']['fullName']);
+        $this->assertSame('Смирнов Алексей', $service->handoverSheet($request, 'in', $customerDto)['stationRepresentative']['fullName']);
 
         $this->actingAs($customer);
         foreach (['in', 'out'] as $direction) {

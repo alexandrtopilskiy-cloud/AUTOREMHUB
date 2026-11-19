@@ -9,6 +9,7 @@ use App\Exceptions\ApiException;
 use App\Models\CatalogChangeEvent;
 use App\Models\CatalogPart;
 use App\Models\Organization;
+use App\Models\PartManufacturer;
 use App\Models\ServiceReason;
 use App\Models\Supplier;
 use App\Models\Tenant;
@@ -17,6 +18,7 @@ use App\Models\TimeNormApplicability;
 use App\Models\User;
 use App\Models\WorkType;
 use App\Services\CatalogService;
+use App\Services\PartManufacturerService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -67,12 +69,13 @@ final class CatalogServiceTest extends TestCase
 
     public function test_reference_customer_hides_suppliers_and_parts(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
         $this->makeWorkType('Работа ТО');
         $this->makeCatalogPart('Фильтр', 'F-1');
         $this->makeSupplier('Поставщик');
         $this->makeReason('Диагностика', 'diagnostics');
 
-        $result = $this->service()->reference($this->customer);
+        $result = $this->service()->reference($customerDto);
 
         $this->assertCount(1, $result['workTypes']);
         $this->assertSame([], $result['suppliers']);
@@ -84,11 +87,12 @@ final class CatalogServiceTest extends TestCase
 
     public function test_reference_customer_sees_only_maintenance_and_diagnostics_reasons(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
         $this->makeReason('Диагностика', 'diagnostics');
         $this->makeReason('ТО', 'maintenance');
         $this->makeReason('Прочее', 'other');
 
-        $result = $this->service()->reference($this->customer);
+        $result = $this->service()->reference($customerDto);
 
         $codes = array_column($result['reasons'], 'code');
         $this->assertContains('diagnostics', $codes);
@@ -101,8 +105,9 @@ final class CatalogServiceTest extends TestCase
         $this->makeWorkType('Работа ТО');
         $this->makeCatalogPart('Фильтр', 'F-1');
         $this->makeSupplier('Поставщик');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->reference($this->manager);
+        $result = $this->service()->reference($managerDto);
 
         $this->assertCount(1, $result['workTypes']);
         $this->assertCount(1, $result['suppliers']);
@@ -115,7 +120,9 @@ final class CatalogServiceTest extends TestCase
 
     public function test_create_work_type(): void
     {
-        $result = $this->service()->create($this->manager, 'workTypes', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+
+        $result = $this->service()->create($managerDto, 'workTypes', [
             'name'          => 'Новая работа',
             'isMaintenance' => true,
             'active'        => true,
@@ -134,8 +141,9 @@ final class CatalogServiceTest extends TestCase
     public function test_create_work_type_with_inline_time_norms(): void
     {
         $general = $this->makeApplicability('general', 'Общая');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->create($this->manager, 'workTypes', [
+        $result = $this->service()->create($managerDto, 'workTypes', [
             'name'          => 'Замена масла',
             'group'         => 'Техническое обслуживание',
             'isMaintenance' => true,
@@ -162,7 +170,8 @@ final class CatalogServiceTest extends TestCase
     public function test_update_work_type_archives_deleted_time_norm(): void
     {
         $general = $this->makeApplicability('general', 'Общая');
-        $work = $this->service()->create($this->manager, 'workTypes', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $work = $this->service()->create($managerDto, 'workTypes', [
             'name'      => 'Удаляемая норма',
             'group'     => 'Прочее',
             'timeNorms' => [[
@@ -173,7 +182,7 @@ final class CatalogServiceTest extends TestCase
         ]);
         $normId = $work['timeNorms'][0]['id'];
 
-        $updated = $this->service()->update($this->manager, $work['id'], [
+        $updated = $this->service()->update($managerDto, $work['id'], [
             'timeNorms'          => [],
             'deletedTimeNormIds' => [$normId],
         ]);
@@ -196,11 +205,12 @@ final class CatalogServiceTest extends TestCase
     public function test_create_vehicle_norm_requires_make_or_model(): void
     {
         $vehicle = $this->makeApplicability('vehicle', 'По авто');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('выберите марку и/или модель ТС');
 
-        $this->service()->create($this->manager, 'workTypes', [
+        $this->service()->create($managerDto, 'workTypes', [
             'name'      => 'Диагностика автомобиля',
             'group'     => 'Прочее',
             'timeNorms' => [[
@@ -215,9 +225,15 @@ final class CatalogServiceTest extends TestCase
 
     public function test_create_part(): void
     {
-        $manufacturer = app(\App\Services\PartManufacturerService::class)->write($this->manager, null, ['name' => 'Bosch']);
-        $supplier = \App\Models\Supplier::query()->create(['tenant_id' => $this->manager->tenantId(), 'name' => 'Supplier', 'active' => true]);
-        $result = $this->service()->create($this->manager, 'parts', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $partManufacturerService = app(PartManufacturerService::class);
+        $manufacturer = $partManufacturerService->write($managerDto, null, ['name' => 'Bosch']);
+        $supplier = Supplier::query()->create([
+            'tenant_id' => $managerDto->tenantId,
+            'name' => 'Supplier',
+            'active' => true
+        ]);
+        $result = $this->service()->create($managerDto, 'parts', [
             'name'         => 'Фильтр',
             'article'      => 'F-1',
             'manufacturerId' => $manufacturer['id'],
@@ -231,7 +247,8 @@ final class CatalogServiceTest extends TestCase
 
     public function test_create_reason(): void
     {
-        $result = $this->service()->create($this->manager, 'reasons', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->create($managerDto, 'reasons', [
             'name'              => 'Новая причина',
             'code'              => 'new_reason',
             'requiresDiagnosis' => false,
@@ -245,7 +262,8 @@ final class CatalogServiceTest extends TestCase
 
     public function test_create_supplier(): void
     {
-        $result = $this->service()->create($this->manager, 'suppliers', array_replace($this->supplierPayload(), ['name' => 'Новый поставщик']));
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->create($managerDto, 'suppliers', array_replace($this->supplierPayload(), ['name' => 'Новый поставщик']));
 
         $this->assertSame('suppliers', $result['kind']);
         $this->assertSame('Новый поставщик', $result['name']);
@@ -254,8 +272,9 @@ final class CatalogServiceTest extends TestCase
     public function test_create_time_norm(): void
     {
         $workType = $this->makeWorkType('Замена масла');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->create($this->manager, 'timeNorms', [
+        $result = $this->service()->create($managerDto, 'timeNorms', [
             'workTypeId'   => $workType->uuid,
             'vehicleModel' => 'Lada Vesta',
             'hours'        => 0.5,
@@ -271,8 +290,9 @@ final class CatalogServiceTest extends TestCase
     {
         $workType = $this->makeWorkType('ТО-1');
         $norm = $this->makeTimeNorm($workType, 'Lada', 1.5);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->create($this->manager, 'regulations', [
+        $result = $this->service()->create($managerDto, 'regulations', [
             'name'           => 'Регламент ТО',
             'vehicleModel'   => 'Lada Vesta',
             'intervalKm'     => 15000,
@@ -294,8 +314,9 @@ final class CatalogServiceTest extends TestCase
     public function test_create_forbidden_for_customer(): void
     {
         $this->expectException(ApiException::class);
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->create($this->customer, 'workTypes', [
+        $this->service()->create($customerDto, 'workTypes', [
             'name' => 'Нельзя',
         ]);
     }
@@ -304,7 +325,8 @@ final class CatalogServiceTest extends TestCase
 
     public function test_create_participant_customer(): void
     {
-        $result = $this->service()->create($this->manager, 'customers', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->create($managerDto, 'customers', [
             'name'    => 'Новый Заказчик',
             'contact' => 'Иванов',
         ]);
@@ -317,7 +339,8 @@ final class CatalogServiceTest extends TestCase
 
     public function test_create_participant_station(): void
     {
-        $result = $this->service()->create($this->manager, 'stations', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $result = $this->service()->create($managerDto, 'stations', [
             'name'         => 'Новая СТО',
             'address'      => 'Москва',
             'contact'      => 'Пётр',
@@ -338,7 +361,8 @@ final class CatalogServiceTest extends TestCase
 
     public function test_update_participant_station_schedule(): void
     {
-        $station = $this->service()->create($this->manager, 'stations', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $station = $this->service()->create($managerDto, 'stations', [
             'name'         => 'Новая СТО',
             'address'      => 'Москва',
             'workdayStart' => '10:00',
@@ -346,7 +370,7 @@ final class CatalogServiceTest extends TestCase
             'workingDays'  => [1, 2, 3, 4, 5, 6, 7],
         ]);
 
-        $result = $this->service()->update($this->manager, $station['id'], [
+        $result = $this->service()->update($managerDto, $station['id'], [
             'workdayStart' => '08:30',
             'workdayEnd'   => '18:30',
             'workingDays'  => [5, 1, 3, 2, 4],
@@ -362,8 +386,9 @@ final class CatalogServiceTest extends TestCase
     public function test_update_work_type(): void
     {
         $workType = $this->makeWorkType('Старое');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $result = $this->service()->update($this->manager, $workType->uuid, [
+        $result = $this->service()->update($managerDto, $workType->uuid, [
             'name' => 'Новое',
         ]);
 
@@ -375,8 +400,9 @@ final class CatalogServiceTest extends TestCase
 
     public function test_update_participant(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $result = $this->service()->update(
-            $this->manager,
+            $managerDto,
             $this->customerOrg->uuid,
             ['name' => 'Обновлённое имя'],
         );
@@ -387,23 +413,26 @@ final class CatalogServiceTest extends TestCase
 
     public function test_update_part_is_allowed_for_manager(): void
     {
-        $manufacturer = app(\App\Services\PartManufacturerService::class)->write($this->manager, null, ['name' => 'Bosch']);
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $partManufacturerService = app(PartManufacturerService::class);
+        $manufacturer = $partManufacturerService->write($managerDto, null, ['name' => 'Bosch']);
         $supplier = $this->makeSupplier('Поставщик');
-        $part = $this->service()->create($this->manager, 'parts', [
+        $part = $this->service()->create($managerDto, 'parts', [
             'name' => 'Фильтр', 'article' => 'F-1', 'manufacturerId' => $manufacturer['id'],
             'unit' => 'шт.',
         ]);
-        $updated = $this->service()->update($this->manager, $part['id'], ['name' => 'Фильтр обновлённый']);
+        $updated = $this->service()->update($managerDto, $part['id'], ['name' => 'Фильтр обновлённый']);
         $this->assertSame('Фильтр обновлённый', $updated['name']);
     }
 
     public function test_update_forbidden_for_customer(): void
     {
         $workType = $this->makeWorkType('Работа');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
         $this->expectException(ApiException::class);
 
-        $this->service()->update($this->customer, $workType->uuid, [
+        $this->service()->update($customerDto, $workType->uuid, [
             'name' => 'Нельзя',
         ]);
     }
@@ -412,18 +441,20 @@ final class CatalogServiceTest extends TestCase
 
     public function test_history_returns_empty_initially(): void
     {
-        $this->assertSame([], $this->service()->history($this->manager));
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $this->assertSame([], $this->service()->history($managerDto));
     }
 
     public function test_history_returns_events(): void
     {
-        $this->service()->create($this->manager, 'workTypes', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $this->service()->create($managerDto, 'workTypes', [
             'name'          => 'Работа',
             'isMaintenance' => false,
             'active'        => true,
         ]);
 
-        $result = $this->service()->history($this->manager);
+        $result = $this->service()->history($managerDto);
 
         $this->assertCount(1, $result);
         $this->assertSame('workTypes', $result[0]['kind']);
@@ -432,14 +463,15 @@ final class CatalogServiceTest extends TestCase
 
     public function test_history_filters_by_kind(): void
     {
-        $this->service()->create($this->manager, 'workTypes', [
+        $managerDto = UserDto::fromUserModel($this->manager);
+        $this->service()->create($managerDto, 'workTypes', [
             'name'          => 'Работа',
             'isMaintenance' => false,
             'active'        => true,
         ]);
-        $this->service()->create($this->manager, 'suppliers', $this->supplierPayload());
+        $this->service()->create($managerDto, 'suppliers', $this->supplierPayload());
 
-        $result = $this->service()->history($this->manager, 'workTypes');
+        $result = $this->service()->history($managerDto, 'workTypes');
 
         $this->assertCount(1, $result);
         $this->assertSame('workTypes', $result[0]['kind']);
@@ -447,9 +479,11 @@ final class CatalogServiceTest extends TestCase
 
     public function test_history_forbidden_for_customer(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
+
         $this->expectException(ApiException::class);
 
-        $this->service()->history($this->customer);
+        $this->service()->history($customerDto);
     }
 
     /* ─────────────────── present ─────────────────── */
@@ -520,15 +554,32 @@ final class CatalogServiceTest extends TestCase
 
     private function supplierPayload(bool $individual = false): array
     {
-        return ['legalForm' => $individual ? 'ip' : 'ooo', 'name' => $individual ? 'ИП Иванов' : 'ООО Поставщик',
-            'taxId' => $individual ? '500100732259' : '7707083893', 'ogrn' => $individual ? '304500116000157' : '1027700132195',
-            'kpp' => $individual ? '' : '773601001', 'registrationDate' => '2020-01-15',
-            'lastName' => $individual ? 'Иванов' : '', 'firstName' => $individual ? 'Иван' : '',
+        return [
+            'legalForm' => $individual ? 'ip' : 'ooo',
+            'name' => $individual ? 'ИП Иванов' : 'ООО Поставщик',
+            'taxId' => $individual ? '500100732259' : '7707083893',
+            'ogrn' => $individual ? '304500116000157' : '1027700132195',
+            'kpp' => $individual ? '' : '773601001',
+            'registrationDate' => '2020-01-15',
+            'lastName' => $individual ? 'Иванов' : '',
+            'firstName' => $individual ? 'Иван' : '',
             'directorName' => $individual ? '' : 'Иванов Иван Иванович',
-            'legalAddress' => 'Москва', 'actualAddress' => 'Москва', 'postalAddress' => 'Москва',
-            'bankName' => 'Банк', 'bik' => '044525225', 'settlementAccount' => '40702810900000002851',
-            'correspondentAccount' => '30101810400000000225', 'taxRegime' => 'ОСНО', 'vatRate' => 'Без НДС',
-            'contacts' => [['lastName' => 'Иванов', 'firstName' => 'Иван', 'phone' => '+7 (999) 123 45 67', 'email' => '']]];
+            'legalAddress' => 'Москва',
+            'actualAddress' => 'Москва',
+            'postalAddress' => 'Москва',
+            'bankName' => 'Банк',
+            'bik' => '044525225',
+            'settlementAccount' => '40702810900000002851',
+            'correspondentAccount' => '30101810400000000225',
+            'taxRegime' => 'ОСНО',
+            'vatRate' => 'Без НДС',
+            'contacts' => [[
+                'lastName' => 'Иванов',
+                'firstName' => 'Иван',
+                'phone' => '+7 (999) 123 45 67',
+                'email' => ''
+            ]]
+        ];
     }
 
     private function makeSupplier(string $name): Supplier

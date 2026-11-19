@@ -7,8 +7,6 @@ namespace App\DTO;
 use App\Enums\ApprovalDecision;
 use App\Enums\RepairStage;
 use App\Models\RepairRequest;
-use App\Models\RequestEvent;
-use App\Models\User;
 
 final class ApprovalDto
 {

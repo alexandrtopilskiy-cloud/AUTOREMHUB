@@ -39,8 +39,11 @@ final class CashFlowReportService
     /** @return array{rows: list<array<string, mixed>>, articles: list<array{value: string, label: string}>} */
     public function build(User $user): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $rows = [...$this->requestPayments($dto), ...$this->stockPayments($user)];
+        $userDto = UserDto::fromUserModel($user);
+        $rows = [
+            ...$this->requestPayments($userDto),
+            ...$this->stockPayments($userDto)
+        ];
 
         usort($rows, static fn (array $a, array $b): int => [$a['date'], $a['sort']] <=> [$b['date'], $b['sort']]);
         $rows = array_map(static function (array $row): array {
@@ -49,13 +52,13 @@ final class CashFlowReportService
             return $row;
         }, $rows);
 
-        $labels = $this->articleLabels($dto->role);
+        $labels = $this->articleLabels($userDto->role);
 
         return [
             'rows' => $rows,
             'articles' => array_values(array_map(
                 static fn (string $key): array => ['value' => $key, 'label' => $labels[$key]],
-                $this->articlesFor($dto->role),
+                $this->articlesFor($userDto->role),
             )),
         ];
     }
@@ -81,33 +84,33 @@ final class CashFlowReportService
     }
 
     /** @return list<array<string, mixed>> */
-    private function requestPayments(UserDto $dto): array
+    private function requestPayments(UserDto $userDto): array
     {
-        $types = match ($dto->role) {
+        $types = match ($userDto->role) {
             UserRole::Manager => [RequestDocumentType::CustomerInvoice, RequestDocumentType::StationInvoice],
             UserRole::Station => [RequestDocumentType::StationInvoice],
             UserRole::Customer => [RequestDocumentType::CustomerInvoice],
         };
-        $labels = $this->articleLabels($dto->role);
+        $labels = $this->articleLabels($userDto->role);
 
         $documents = RequestDocument::query()
             ->whereIn('type', array_map(static fn (RequestDocumentType $type): string => $type->value, $types))
             ->whereNotNull('paid_at')
-            ->whereIn('repair_request_id', RepairRequest::forUser($dto)->select('id'))
+            ->whereIn('repair_request_id', RepairRequest::forUser($userDto)->select('id'))
             ->with(['repairRequest.stationRecord', 'repairRequest.customerOrganization', 'repairRequest.vehicleRecord', 'seller', 'buyer'])
             ->get();
 
-        return $documents->map(function (RequestDocument $doc) use ($dto, $labels): array {
-            $request = $doc->repairRequest;
+        return $documents->map(function (RequestDocument $doc) use ($userDto, $labels): array {
+            $req = $doc->repairRequest;
             $isCustomerInvoice = $doc->type === RequestDocumentType::CustomerInvoice;
             $article = $isCustomerInvoice ? 'customer_payment' : 'station_payment';
-            $incoming = match ($dto->role) {
+            $incoming = match ($userDto->role) {
                 UserRole::Manager => $isCustomerInvoice,
                 UserRole::Station => true,
                 UserRole::Customer => false,
             };
             $counterparty = $incoming ? $doc->buyer?->name : $doc->seller?->name;
-            $vehicle = $request?->vehicleRecord;
+            $vehicle = $req?->vehicleRecord;
 
             return [
                 'id' => 'request:' . $doc->uuid,
@@ -118,14 +121,14 @@ final class CashFlowReportService
                 'articleLabel' => $labels[$article],
                 'source' => 'request',
                 'document' => $doc->number,
-                'requestId' => $request?->uuid,
-                'requestNumber' => $request?->number,
+                'requestId' => $req?->uuid,
+                'requestNumber' => $req?->number,
                 'stockDocumentId' => null,
                 'stockDocumentType' => null,
                 'counterparty' => (string) ($counterparty ?? ''),
                 // СТО не видит наименование Заказчика (как в карточке ЗР и отчёте по ЗР).
-                'customer' => $dto->role === UserRole::Station ? '' : (string) ($request?->customerOrganization?->name ?? ''),
-                'station' => (string) ($request?->stationRecord?->name ?? ''),
+                'customer' => $userDto->role === UserRole::Station ? '' : (string) ($req?->customerOrganization?->name ?? ''),
+                'station' => (string) ($req?->stationRecord?->name ?? ''),
                 'vehicle' => $vehicle ? trim($vehicle->plate . ' ' . $vehicle->make . ' ' . $vehicle->model) : '',
                 'method' => '',
                 'comment' => (string) ($doc->paid_comment ?? ''),
@@ -135,30 +138,29 @@ final class CashFlowReportService
     }
 
     /** @return list<array<string, mixed>> */
-    private function stockPayments(User $user): array
+    private function stockPayments(UserDto $userDto): array
     {
-        $role = $user->role;
-        $labels = $this->articleLabels($role);
+        $labels = $this->articleLabels($userDto->role);
         $query = StockDocumentPayment::query()
             ->with(['document.supplier', 'document.customer', 'document.vehicle', 'document.organization']);
 
-        if ($role === UserRole::Customer) {
+        if ($userDto->role === UserRole::Customer) {
             $query->whereHas('document', fn ($doc) => $doc
                 ->where('type', StockDocument::SALE)
-                ->where('customer_organization_id', $user->organization_id));
+                ->where('customer_organization_id', $userDto->organizationId));
         } else {
-            $query->whereHas('document', fn ($doc) => $doc->where('organization_id', $user->organization_id));
+            $query->whereHas('document', fn ($doc) => $doc->where('organization_id', $userDto->organizationId));
         }
 
-        return $query->get()->map(function (StockDocumentPayment $payment) use ($role, $labels): array {
+        return $query->get()->map(function (StockDocumentPayment $payment) use ($userDto, $labels): array {
             $doc = $payment->document;
             $isReceipt = $doc->type === StockDocument::RECEIPT;
             $article = $isReceipt ? 'receipt_payment' : 'sale_payment';
-            $incoming = !$isReceipt && $role !== UserRole::Customer;
+            $incoming = !$isReceipt && $userDto->role !== UserRole::Customer;
             $seller = $doc->organization;
             $counterparty = match (true) {
                 $isReceipt => $doc->supplier?->name,
-                $role === UserRole::Customer => $seller?->name,
+                $userDto->role === UserRole::Customer => $seller?->name,
                 default => $doc->customer?->name,
             };
             $vehicle = $doc->vehicle;
@@ -177,8 +179,8 @@ final class CashFlowReportService
                 'stockDocumentId' => $doc->uuid,
                 'stockDocumentType' => $doc->type,
                 'counterparty' => (string) ($counterparty ?? ''),
-                'customer' => $isReceipt ? '' : (string) ($role === UserRole::Customer ? '' : ($doc->customer?->name ?? '')),
-                'station' => $role === UserRole::Customer && $seller?->kind?->value === 'station' ? (string) $seller->name : '',
+                'customer' => $isReceipt ? '' : (string) ($userDto->role === UserRole::Customer ? '' : ($doc->customer?->name ?? '')),
+                'station' => $userDto->role === UserRole::Customer && $seller?->kind?->value === 'station' ? (string) $seller->name : '',
                 'vehicle' => $vehicle ? trim($vehicle->plate . ' ' . $vehicle->make . ' ' . $vehicle->model) : '',
                 'method' => StockDocumentPayment::METHODS[$payment->method] ?? '',
                 'comment' => (string) ($payment->comment ?? ''),

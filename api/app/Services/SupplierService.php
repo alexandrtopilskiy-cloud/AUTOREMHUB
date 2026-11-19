@@ -40,17 +40,19 @@ final class SupplierService
         'vatRate',
     ];
 
-    public function write(User $user, ?Supplier $supplier, array $values): Supplier
+    public function write(UserDto $userDto, ?Supplier $supplier, array $values): Supplier
     {
-        $dto = UserDto::fromUserModel($user);
-
-        if (!in_array($dto->role, [UserRole::Manager, UserRole::Station], true)) {
+        if (!in_array($userDto->role, [UserRole::Manager, UserRole::Station], true)) {
             throw new ApiException(403, 'FORBIDDEN', 'Поставщиков создают УК и СТО');
         }
-        return DB::transaction(function () use ($dto, $supplier, $values): Supplier {
+        return DB::transaction(function () use ($userDto, $supplier, $values): Supplier {
             if ($supplier !== null) {
-                $supplier = Supplier::query()->where('tenant_id', $dto->tenantId)->whereKey($supplier->id)->lockForUpdate()->firstOrFail();
-                if ($dto->role === UserRole::Station && $supplier->created_by_organization_id !== $dto->organizationId) {
+                $supplier = Supplier::query()
+                    ->where('tenant_id', $userDto->tenantId)
+                    ->whereKey($supplier->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                if ($userDto->role === UserRole::Station && $supplier->created_by_organization_id !== $userDto->organizationId) {
                     throw new ApiException(403, 'FORBIDDEN', 'СТО может изменять только созданных своей организацией поставщиков');
                 }
             }
@@ -113,7 +115,7 @@ final class SupplierService
                 }
             }
             unset($contact);
-            $model = $supplier ?? new Supplier(['tenant_id' => $dto->tenantId, 'created_by_organization_id' => $dto->organizationId]);
+            $model = $supplier ?? new Supplier(['tenant_id' => $userDto->tenantId, 'created_by_organization_id' => $userDto->organizationId]);
             $before = $model->exists ? $model->attributesToArray() : null;
             $model->fill([
                 'name' => trim($data['name']), 'tax_id' => $data['taxId'],
@@ -122,7 +124,7 @@ final class SupplierService
                 'contact' => trim($data['contacts'][0]['lastName'] . ' ' . $data['contacts'][0]['firstName']),
                 'active' => $data['active'] ?? true,
             ])->save();
-            app(CatalogAuditService::class)->record($dto, CatalogKind::Suppliers, $model, $before === null ? 'create' : 'update', $before, $model->attributesToArray());
+            app(CatalogAuditService::class)->record($userDto, CatalogKind::Suppliers, $model, $before === null ? 'create' : 'update', $before, $model->attributesToArray());
 
             return $model;
         });

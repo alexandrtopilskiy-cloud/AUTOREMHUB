@@ -46,22 +46,21 @@ final class VehicleCatalogService
      *
      * @return array<string, mixed>
      */
-    public function create(User $user, array $payload): array
+    public function create(UserDto $userDto, array $payload): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->assertEditor($dto->role);
-        $payload = $this->validatedPayload($user, $payload, true);
+        $this->assertEditor($userDto->role);
+        $payload = $this->validatedPayload($userDto, $payload, true);
 
-        if ($dto->role === UserRole::Customer) {
-            return $this->propose($dto, null, 'create', $payload);
+        if ($userDto->role === UserRole::Customer) {
+            return $this->propose($userDto, null, 'create', $payload);
         }
 
-        return DB::transaction(function () use ($dto, $payload): array {
-            $organization = $this->organizationForPayload($dto->tenantId, $payload);
-            $vehicle = $this->applyCreate($dto, $organization, $payload);
+        return DB::transaction(function () use ($userDto, $payload): array {
+            $organization = $this->organizationForPayload($userDto->tenantId, $payload);
+            $vehicle = $this->applyCreate($userDto, $organization, $payload);
 
             return [
-                'record'          => $this->vehicleService->present($vehicle, $dto),
+                'record'          => $this->vehicleService->present($vehicle, $userDto),
                 'pendingApproval' => false,
             ];
         });
@@ -72,28 +71,27 @@ final class VehicleCatalogService
      *
      * @return array<string, mixed>
      */
-    public function update(User $user, string $id, array $payload): array
+    public function update(UserDto $userDto, string $id, array $payload): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->assertEditor($dto->role);
-        $vehicle = $this->resolveVehicle($dto, $id);
+        $this->assertEditor($userDto->role);
+        $vehicle = $this->resolveVehicle($userDto, $id);
         $this->documentLocks->assertAvailable(
-            $dto,
+            $userDto,
             'catalog_record',
             CatalogKind::Vehicles->value . ':' . $vehicle->uuid,
         );
-        $payload = $this->validatedPayload($user, $payload, false);
+        $payload = $this->validatedPayload($userDto, $payload, false);
 
-        if ($dto->role === UserRole::Customer) {
-            return $this->updateAsCustomer($dto, $vehicle, $payload);
+        if ($userDto->role === UserRole::Customer) {
+            return $this->updateAsCustomer($userDto, $vehicle, $payload);
         }
 
-        return DB::transaction(function () use ($dto, $vehicle, $payload): array {
+        return DB::transaction(function () use ($userDto, $vehicle, $payload): array {
             $vehicle = Vehicle::query()->whereKey($vehicle->id)->lockForUpdate()->firstOrFail();
-            $vehicle = $this->applyUpdate($dto, $vehicle, $payload);
+            $vehicle = $this->applyUpdate($userDto, $vehicle, $payload);
 
             return [
-                'record'          => $this->vehicleService->present($vehicle, $dto),
+                'record'          => $this->vehicleService->present($vehicle, $userDto),
                 'pendingApproval' => false,
             ];
         });
@@ -102,24 +100,26 @@ final class VehicleCatalogService
     /**
      * @return array<string, mixed>
      */
-    public function delete(User $user, string $id): array
+    public function delete(UserDto $userDto, string $id): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->assertEditor($dto->role);
-        $vehicle = $this->resolveVehicle($dto, $id);
+        $this->assertEditor($userDto->role);
+        $vehicle = $this->resolveVehicle($userDto, $id);
         $this->documentLocks->assertAvailable(
-            $dto,
+            $userDto,
             'catalog_record',
             CatalogKind::Vehicles->value . ':' . $vehicle->uuid,
         );
 
-        if ($dto->role === UserRole::Customer) {
-            return $this->propose($dto, $vehicle, 'delete', []);
+        if ($userDto->role === UserRole::Customer) {
+            return $this->propose($userDto, $vehicle, 'delete', []);
         }
 
-        return DB::transaction(function () use ($dto, $vehicle): array {
-            $vehicle = Vehicle::query()->whereKey($vehicle->id)->lockForUpdate()->firstOrFail();
-            $this->applyDelete($dto, $vehicle);
+        return DB::transaction(function () use ($userDto, $vehicle): array {
+            $vehicle = Vehicle::query()
+                ->whereKey($vehicle->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->applyDelete($userDto, $vehicle);
 
             return [
                 'record'          => null,
@@ -131,14 +131,9 @@ final class VehicleCatalogService
     /**
      * @return array<string, mixed>
      */
-    public function review(
-        User $user,
-        string $id,
-        string $decision,
-        string $comment,
-    ): array {
-        $dto = UserDto::fromUserModel($user);
-        if ($dto->role !== UserRole::Manager) {
+    public function review(UserDto $userDto, string $id, string $decision, string $comment): array
+     {
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(403, 'FORBIDDEN', 'Согласование доступно только УК');
         }
 
@@ -147,14 +142,14 @@ final class VehicleCatalogService
         }
 
         $this->documentLocks->assertAvailable(
-            $dto,
+            $userDto,
             'catalog_record',
             'vehicleApprovals:' . $id,
         );
 
-        return DB::transaction(function () use ($dto, $id, $decision, $comment): array {
+        return DB::transaction(function () use ($userDto, $id, $decision, $comment): array {
             $change = VehicleChangeRequest::query()
-                ->where('tenant_id', $dto->tenantId)
+                ->where('tenant_id', $userDto->tenantId)
                 ->where('uuid', $id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -169,13 +164,13 @@ final class VehicleCatalogService
                 $organization = $change->organization;
 
                 $vehicle = match ($change->action) {
-                    'create' => $this->applyCreate($dto, $organization, $change->payload),
+                    'create' => $this->applyCreate($userDto, $organization, $change->payload),
                     'update' => $this->applyUpdate(
-                        $dto,
+                        $userDto,
                         Vehicle::query()->whereKey($vehicle?->id)->lockForUpdate()->firstOrFail(),
                         $change->payload,
                     ),
-                    'delete' => $this->approveDelete($dto, $vehicle),
+                    'delete' => $this->approveDelete($userDto, $vehicle),
                     default  => throw new ApiException(
                         422,
                         'VALIDATION_ERROR',
@@ -188,13 +183,13 @@ final class VehicleCatalogService
 
             $before = $change->attributesToArray();
             $change->status = $decision;
-            $change->reviewed_by = $dto->userId;
+            $change->reviewed_by = $userDto->userId;
             $change->review_comment = trim($comment);
             $change->reviewed_at = now();
             $change->save();
 
             $this->audit->record(
-                $dto,
+                $userDto,
                 'vehicleApprovals',
                 $change,
                 $decision,
@@ -212,15 +207,15 @@ final class VehicleCatalogService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function pending(User $user): array
+    public function pending(UserDto $userDto): array
     {
-        if ($user->role !== UserRole::Manager) {
+        if ($userDto->role !== UserRole::Manager) {
             return [];
         }
 
         return VehicleChangeRequest::query()
             ->with(['organization', 'vehicle', 'requester'])
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $userDto->tenantId)
             ->where('status', 'pending')
             ->oldest('created_at')
             ->get()
@@ -231,16 +226,16 @@ final class VehicleCatalogService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function pendingForCustomer(User $user): array
+    public function pendingForCustomer(UserDto $userDto): array
     {
-        if ($user->role !== UserRole::Customer) {
+        if ($userDto->role !== UserRole::Customer) {
             return [];
         }
 
         return VehicleChangeRequest::query()
             ->with(['organization', 'vehicle', 'requester'])
-            ->where('tenant_id', $user->tenantId())
-            ->where('organization_id', $user->organization_id)
+            ->where('tenant_id', $userDto->tenantId)
+            ->where('organization_id', $userDto->organizationId)
             ->where('status', 'pending')
             ->oldest('created_at')
             ->get()
@@ -300,9 +295,9 @@ final class VehicleCatalogService
         }
     }
 
-    private function resolveVehicle(UserDto $dto, string $id): Vehicle
+    private function resolveVehicle(UserDto $userDto, string $id): Vehicle
     {
-        return Vehicle::forUser($dto)
+        return Vehicle::forUser($userDto)
             ->where('uuid', $id)
             ->firstOrFail();
     }
@@ -312,11 +307,11 @@ final class VehicleCatalogService
      *
      * @return array<string, mixed>
      */
-    private function validatedPayload(User $user, array $payload, bool $create): array
+    private function validatedPayload(UserDto $userDto, array $payload, bool $create): array
     {
         $payload = $this->normalizeVehiclePayload($payload);
 
-        if ($user->role === UserRole::Customer) {
+        if ($userDto->role === UserRole::Customer) {
             unset(
                 $payload['organizationId'],
                 $payload['laborHourRate'],
@@ -347,7 +342,7 @@ final class VehicleCatalogService
             'year'                     => ['nullable', 'integer', 'between:1900,2100'],
             'baselineServiceMileage'   => ['nullable', 'integer', 'min:0', 'max:999999999'],
             'baselineServiceAt'        => ['nullable', 'date'],
-            'organizationId'           => $user->role === UserRole::Manager
+            'organizationId'           => $userDto->role === UserRole::Manager
                 ? [$create ? 'required' : 'sometimes', 'uuid']
                 : ['sometimes'],
             'laborHourRateOfficial' => ['nullable', 'numeric', 'min:0', 'max:1000000000', Input::numeric(2)],
@@ -451,9 +446,9 @@ final class VehicleCatalogService
      *
      * @return array<string, mixed>
      */
-    private function updateAsCustomer(UserDto $dto, Vehicle $vehicle, array $payload): array
+    private function updateAsCustomer(UserDto $userDto, Vehicle $vehicle, array $payload): array
     {
-        return DB::transaction(function () use ($dto, $vehicle, $payload): array {
+        return DB::transaction(function () use ($userDto, $vehicle, $payload): array {
             $vehicle = Vehicle::query()
                 ->whereKey($vehicle->id)
                 ->lockForUpdate()
@@ -483,15 +478,15 @@ final class VehicleCatalogService
             }
 
             if ($direct !== []) {
-                $vehicle = $this->applyUpdate($dto, $vehicle, $direct);
+                $vehicle = $this->applyUpdate($userDto, $vehicle, $direct);
             }
 
             if ($approval !== []) {
-                return $this->propose($dto, $vehicle, 'update', $approval);
+                return $this->propose($userDto, $vehicle, 'update', $approval);
             }
 
             return [
-                'record'          => $this->vehicleService->present($vehicle, $dto),
+                'record'          => $this->vehicleService->present($vehicle, $userDto),
                 'pendingApproval' => false,
             ];
         });
@@ -787,9 +782,9 @@ final class VehicleCatalogService
      *
      * @return array<string, mixed>
      */
-    private function propose(UserDto $dto, ?Vehicle $vehicle, string $action, array $payload): array
+    private function propose(UserDto $userDto, ?Vehicle $vehicle, string $action, array $payload): array
     {
-        return DB::transaction(function () use ($dto, $vehicle, $action, $payload): array {
+        return DB::transaction(function () use ($userDto, $vehicle, $action, $payload): array {
             if ($vehicle !== null) {
                 $pending = VehicleChangeRequest::query()
                     ->where('vehicle_id', $vehicle->id)
@@ -804,17 +799,17 @@ final class VehicleCatalogService
             }
 
             $change = VehicleChangeRequest::query()->create([
-                'tenant_id'      => $dto->tenantId,
-                'organization_id' => $dto->organizationId,
+                'tenant_id'      => $userDto->tenantId,
+                'organization_id' => $userDto->organizationId,
                 'vehicle_id'     => $vehicle?->id,
-                'requested_by'   => $dto->userId,
+                'requested_by'   => $userDto->userId,
                 'action'         => $action,
                 'status'         => 'pending',
                 'payload'        => $payload,
             ]);
 
             $this->audit->record(
-                $dto,
+                $userDto,
                 'vehicleApprovals',
                 $change,
                 'requested_' . $action,
@@ -826,14 +821,14 @@ final class VehicleCatalogService
 
             $presentedPayload = $this->presentPayloadPeople(
                 $payload,
-                $dto->organizationId,
+                $userDto->organizationId,
             );
             $record = $vehicle !== null
-                ? $this->vehicleService->present($vehicle, $dto)
+                ? $this->vehicleService->present($vehicle, $userDto)
                 : array_merge($presentedPayload, [
                     'id'          => $change->uuid,
                     'kind'        => CatalogKind::Vehicles->value,
-                    'company'     => $dto->organizationName,
+                    'company'     => $userDto->organizationName,
                     'contactNames' => collect($presentedPayload['contacts'] ?? [])
                         ->pluck('fullName')
                         ->implode(', '),
@@ -857,7 +852,7 @@ final class VehicleCatalogService
     /**
      * @param array<string, mixed> $payload
      */
-    private function applyCreate(UserDto $dto, Organization $organization, array $payload): Vehicle
+    private function applyCreate(UserDto $userDto, Organization $organization, array $payload): Vehicle
     {
         $payload = $this->canonicalizeVehicleReference(
             $this->normalizeVehiclePayload($payload),
@@ -869,7 +864,7 @@ final class VehicleCatalogService
         $vehicleModelId = $this->vehicleModelId($payload);
 
         $vehicle = Vehicle::query()->create(array_merge([
-            'tenant_id'                 => $dto->tenantId,
+            'tenant_id'                 => $userDto->tenantId,
             'organization_id'           => $organization->id,
             'name'                      => trim($make . ' ' . $model),
             'make'                      => $make,
@@ -892,7 +887,7 @@ final class VehicleCatalogService
         $this->syncPeople($vehicle, PersonKind::Driver, $payload['driverPersonIds'] ?? []);
 
         $this->audit->record(
-            $dto,
+            $userDto,
             CatalogKind::Vehicles,
             $vehicle,
             'create',
@@ -906,7 +901,7 @@ final class VehicleCatalogService
     /**
      * @param array<string, mixed> $payload
      */
-    private function applyUpdate(UserDto $dto, Vehicle $vehicle, array $payload): Vehicle
+    private function applyUpdate(UserDto $userDto, Vehicle $vehicle, array $payload): Vehicle
     {
         $payload = $this->canonicalizeVehicleReference(
             $this->normalizeVehiclePayload($payload),
@@ -914,7 +909,7 @@ final class VehicleCatalogService
         $before = $this->auditPayload($vehicle);
 
         if (isset($payload['organizationId'])) {
-            $organization = $this->organizationForPayload($dto->tenantId, $payload);
+            $organization = $this->organizationForPayload($userDto->tenantId, $payload);
 
             if ($organization->id !== $vehicle->organization_id) {
                 $used = RepairRequest::query()->where('vehicle_id', $vehicle->id)->exists();
@@ -974,7 +969,7 @@ final class VehicleCatalogService
         }
 
         $this->audit->record(
-            $dto,
+            $userDto,
             CatalogKind::Vehicles,
             $vehicle,
             'update',
@@ -985,14 +980,14 @@ final class VehicleCatalogService
         return $vehicle->refresh();
     }
 
-    private function applyDelete(UserDto $dto, Vehicle $vehicle): void
+    private function applyDelete(UserDto $userDto, Vehicle $vehicle): void
     {
         $before = $this->auditPayload($vehicle);
         $vehicle->active = false;
         $vehicle->save();
 
         $this->audit->record(
-            $dto,
+            $userDto,
             CatalogKind::Vehicles,
             $vehicle,
             'delete',
@@ -1001,14 +996,14 @@ final class VehicleCatalogService
         );
     }
 
-    private function approveDelete(UserDto $dto, ?Vehicle $vehicle): ?Vehicle
+    private function approveDelete(UserDto $userDto, ?Vehicle $vehicle): ?Vehicle
     {
         if ($vehicle === null) {
             Input::fail('Автомобиль для удаления не найден');
         }
 
         $vehicle = Vehicle::query()->whereKey($vehicle->id)->lockForUpdate()->firstOrFail();
-        $this->applyDelete($dto, $vehicle);
+        $this->applyDelete($userDto, $vehicle);
 
         return $vehicle;
     }

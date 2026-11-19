@@ -28,38 +28,38 @@ final class EdoPowerOfAttorneyService
         private readonly EdoDispatcher $dispatcher,
     ) {}
 
-    public function sendPowerOfAttorney(RepairRequest $request): EdoDocument
+    public function sendPowerOfAttorney(RepairRequest $req): EdoDocument
     {
-        return DB::transaction(function () use ($request) {
-            $sender = $request->customerOrganization; // Заказчик
-            $receiver = $request->stationRecord?->organization; // СТО
+        return DB::transaction(function () use ($req) {
+            $sender = $req->customerOrganization; // Заказчик
+            $receiver = $req->stationRecord?->organization; // СТО
 
             if (!$sender) {
-                throw new \RuntimeException("У заявки {$request->number} не найден Заказчик (отправитель)");
+                throw new \RuntimeException("У заявки {$req->number} не найден Заказчик (отправитель)");
             }
             if (!$receiver) {
-                throw new \RuntimeException("У заявки {$request->number} не назначена СТО (получатель)");
+                throw new \RuntimeException("У заявки {$req->number} не назначена СТО (получатель)");
             }
 
             $provider = $this->dispatcher->forOrganization($sender);
 
-            $document = $request->edoDocuments()
+            $document = $req->edoDocuments()
                 ->firstOrCreate(
                 ['document_type' => EdoDocumentType::PowerOfAttorney->value],
                 [
-                    'tenant_id'         => $request->tenant_id,
+                    'tenant_id'         => $req->tenant_id,
                     'organization_id'   => $sender->id, // Кто отправляет
                     'counterparty_id'   => $receiver->id, // Кому отправляем
                     'provider'          => $this->dispatcher->providerFor($sender)->value,
-                    'number'            => $request->numberWithPrefix('DV'),
+                    'number'            => $req->numberWithPrefix('DV'),
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
                     'source_type'       => RepairRequest::class,
-                    'source_id'         => $request->id,
+                    'source_id'         => $req->id,
                 ]
             );
 
-            $structuredRequest = $this->builder->build($request, $document, $sender, $receiver);
+            $structuredRequest = $this->builder->build($req, $document, $sender, $receiver);
 
             $fileContent = base64_decode($structuredRequest->meta['file_content']);
             $fileName = $structuredRequest->meta['file_name'];
@@ -78,13 +78,15 @@ final class EdoPowerOfAttorneyService
             );
 
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
+            /** @var User $user */
+            $user = auth();
 
             // 1. Создаем запись в Attachment, чтобы файл появился в карточке заявки
             $attachment = Attachment::create([
                 'uuid'                      => Str::uuid(),
-                'repair_request_id'         => $request->id,
-                'uploaded_by'               => auth()->id() ?? $request->created_by, // Или системный пользователь
-                'request_status_period_id'  => $request->periods()->whereNull('exited_at')->first()?->id,
+                'repair_request_id'         => $req->id,
+                'uploaded_by'               => $user->id() ?? $req->created_by, // Или системный пользователь
+                'request_status_period_id'  => $req->periods()->whereNull('exited_at')->first()?->id,
                 'disk'                      => 'local',
                 'object_key'                => $objectKey,
                 'original_name'             => $structuredRequest->meta['file_name'],

@@ -7,7 +7,6 @@ namespace App\Services\Edo;
 use App\DTO\EdoFile;
 use App\DTO\EdoSignature;
 use App\Enums\AttachmentMime;
-use App\Enums\Edo\EdoDocumentStatus;
 use App\Enums\Edo\EdoDocumentType;
 use App\Models\EdoDocument;
 use App\Models\Organization;
@@ -60,7 +59,7 @@ final class EdoAgentContractService
             // Создаем фейковую подпись (для реального ЭДО здесь будут данные УКЭП)
             $signatureDto = new EdoSignature(
                 content: 'mock-signature',
-                certificateFingerprint : null
+                certificateFingerprint : ''
             );
 
             // 👇 ВЫЗЫВАЕМ НАШ ОРКЕСТРАТОР

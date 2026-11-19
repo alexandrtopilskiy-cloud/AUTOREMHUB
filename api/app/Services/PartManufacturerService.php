@@ -19,13 +19,12 @@ final class PartManufacturerService
     {
     }
 
-    public function write(User $user, ?PartManufacturer $record, array $payload): array
+    public function write(UserDto $userDto, ?PartManufacturer $record, array $payload): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->authorize($user);
+        $this->authorize($userDto);
 
         if ($record) {
-            app(DocumentLockService::class)->assertAvailable($dto, 'catalog_record', 'partManufacturers:' . $record->uuid);
+            app(DocumentLockService::class)->assertAvailable($userDto, 'catalog_record', 'partManufacturers:' . $record->uuid);
         }
         Input::validate($payload, [
             'name' => ['required', 'string', 'max:200'],
@@ -37,15 +36,15 @@ final class PartManufacturerService
             Input::fail('Укажите производителя', 'name');
         }
 
-        return DB::transaction(function () use ($dto, $record, $payload, $name): array {
+        return DB::transaction(function () use ($userDto, $record, $payload, $name): array {
             DB::table('tenants')
-                ->where('id', $dto->tenantId)
+                ->where('id', $userDto->tenantId)
                 ->lockForUpdate()
                 ->first();
             if ($record) {
                 $record = PartManufacturer::query()
                     ->whereKey($record->id)
-                    ->where('tenant_id', $dto->tenantId)
+                    ->where('tenant_id', $userDto->tenantId)
                     ->lockForUpdate()
                     ->firstOrFail();
 
@@ -59,7 +58,7 @@ final class PartManufacturerService
             }
 
             $normalized = mb_strtolower($name);
-            $duplicate = PartManufacturer::query()->where('tenant_id', $dto->tenantId)->where(function ($query) use ($normalized): void {
+            $duplicate = PartManufacturer::query()->where('tenant_id', $userDto->tenantId)->where(function ($query) use ($normalized): void {
                 $query->where('normalized_name', $normalized)->orWhereRaw('LOWER(proposed_name) = ?', [$normalized]);
             })->when($record, fn ($query) => $query->where('id', '!=', $record->id))->exists();
             if ($duplicate) {
@@ -68,12 +67,12 @@ final class PartManufacturerService
 
             $before = $record?->attributesToArray();
             $record ??= new PartManufacturer([
-                'tenant_id' => $dto->tenantId,
+                'tenant_id' => $userDto->tenantId,
                 'name' => $name,
                 'normalized_name' => $normalized,
             ]);
 
-            if ($dto->role === UserRole::Manager) {
+            if ($userDto->role === UserRole::Manager) {
                 $record->fill([
                     'name' => $name,
                     'normalized_name' => $normalized,
@@ -85,7 +84,7 @@ final class PartManufacturerService
                     'status' => $record->exists ? $record->status : 'pending',
                     'proposed_name' => $name,
                     'proposed_active' => $payload['active'] ?? true,
-                    'requested_by' => $dto->userId,
+                    'requested_by' => $userDto->userId,
                 ]);
             }
 
@@ -93,18 +92,18 @@ final class PartManufacturerService
             $record->save();
 
             $this->audit->record(
-                dto: $dto,
+                userDto: $userDto,
                 kind: 'partManufacturers',
                 record: $record,
-                action: $dto->role === UserRole::Manager ? 'save' : 'propose',
+                action: $userDto->role === UserRole::Manager ? 'save' : 'propose',
                 before: $before,
                 after: $record->attributesToArray(),
             );
 
-            if ($dto->role === UserRole::Station) {
+            if ($userDto->role === UserRole::Station) {
                 $managers = User::query()
                     ->where('role', 'manager')
-                    ->whereHas('organization', fn ($q) => $q->where('tenant_id', $dto->tenantId))
+                    ->whereHas('organization', fn ($q) => $q->where('tenant_id', $userDto->tenantId))
                     ->get();
                 foreach ($managers as $manager) {
                     RequestNotification::query()->create([
@@ -116,34 +115,32 @@ final class PartManufacturerService
                     ]);
                 }
             }
-            return $this->present($record, $dto);
+            return $this->present($record, $userDto);
         });
     }
 
-    public function review(User $user, string $id, array $payload): array
+    public function review(UserDto $userDto, string $id, array $payload): array
     {
-        $dto = UserDto::fromUserModel($user);
-
-        if ($dto->role !== UserRole::Manager) {
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(
                 status: 403,
                 errorCode: 'FORBIDDEN',
                 message: 'Изменения производителей согласует УК',
             );
         }
-        app(DocumentLockService::class)->assertAvailable($dto, 'catalog_record', 'partManufacturers:' . $id);
+        app(DocumentLockService::class)->assertAvailable($userDto, 'catalog_record', 'partManufacturers:' . $id);
         Input::validate($payload, [
             'decision' => ['required', 'in:approved,rejected'],
             'revision' => ['required', 'integer'],
         ]);
 
-        return DB::transaction(function () use ($dto, $id, $payload): array {
+        return DB::transaction(function () use ($userDto, $id, $payload): array {
             DB::table('tenants')
-                ->where('id', $dto->tenantId)
+                ->where('id', $userDto->tenantId)
                 ->lockForUpdate()
                 ->first();
             $record = PartManufacturer::query()
-                ->where('tenant_id', $dto->tenantId)
+                ->where('tenant_id', $userDto->tenantId)
                 ->where('uuid', $id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -184,8 +181,8 @@ final class PartManufacturerService
                 ]);
             }
 
-            $this->audit->record($dto, 'partManufacturers', $record, $payload['decision'], $before, $record->attributesToArray());
-            return $this->present($record, $dto);
+            $this->audit->record($userDto, 'partManufacturers', $record, $payload['decision'], $before, $record->attributesToArray());
+            return $this->present($record, $userDto);
         });
     }
 
@@ -207,9 +204,9 @@ final class PartManufacturerService
         ];
     }
 
-    private function authorize(User $user): void
+    private function authorize(UserDto $userDto): void
     {
-        if (!in_array($user->role, [UserRole::Manager, UserRole::Station], true)) {
+        if (!in_array($userDto->role, [UserRole::Manager, UserRole::Station], true)) {
             throw new ApiException(403, 'FORBIDDEN', 'Производители доступны УК и СТО');
         }
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Exceptions\ApiException;
 use App\Models\Organization;
@@ -35,29 +36,18 @@ final class WorkCatalogDomainTest extends TestCase
     use DatabaseTransactions;
 
     private Tenant $tenant;
-
     private Organization $organization;
-
     private User $manager;
-
+    private UserDto $managerDto;
     private VehicleMake $make;
-
     private VehicleModel $model;
-
     private VehicleGeneration $generation;
-
     private VehicleEngineVariant $engine;
-
     private VehicleTransmissionType $transmission;
-
     private VehicleDriveType $drive;
-
     private Vehicle $vehicle;
-
     private WorkType $work;
-
     private TimeNormApplicability $general;
-
     private TimeNormApplicability $byVehicle;
 
     protected function setUp(): void
@@ -65,11 +55,13 @@ final class WorkCatalogDomainTest extends TestCase
         parent::setUp();
 
         $this->tenant = Tenant::query()->create(['name' => 'Тест норм']);
+
         $this->organization = Organization::query()->create([
             'tenant_id' => $this->tenant->id,
             'kind' => 'manager',
             'name' => 'УК тест',
         ]);
+
         $this->manager = User::query()->create([
             'organization_id' => $this->organization->id,
             'login' => 'manager-' . Str::random(10),
@@ -78,11 +70,15 @@ final class WorkCatalogDomainTest extends TestCase
             'password' => 'test-password-long',
             'active' => true,
         ]);
+
+        $this->managerDto = UserDto::fromUserModel($this->manager);
+
         $this->make = VehicleMake::query()->create([
             'name' => 'TestMake',
             'normalized_name' => 'testmake-' . Str::random(8),
             'active' => true,
         ]);
+
         $this->model = VehicleModel::query()->create([
             'vehicle_make_id' => $this->make->id,
             'name' => 'TestModel',
@@ -90,12 +86,14 @@ final class WorkCatalogDomainTest extends TestCase
             'fingerprint' => hash('sha256', Str::random(20)),
             'active' => true,
         ]);
+
         $this->generation = VehicleGeneration::query()->create([
             'vehicle_model_id' => $this->model->id,
             'name' => 'I',
             'normalized_name' => 'i',
             'active' => true,
         ]);
+
         $this->engine = VehicleEngineVariant::query()->create([
             'vehicle_model_id' => $this->model->id,
             'vehicle_generation_id' => $this->generation->id,
@@ -103,12 +101,15 @@ final class WorkCatalogDomainTest extends TestCase
             'fingerprint' => hash('sha256', Str::random(20)),
             'active' => true,
         ]);
+
         $this->transmission = VehicleTransmissionType::query()
             ->where('code', 'automatic')
             ->firstOrFail();
+
         $this->drive = VehicleDriveType::query()
             ->where('code', 'all')
             ->firstOrFail();
+
         $this->vehicle = Vehicle::query()->create([
             'tenant_id' => $this->tenant->id,
             'organization_id' => $this->organization->id,
@@ -126,13 +127,16 @@ final class WorkCatalogDomainTest extends TestCase
             'plate_normalized' => 'А001АА77',
             'labor_hour_rate' => '2400.00',
         ]);
+
         $this->work = WorkType::query()->create([
             'tenant_id' => $this->tenant->id,
             'name' => 'Тестовая деталь - с/у',
             'group_name' => 'Прочее',
             'active' => true,
         ]);
+
         $this->general = $this->applicability('general', 'Общая');
+
         $this->byVehicle = $this->applicability('vehicle', 'По авто');
     }
 
@@ -145,7 +149,7 @@ final class WorkCatalogDomainTest extends TestCase
         $result = app(TimeNormSelectionService::class)->select($this->work, $this->vehicle);
         $this->assertSame('selected', $result['status']);
         $this->assertSame('2.000', $result['norm']->hours);
-        $saved = app(CatalogService::class)->create($this->manager, 'workTypes', [
+        $saved = app(CatalogService::class)->create($this->managerDto, 'workTypes', [
             'name' => 'Норма для поколения другого варианта', 'group' => 'Двигатель',
             'timeNorms' => [[
                 'applicabilityId' => $this->byVehicle->uuid,
@@ -251,7 +255,7 @@ final class WorkCatalogDomainTest extends TestCase
     public function test_work_directory_saves_all_vehicle_applicability_dimensions(): void
     {
         $result = app(CatalogService::class)->create(
-            $this->manager,
+            $this->managerDto,
             'workTypes',
             [
                 'name'      => 'Работа с полной применимостью',
@@ -284,7 +288,7 @@ final class WorkCatalogDomainTest extends TestCase
     public function test_work_directory_saves_generation_only_with_empty_hours(): void
     {
         $result = app(CatalogService::class)->create(
-            $this->manager,
+            $this->managerDto,
             'workTypes',
             [
                 'name'      => 'Работа для поколения',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Models\CatalogPart;
 use App\Models\Organization;
 use App\Models\OrganizationPerson;
@@ -129,7 +130,9 @@ final class CatalogServiceRecordsTest extends TestCase
      */
     public function test_station_sees_parts_and_suppliers(): void
     {
-        $records = $this->service()->records($this->station);
+        $stationDto = UserDto::fromUserModel($this->station);
+
+        $records = $this->service()->records($stationDto);
 
         $kinds = array_values(array_unique(array_column($records, 'kind')));
 
@@ -149,7 +152,9 @@ final class CatalogServiceRecordsTest extends TestCase
 
     public function test_customer_sees_only_own_vehicles_and_people(): void
     {
-        $records = $this->service()->records($this->customer);
+        $customerDto = UserDto::fromUserModel($this->customer);
+
+        $records = $this->service()->records($customerDto);
 
         $ids = array_column($records, 'id');
 
@@ -181,7 +186,9 @@ final class CatalogServiceRecordsTest extends TestCase
 
     public function test_manager_sees_stations_customers_and_catalogs(): void
     {
-        $records = $this->service()->records($this->manager);
+        $managerDto = UserDto::fromUserModel($this->manager);
+
+        $records = $this->service()->records($managerDto);
 
         $kinds = array_unique(array_column($records, 'kind'));
 

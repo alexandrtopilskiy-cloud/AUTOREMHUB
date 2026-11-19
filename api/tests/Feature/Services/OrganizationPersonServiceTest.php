@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Exceptions\ApiException;
 use App\Models\CatalogChangeEvent;
 use App\Models\Organization;
@@ -69,15 +70,18 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_records_returns_empty_initially(): void
     {
-        $this->assertSame([], $this->service()->records($this->customer));
+        $customerDto = UserDto::fromUserModel($this->customer);
+
+        $this->assertSame([], $this->service()->records($customerDto));
     }
 
     public function test_records_customer_sees_only_own_organization(): void
     {
         $this->makePerson($this->customerOrg, 'contact', '+7 999 111 11 11');
         $this->makePerson($this->managerOrg, 'contact', '+7 999 222 22 22');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $records = $this->service()->records($this->customer);
+        $records = $this->service()->records($customerDto);
 
         $this->assertCount(1, $records);
         $this->assertSame($this->customerOrg->name, $records[0]['company']);
@@ -88,8 +92,9 @@ final class OrganizationPersonServiceTest extends TestCase
         $this->makePerson($this->customerOrg, 'contact', '+7 999 111 11 11');
         $this->makePerson($this->customerOrg, 'driver', '+7 999 222 22 22');
         $this->makePerson($this->managerOrg, 'contact', '+7 999 333 33 33');
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $records = $this->service()->records($this->manager);
+        $records = $this->service()->records($managerDto);
 
         $this->assertCount(3, $records);
     }
@@ -97,15 +102,18 @@ final class OrganizationPersonServiceTest extends TestCase
     public function test_records_station_sees_nothing(): void
     {
         $this->makePerson($this->customerOrg, 'contact', '+7 999 111 11 11');
+        $stationDto = UserDto::fromUserModel($this->station);
 
-        $this->assertSame([], $this->service()->records($this->station));
+        $this->assertSame([], $this->service()->records($stationDto));
     }
 
     /* ─────────────────── create ─────────────────── */
 
     public function test_create_creates_person_with_normalized_phone(): void
     {
-        $result = $this->service()->create($this->customer, [
+        $customerDto = UserDto::fromUserModel($this->customer);
+
+        $result = $this->service()->create($customerDto, [
             'kind'       => 'contact',
             'lastName'   => 'Иванов',
             'firstName'  => 'Иван',
@@ -124,7 +132,9 @@ final class OrganizationPersonServiceTest extends TestCase
 
     public function test_create_creates_audit_event(): void
     {
-        $this->service()->create($this->customer, [
+        $customerDto = UserDto::fromUserModel($this->customer);
+
+        $this->service()->create($customerDto, [
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
@@ -132,14 +142,16 @@ final class OrganizationPersonServiceTest extends TestCase
         ]);
 
         $this->assertSame(1, CatalogChangeEvent::query()
-        ->where('catalog_kind', 'contactPersons')
+            ->where('catalog_kind', 'contactPersons')
             ->where('action', 'create')
             ->count());
     }
 
     public function test_create_driver_uses_drivers_catalog_kind(): void
     {
-        $result = $this->service()->create($this->customer, [
+        $customerDto = UserDto::fromUserModel($this->customer);
+
+        $result = $this->service()->create($customerDto, [
             'kind'      => 'driver',
             'lastName'  => 'Петров',
             'firstName' => 'Пётр',
@@ -154,8 +166,9 @@ final class OrganizationPersonServiceTest extends TestCase
         $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
         $person->active = false;
         $person->save();
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $result = $this->service()->create($this->customer, [
+        $result = $this->service()->create($customerDto, [
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
@@ -167,18 +180,19 @@ final class OrganizationPersonServiceTest extends TestCase
         $this->assertSame(1, OrganizationPerson::query()->count());
 
         $this->assertSame(1, CatalogChangeEvent::query()
-        ->where('action', 'restore')
+            ->where('action', 'restore')
             ->count());
     }
 
     public function test_create_throws_on_duplicate_active_phone(): void
     {
         $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Такой телефон уже есть в справочнике организации');
 
-        $this->service()->create($this->customer, [
+        $this->service()->create($customerDto, [
             'kind'      => 'contact',
             'lastName'  => 'Другой',
             'firstName' => 'Человек',
@@ -190,8 +204,9 @@ final class OrganizationPersonServiceTest extends TestCase
     {
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Телефон должен быть в формате');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->create($this->customer, [
+        $this->service()->create($customerDto, [
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
@@ -202,8 +217,9 @@ final class OrganizationPersonServiceTest extends TestCase
     public function test_create_forbidden_for_station(): void
     {
         $this->expectException(ApiException::class);
+        $stationDto = UserDto::fromUserModel($this->station);
 
-        $this->service()->create($this->station, [
+        $this->service()->create($stationDto, [
             'kind'      => 'contact',
             'lastName'  => 'Иванов',
             'firstName' => 'Иван',
@@ -216,8 +232,9 @@ final class OrganizationPersonServiceTest extends TestCase
     public function test_update_changes_fields(): void
     {
         $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $result = $this->service()->update($this->customer, $person->uuid, [
+        $result = $this->service()->update($customerDto, $person->uuid, [
             'lastName'  => 'Сидоров',
             'firstName' => 'Семён',
         ]);
@@ -240,8 +257,9 @@ final class OrganizationPersonServiceTest extends TestCase
             'first_name'               => 'Иван',
             'phone'                    => '+7 999 123 45 67',
         ]);
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->update($this->customer, $person->uuid, [
+        $this->service()->update($customerDto, $person->uuid, [
             'lastName'  => 'Сидоров',
             'firstName' => 'Семён',
         ]);
@@ -258,11 +276,12 @@ final class OrganizationPersonServiceTest extends TestCase
     {
         $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
         $other = $this->makePerson($this->customerOrg, 'contact', '+7 999 765 43 21');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Такой телефон уже есть в справочнике организации');
 
-        $this->service()->update($this->customer, $other->uuid, [
+        $this->service()->update($customerDto, $other->uuid, [
             'phone' => '+7 999 123 45 67',
         ]);
     }
@@ -270,10 +289,11 @@ final class OrganizationPersonServiceTest extends TestCase
     public function test_update_forbidden_for_station(): void
     {
         $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $stationDto = UserDto::fromUserModel($this->station);
 
         $this->expectException(ApiException::class);
 
-        $this->service()->update($this->station, $person->uuid, [
+        $this->service()->update($stationDto, $person->uuid, [
             'lastName' => 'Сидоров',
         ]);
     }
@@ -283,8 +303,9 @@ final class OrganizationPersonServiceTest extends TestCase
     public function test_delete_soft_deletes_person(): void
     {
         $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $result = $this->service()->delete($this->customer, $person->uuid);
+        $result = $this->service()->delete($customerDto, $person->uuid);
 
         $this->assertTrue($result['deleted']);
         $this->assertFalse($person->refresh()->active);
@@ -305,11 +326,12 @@ final class OrganizationPersonServiceTest extends TestCase
             'phone'                    => '+7 999 123 45 67',
             'active'                   => true,
         ]);
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->delete($this->customer, $person->uuid);
+        $this->service()->delete($customerDto, $person->uuid);
 
         $contact = VehicleContact::query()
-        ->where('organization_person_id', $person->id)
+            ->where('organization_person_id', $person->id)
             ->firstOrFail();
 
         $this->assertFalse($contact->active);
@@ -318,21 +340,23 @@ final class OrganizationPersonServiceTest extends TestCase
     public function test_delete_creates_audit_event(): void
     {
         $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $customerDto = UserDto::fromUserModel($this->customer);
 
-        $this->service()->delete($this->customer, $person->uuid);
+        $this->service()->delete($customerDto, $person->uuid);
 
         $this->assertSame(1, CatalogChangeEvent::query()
-        ->where('action', 'delete')
+            ->where('action', 'delete')
             ->count());
     }
 
     public function test_delete_forbidden_for_station(): void
     {
         $person = $this->makePerson($this->customerOrg, 'contact', '+7 999 123 45 67');
+        $stationDto = UserDto::fromUserModel($this->station);
 
         $this->expectException(ApiException::class);
 
-        $this->service()->delete($this->station, $person->uuid);
+        $this->service()->delete($stationDto, $person->uuid);
     }
 
     /* ─────────────────── helpers ─────────────────── */
