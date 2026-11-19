@@ -17,7 +17,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -43,18 +42,14 @@ final class GenerateClosingDocumentsJob implements ShouldQueue
         public readonly bool $validateOnly = false,
     ) {}
 
-    /**
-     * @return array<int, object>
-     */
-    public function middleware(): array
-    {
-        // Переход по маршруту и кнопка «Сформировать» не должны формировать документы одновременно.
-        return [(new WithoutOverlapping('closing-documents-' . $this->requestId))->releaseAfter(15)->expireAfter(600)];
-    }
-
     public function handle(ClosingDocumentService $documents, EdoClosingDocumentsService $edo): void
     {
         $logger = Log::channel('edo');
+        $logger->info('Generate Closing Documents', [
+            'request id' => $this->requestId,
+            'user id' => $this->userId,
+            'validate only' => $this->validateOnly
+        ]);
         $request = RepairRequest::query()->find($this->requestId);
         $user = $this->actor($request);
         $userDto = UserDto::fromUserModel($user);

@@ -130,13 +130,20 @@ final class ClosingDocumentService
     /**
      * @return array<int, RequestDocument>
      */
-    public function generateClosingDocuments(RepairRequest $request, UserDto $userDto): array
+    public function generateClosingDocuments(RepairRequest $req, UserDto $userDto): array
     {
-        $request->load(['workLines', 'parts', 'stationRecord.organization', 'customerOrganization', 'workOrder', 'vehicleRecord']);
-        $station = $request->stationRecord?->organization;
-        $customer = $request->customerOrganization;
+        $req->load([
+            'workLines',
+            'parts',
+            'stationRecord.organization',
+            'customerOrganization',
+            'workOrder',
+            'vehicleRecord'
+        ]);
+        $station = $req->stationRecord?->organization;
+        $customer = $req->customerOrganization;
         $manager = Organization::query()
-            ->where('tenant_id', $request->tenant_id)
+            ->where('tenant_id', $req->tenant_id)
             ->where('kind', OrganizationKind::Manager->value)
             ->orderBy('id')
             ->first();
@@ -145,56 +152,56 @@ final class ClosingDocumentService
             Input::fail('Для документов нужны реквизиты СТО, УК и Заказчика');
         }
 
-        $stationRows = $this->rows($request, true, $station);
-        $customerRows = $this->rows($request, false, $manager);
+        $stationRows = $this->rows($req, true, $station);
+        $customerRows = $this->rows($req, false, $manager);
         $stationTotals = $this->totals($stationRows);
         $customerTotals = $this->totals($customerRows);
-        $summary = AgentDiscount::summary($request);
-        $vehicle = $request->vehicleRecord;
+        $summary = AgentDiscount::summary($req);
+        $vehicle = $req->vehicleRecord;
         $common = [
             'request' => [
-                'number'  => $request->number,
+                'number'  => $req->number,
                 'vehicle' => trim(($vehicle?->make ?? '') . ' ' . ($vehicle?->model ?? '')),
                 'vin'     => $vehicle?->vin ?? '',
                 'plate'   => $vehicle?->plate ?? '',
-                'mileage' => $request->workOrder?->mileage,
-                'repairCompletedAt' => $request->repair_completed_at?->toISOString(),
+                'mileage' => $req->workOrder?->mileage,
+                'repairCompletedAt' => $req->repair_completed_at?->toISOString(),
             ],
         ];
 
         $documents = [];
-        $stationSide = ['seller' => $this->party($station, $request->stationRecord?->name), 'buyer' => $this->party($manager)];
+        $stationSide = ['seller' => $this->party($station, $req->stationRecord?->name), 'buyer' => $this->party($manager)];
         $customerSide = ['seller' => $this->party($manager), 'buyer' => $this->party($customer)];
 
-        $stationOrder = $this->store($request, $userDto, RequestDocumentType::StationWorkOrder, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
+        $stationOrder = $this->store($req, $userDto, RequestDocumentType::StationWorkOrder, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
             'agentDiscount' => ['percent' => $summary['percent'], 'amount' => $summary['amount'], 'fullAmount' => round($summary['stationAmount'] + $summary['amount'], 2)],
         ]);
         $documents[] = $stationOrder;
-        $documents[] = $this->store($request, $userDto, RequestDocumentType::StationUpd, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::StationUpd, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
             'basis' => $this->basis($stationOrder),
         ]);
-        $documents[] = $this->store($request, $userDto, RequestDocumentType::StationInvoice, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::StationInvoice, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
             'basis' => $this->basis($stationOrder),
         ]);
 
-        $customerOrder = $this->store($request, $userDto, RequestDocumentType::CustomerWorkOrder, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $customerOrder = $this->store($req, $userDto, RequestDocumentType::CustomerWorkOrder, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
         ]);
         $documents[] = $customerOrder;
-        $documents[] = $this->store($request, $userDto, RequestDocumentType::CustomerUpd, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::CustomerUpd, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
             'basis' => $this->basis($customerOrder),
         ]);
-        $documents[] = $this->store($request, $userDto, RequestDocumentType::CustomerInvoice, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::CustomerInvoice, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
             'basis' => $this->basis($customerOrder),
         ]);
-        $documents[] = $this->store($request, $userDto, RequestDocumentType::AgentReport, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::AgentReport, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
-            'station' => $this->party($station, $request->stationRecord?->name),
+            'station' => $this->party($station, $req->stationRecord?->name),
             'contract' => RepairRequest::documentNumber('AD', (int) $customer->id),
             'basis' => $this->basis($customerOrder),
         ]);
