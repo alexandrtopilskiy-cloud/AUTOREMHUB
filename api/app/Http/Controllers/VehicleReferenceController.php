@@ -8,6 +8,7 @@ use App\DTO\UserDto;
 use App\Http\Requests\CatalogVehicleReferenceRequest;
 use App\Http\Requests\DrivesVehicleReferenceRequest;
 use App\Http\Requests\EnginesVehicleReferenceRequest;
+use App\Http\Requests\GenerationsVehicleReferenceRequest;
 use App\Http\Requests\MakesVehicleReferenceRequest;
 use App\Http\Requests\ModelsVehicleReferenceRequest;
 use App\Http\Resources\VehicleSelectionOptionsResource;
@@ -26,7 +27,6 @@ use App\Http\Resources\VehicleTransmissionsResource;
 use App\Services\VehicleReferenceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Http\Request;
 
 final class VehicleReferenceController
 {
@@ -81,7 +81,7 @@ final class VehicleReferenceController
         );
     }
 
-    public function generations(Request $request): JsonResource
+    public function generations(GenerationsVehicleReferenceRequest $request): JsonResource
     {
         $userDto = UserDto::fromUserModel($request->user());
         $validated = $request->validated();
