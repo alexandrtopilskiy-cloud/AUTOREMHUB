@@ -14,7 +14,10 @@ final readonly class UserDto
         public int $tenantId,
         public int $organizationId,
         public UserRole $role,
-        public string $organizationName
+        public string $organizationName,
+        public string $fullName,
+        public ?string $phone,
+        public string $displayName
     ) {}
 
     /**
@@ -28,6 +31,9 @@ final readonly class UserDto
             organizationId: $user->organization_id,
             role: $user->role,
             organizationName: $user->organization->name,
+            fullName: $user->fullName(),
+            phone: $user->phone,
+            displayName: $user->display_name,
         );
     }
 }

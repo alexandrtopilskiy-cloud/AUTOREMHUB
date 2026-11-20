@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Http\Controllers;
 
+use App\DTO\UserDto;
 use App\Enums\RequestPartStatus;
 use App\Models\CatalogChangeEvent;
-use App\Models\CatalogPart;
 use App\Models\Organization;
+use App\Models\PartManufacturer;
 use App\Models\PartMovement;
 use App\Models\RepairRequest;
 use App\Models\RequestPart;
@@ -20,6 +21,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleContact;
+use App\Services\CatalogService;
 use App\Services\Workflow;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
@@ -126,8 +128,19 @@ final class PartControllerTest extends TestCase
 
     public function test_store_creates_part_and_audit(): void
     {
-        $manufacturer = \App\Models\PartManufacturer::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Bosch', 'normalized_name' => 'bosch']);
-        $catalog = app(\App\Services\CatalogService::class)->create($this->manager, 'parts', ['name' => 'Фильтр', 'article' => 'F-1', 'unit' => 'шт.', 'manufacturerId' => $manufacturer->uuid]);
+        $manufacturer = PartManufacturer::query()->create([
+                'tenant_id' => $this->tenant->id,
+                'name' => 'Bosch',
+                'normalized_name' => 'bosch'
+            ]);
+            $managerDto = UserDto::fromUserModel($this->manager);
+        $catalogService = app(CatalogService::class);
+        $catalog = $catalogService->create($managerDto, 'parts', [
+            'name' => 'Фильтр',
+            'article' => 'F-1',
+            'unit' => 'шт.',
+            'manufacturerId' => $manufacturer->uuid
+        ]);
         $request = $this->requestAtReview();
 
         $this->actingAs($this->manager);
@@ -192,7 +205,16 @@ final class PartControllerTest extends TestCase
     {
         $request = $this->requestAtStationApproval();
         $this->actingAs($this->station);
-        $this->postJson('/api/requests/' . $request['id'] . '/parts', ['revision' => $request['revision'], 'catalogPartId' => '', 'name' => 'Free text', 'article' => 'F1', 'unit' => 'шт.', 'supplierId' => $this->supplier->uuid, 'qty' => 1, 'price' => 100])->assertUnprocessable();
+        $this->postJson('/api/requests/' . $request['id'] . '/parts', [
+            'revision' => $request['revision'],
+            'catalogPartId' => '',
+            'name' => 'Free text',
+            'article' => 'F1',
+            'unit' => 'шт.',
+            'supplierId' => $this->supplier->uuid,
+            'qty' => 1,
+            'price' => 100
+        ])->assertUnprocessable();
     }
 
     public function test_update_existing_part(): void

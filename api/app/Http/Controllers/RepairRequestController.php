@@ -106,8 +106,11 @@ final class RepairRequestController
 
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+
         $this->authorize('create', RepairRequest::class);
-        $document = $this->service->create($request->user());
+        $document = $this->service->create($userDto);
 
         return (new RepairRequestResource($document))
             ->response()

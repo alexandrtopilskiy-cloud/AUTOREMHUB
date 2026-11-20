@@ -9,7 +9,6 @@ use App\Enums\ReviewContext;
 use App\Enums\UserRole;
 use App\Enums\WorkChangeStatus;
 use App\Models\RepairRequest;
-use App\Models\User;
 use App\DTO\UserDto;
 
 final class Workflow
@@ -127,10 +126,10 @@ final class Workflow
     /**
      * @return array<string, mixed>
      */
-    public static function permissions(RepairRequest $request, UserDto $dto): array
+    public static function permissions(RepairRequest $request, UserDto $userDto): array
     {
         $stage = $request->stage;
-        $role = $dto->role;
+        $role = $userDto->role;
         $ownerRole = $stage === RepairStage::Draft ? (($request->exists || $request->relationLoaded('creator') ? $request->creator?->role : null) ?? UserRole::Customer) : $stage->ownerRole();
         $isOwner = $ownerRole === $role;
         // Стадия «В работе»: изменения работ/ЗЧ согласуют УК, затем Заказчик.
@@ -192,7 +191,7 @@ final class Workflow
         return [
             'editableFields'   => $editableFields,
             'canDeleteDraft'   => $stage === RepairStage::Draft
-                && $request->created_by === $dto->userId
+                && $request->created_by === $userDto->userId
                 && !self::wasRouted($request),
             'canAdvance'       => $isOwner
                 && !$advanceBlockedByWorkChange

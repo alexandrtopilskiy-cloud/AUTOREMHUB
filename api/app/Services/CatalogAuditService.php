@@ -24,21 +24,21 @@ final class CatalogAuditService
      * @param array<string, mixed>      $after
      */
     public function record(
-        ?UserDto $dto,
+        ?UserDto $userDto,
         CatalogKind|string $kind,
         Model $record,
         string $action,
         ?array $before,
         array $after,
     ): CatalogChangeEvent {
-        $tenantId = $dto?->tenantId;
-        if ($dto === null) {
+        $tenantId = $userDto?->tenantId;
+        if ($userDto === null) {
             $tenantId = 1;
         }
 
         return CatalogChangeEvent::query()->create([
             'tenant_id'      => $tenantId,
-            'actor_id'       => $dto?->userId,
+            'actor_id'       => $userDto?->userId,
             'catalog_kind'   => $kind instanceof CatalogKind ? $kind->value : $kind,
             'record_uuid'    => $record->getAttribute('uuid'),
             'record_label'   => $this->label($after),

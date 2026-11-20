@@ -35,10 +35,10 @@ final class AttachmentController
     public function store(StoreAttachmentRequest $request, string $id): JsonResponse
     {
         $user = $request->user();
-        $dto = UserDto::fromUserModel($user);
-        $repairRequest = RepairRequest::resolveFor($dto, $id);
+        $userDto = UserDto::fromUserModel($user);
+        $repairRequest = RepairRequest::resolveFor($userDto, $id);
 
-        $this->service->flag($repairRequest, $user, 'canUpload');
+        $this->service->flag($repairRequest, $userDto, 'canUpload');
 
         $file = $request->file('file');
         $mime = $file->getMimeType();
@@ -68,7 +68,7 @@ final class AttachmentController
         }
 
         return response()->json(
-            ['request' => $this->apiPresenter->document($updated, $user)],
+            ['request' => $this->apiPresenter->document($updated, $userDto)],
             201,
         );
     }
@@ -96,21 +96,23 @@ final class AttachmentController
         string $mime,
         AttachmentPurpose $purpose,
         string $key,
-    ): RepairRequest
-    {
+    ): RepairRequest {
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+
         return $this->service->mutate(
-            $request->user(),
+            $userDto,
             (string) $repairRequest->uuid,
             (int) $request->input('revision'),
             'attachment',
-            function (RepairRequest $r) use ($request, $key, $file, $mime, $purpose): array {
-                $this->service->flag($r, $request->user(), 'canUpload');
-                $this->assertPurposeAllowedForRole($request->user()->role, $purpose);
+            function (RepairRequest $r) use ($userDto, $key, $file, $mime, $purpose): array {
+                $this->service->flag($r, $userDto, 'canUpload');
+                $this->assertPurposeAllowedForRole($userDto->role, $purpose);
                 $this->assertPurposeMatchesStage($r, $purpose);
 
                 Attachment::create([
                     'repair_request_id'         => $r->id,
-                    'uploaded_by'               => $request->user()->id,
+                    'uploaded_by'               => $userDto->userId,
                     'request_status_period_id'  => $r->periods()->whereNull('exited_at')->firstOrFail()->id,
                     'purpose'                   => $purpose,
                     'disk'                      => 'media',

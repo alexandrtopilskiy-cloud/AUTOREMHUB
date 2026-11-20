@@ -4,12 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\ApiException;
+use App\DTO\UserDto;
+use App\Http\Requests\CatalogVehicleReferenceRequest;
+use App\Http\Requests\DrivesVehicleReferenceRequest;
+use App\Http\Requests\EnginesVehicleReferenceRequest;
+use App\Http\Requests\GenerationsVehicleReferenceRequest;
+use App\Http\Requests\MakesVehicleReferenceRequest;
+use App\Http\Requests\ModelsVehicleReferenceRequest;
+use App\Http\Resources\VehicleSelectionOptionsResource;
+use App\Http\Requests\SelectionVehicleReferenceRequest;
+use App\Http\Requests\StoreCatalogVehicleReferenceRequest;
+use App\Http\Requests\StoreVehicleReferenceRequest;
+use App\Http\Requests\TransmissionsVehicleReferenceRequest;
+use App\Http\Resources\VehicleCatalogModelResource;
+use App\Http\Resources\VehicleCatalogResource;
+use App\Http\Resources\VehicleDrivesResource;
+use App\Http\Resources\VehicleEnginesResource;
+use App\Http\Resources\VehicleGenerationsResource;
+use App\Http\Resources\VehicleMakesResource;
+use App\Http\Resources\VehicleModelsResource;
+use App\Http\Resources\VehicleTransmissionsResource;
 use App\Services\VehicleReferenceService;
-use App\Support\ApiInput;
-use App\Support\DomainInput as Input;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 
 final class VehicleReferenceController
 {
@@ -18,147 +35,118 @@ final class VehicleReferenceController
     ) {
     }
 
-    public function selection(Request $request): JsonResponse
+    public function selection(SelectionVehicleReferenceRequest $request): JsonResource
     {
-        $data = Input::validate($request->query(), [
-            'makeId' => ['required', 'uuid'],
-            'step' => ['required', 'string'],
-            'filters' => ['sometimes', 'array'],
-            'filters.*' => ['string', 'max:500'],
-        ]);
-        return response()->json($this->service->selectionOptions(
-            $request->user(),
-            $data['makeId'],
-            $data['step'],
-            $data['filters'] ?? [],
-        ));
+        $userDto = UserDto::fromUserModel($request->user());
+        $data = $request->validated();
+
+        // Вызываем сервис и оборачиваем ответ в Resource
+        return new VehicleSelectionOptionsResource(
+            $this->service->selectionOptions(
+                $userDto,
+                $data['makeId'],
+                $data['step'],
+                $data['filters'] ?? [],
+            )
+        );
     }
 
-    public function makes(Request $request): JsonResponse
+    public function makes(MakesVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'search' => ['sometimes', 'string', 'max:255'],
-            'limit'  => ['sometimes', 'integer', 'between:1,100'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
 
-        return response()->json([
-            'makes' => $this->service->makes(
-                $request->user(),
+        return new VehicleMakesResource(
+            $this->service->makes(
+                $userDto,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 50),
-            ),
-        ]);
+            )
+        );
     }
 
-    public function models(Request $request): JsonResponse
+    public function models(ModelsVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'uniqueNames' => ['sometimes', 'boolean'],
-            'makeId' => ['required', 'uuid'],
-            'search' => ['sometimes', 'string', 'max:255'],
-            'limit'  => ['sometimes', 'integer', 'between:1,200'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
 
-        return response()->json([
-            'models' => $this->service->models(
-                $request->user(),
+        return new VehicleModelsResource(
+            $this->service->models(
+                $userDto,
                 (string) $validated['makeId'],
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 100),
                 (bool) ($validated['uniqueNames'] ?? false),
-            ),
-        ]);
+            )
+        );
     }
 
-    public function generations(Request $request): JsonResponse
+    public function generations(GenerationsVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'modelId' => ['required', 'uuid'],
-            'search'  => ['sometimes', 'string', 'max:255'],
-            'limit'   => ['sometimes', 'integer', 'between:1,200'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
 
-        return response()->json([
-            'generations' => $this->service->generations(
-                $request->user(),
+        return new VehicleGenerationsResource(
+            $this->service->generations(
+                $userDto,
                 (string) $validated['modelId'],
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 100),
-            ),
-        ]);
+            )
+        );
     }
 
-    public function engines(Request $request): JsonResponse
+    public function engines(EnginesVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'modelId'      => ['required', 'uuid'],
-            'generationId' => ['sometimes', 'nullable', 'uuid'],
-            'search'       => ['sometimes', 'string', 'max:255'],
-            'limit'        => ['sometimes', 'integer', 'between:1,200'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
+        $generationId = isset($validated['generationId']) && $validated['generationId'] !== null
+            ? (string) $validated['generationId']
+            : null;
 
-        return response()->json([
-            'engines' => $this->service->engines(
-                $request->user(),
+        return new VehicleEnginesResource(
+            $this->service->engines(
+                $userDto,
                 (string) $validated['modelId'],
-                isset($validated['generationId'])
-                    ? (string) $validated['generationId']
-                    : null,
+                $generationId,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 100),
-            ),
-        ]);
+            )
+        );
     }
 
-    public function transmissions(Request $request): JsonResponse
+    public function transmissions(TransmissionsVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'search' => ['sometimes', 'string', 'max:255'],
-            'limit'  => ['sometimes', 'integer', 'between:1,100'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
 
-        return response()->json([
-            'transmissions' => $this->service->transmissions(
-                $request->user(),
+        return new VehicleTransmissionsResource(
+            $this->service->transmissions(
+                $userDto,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 50),
-            ),
-        ]);
+            )
+        );
     }
 
-    public function drives(Request $request): JsonResponse
+    public function drives(DrivesVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'search' => ['sometimes', 'string', 'max:255'],
-            'limit'  => ['sometimes', 'integer', 'between:1,100'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
 
-        return response()->json([
-            'drives' => $this->service->drives(
-                $request->user(),
+        return new VehicleDrivesResource(
+            $this->service->drives(
+                $userDto,
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['limit'] ?? 50),
-            ),
-        ]);
+            )
+        );
     }
 
-    public function catalog(Request $request): JsonResponse
+    public function catalog(CatalogVehicleReferenceRequest $request): JsonResource
     {
-        $validated = Input::validate($request->query(), [
-            'page'          => ['sometimes', 'integer', 'min:1'],
-            'perPage'       => ['sometimes', 'integer', 'between:25,200'],
-            'make'          => ['sometimes', 'string', 'max:255'],
-            'model'         => ['sometimes', 'string', 'max:255'],
-            'modelYearFrom' => ['sometimes', 'string', 'max:20'],
-            'modelYearTo'   => ['sometimes', 'string', 'max:20'],
-            'engineIndex'   => ['sometimes', 'string', 'max:100'],
-            'bodyCode'      => ['sometimes', 'string', 'max:150'],
-            'horsepower'    => ['sometimes', 'string', 'max:20'],
-            'engineVolumeLiters' => ['sometimes', 'string', 'max:20'],
-            'transmission'  => ['sometimes', 'string', 'max:100'],
-            'driveType'     => ['sometimes', 'string', 'max:100'],
-            'engineType'    => ['sometimes', 'string', 'max:100'],
-        ]);
+        $userDto = UserDto::fromUserModel($request->user());
+        $validated = $request->validated();
 
         $filters = array_intersect_key($validated, array_flip([
             'make',
@@ -174,42 +162,40 @@ final class VehicleReferenceController
             'engineType',
         ]));
 
-        return response()->json($this->service->catalog(
-            $request->user(),
-            $filters,
-            (int) ($validated['page'] ?? 1),
-            (int) ($validated['perPage'] ?? 100),
-        ));
+        return new VehicleCatalogResource(
+            $this->service->catalog(
+                $userDto,
+                $filters,
+                (int) ($validated['page'] ?? 1),
+                (int) ($validated['perPage'] ?? 100),
+            )
+        );
     }
 
-    public function storeCatalog(Request $request): JsonResponse
+    public function storeCatalog(StoreCatalogVehicleReferenceRequest $request): JsonResponse
     {
-        if ($request->user()->role !== \App\Enums\UserRole::Manager) {
-            throw new ApiException(403, 'FORBIDDEN', 'Добавлять записи справочника может только УК');
-        }
-        ApiInput::only($request, ['record']);
-        $record = $request->json('record');
-        if (!is_array($record)) {
-            throw new ApiException(422, 'VALIDATION_ERROR', 'Передайте объект record');
-        }
-        return response()->json(['model' => $this->service->create($request->user(), $record, true)], 201);
+        $userDto = UserDto::fromUserModel($request->user());
+        $record = $request->validated('record');
+
+        $model = $this->service->create($userDto, $record, true);
+
+        // Возвращаем JsonResource, Laravel автоматически поставит статус 201 (Created)
+        // если использовать ->response()->setStatusCode(201), либо можно вернуть
+        // просто resource. Но для явности статуса 201:
+        return (new VehicleCatalogModelResource($model))
+            ->response()
+            ->setStatusCode(201);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StoreVehicleReferenceRequest $request): JsonResponse
     {
-        ApiInput::only($request, ['record']);
-        $record = $request->json('record');
+        $userDto = UserDto::fromUserModel($request->user());
+        $record = $request->validated('record');
 
-        if (!is_array($record)) {
-            throw new ApiException(
-                422,
-                'VALIDATION_ERROR',
-                'Передайте объект record',
-            );
-        }
+        $model = $this->service->create($userDto, $record);
 
-        return response()->json([
-            'model' => $this->service->create($request->user(), $record),
-        ], 201);
+        return (new VehicleCatalogModelResource($model))
+            ->response()
+            ->setStatusCode(201);
     }
 }

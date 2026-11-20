@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Edo;
 
+use App\DTO\UserDto;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
@@ -16,7 +17,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -42,19 +42,17 @@ final class GenerateClosingDocumentsJob implements ShouldQueue
         public readonly bool $validateOnly = false,
     ) {}
 
-    /**
-     * @return array<int, object>
-     */
-    public function middleware(): array
-    {
-        // Переход по маршруту и кнопка «Сформировать» не должны формировать документы одновременно.
-        return [(new WithoutOverlapping('closing-documents-' . $this->requestId))->releaseAfter(15)->expireAfter(600)];
-    }
-
     public function handle(ClosingDocumentService $documents, EdoClosingDocumentsService $edo): void
     {
         $logger = Log::channel('edo');
+        $logger->info('Generate Closing Documents', [
+            'request id' => $this->requestId,
+            'user id' => $this->userId,
+            'validate only' => $this->validateOnly
+        ]);
         $request = RepairRequest::query()->find($this->requestId);
+        $user = $this->actor($request);
+        $userDto = UserDto::fromUserModel($user);
 
         if ($request === null) {
             $logger->warning("Закрывающие документы: ЗР #{$this->requestId} не найдена");
@@ -73,8 +71,8 @@ final class GenerateClosingDocumentsJob implements ShouldQueue
         $documents->saveGenerationState($request, 'generating');
 
         try {
-            DB::transaction(function () use ($documents, $request): void {
-                $documents->generateClosingDocuments($request, $this->actor($request));
+            DB::transaction(function () use ($documents, $request, $userDto): void {
+                $documents->generateClosingDocuments($request, $userDto);
             });
         } catch (Throwable $e) {
             $logger->error("Закрывающие документы: ошибка формирования ЗР {$request->number}", ['message' => $e->getMessage()]);

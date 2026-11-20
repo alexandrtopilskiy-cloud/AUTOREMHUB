@@ -6,12 +6,14 @@ namespace Tests\Feature\Services;
 
 use App\DTO\TransitionDto;
 use App\DTO\UpdateRepairRequestDto;
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Enums\TransitionAction;
 use App\Exceptions\ApiException;
 use App\Models\CatalogPart;
 use App\Models\Organization;
 use App\Models\Recommendation;
+use App\Models\RecommendationItem;
 use App\Models\RepairRequest;
 use App\Models\RequestPart;
 use App\Models\RequestStatusPeriod;
@@ -24,9 +26,11 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleContact;
+use App\Services\DocumentLockService;
 use App\Services\RecommendationService;
 use App\Services\RepairRequestService;
 use App\Services\VehicleReferenceService;
+use App\Services\WorkChangeService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
@@ -191,11 +195,12 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_defer_keeps_all_snapshots_and_restores_once(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $work = $this->work();
         $part = $this->part();
         $service = app(RecommendationService::class);
         $result = $service->defer(
-            user: $this->manager,
+            userDto: $managerDto,
             key: $this->request->uuid,
             revision: 0,
             selection: ['workIds' => [$work->uuid], 'partIds' => [$part->uuid]]
@@ -237,28 +242,37 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_customer_can_defer_only_at_final_approval(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
         $work = $this->work();
         $service = app(RecommendationService::class);
         try {
-            $service->defer($this->customer, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []]);
+            $service->defer($customerDto, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []]);
             $this->fail('Read-only customer must not defer');
         } catch (ApiException $exception) {
             $this->assertSame(403, $exception->status);
         }
         $this->request->update(['stage' => RepairStage::CustomerApproval]);
-        $result = $service->defer($this->customer, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []]);
+        $result = $service->defer($customerDto, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []]);
         $this->assertSame(3, $result['request']['stage']);
         $this->assertStringEndsWith('(З)', $result['recommendation']['items'][0]['actor']);
     }
 
     public function test_customer_defers_works_and_parts_from_draft(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
+        $managerDto = UserDto::fromUserModel($this->manager);
+
         $this->request->update(['stage' => RepairStage::Draft]);
         $work = $this->work();
         $part = $this->part();
         $service = app(RecommendationService::class);
 
-        $result = $service->defer($this->customer, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => [$part->uuid]]);
+        $result = $service->defer(
+            $customerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$work->uuid], 'partIds' => [$part->uuid]]
+        );
 
         $this->assertSame(RepairStage::Draft->value, $result['request']['stage']);
         $this->assertCount(2, $result['recommendation']['items']);
@@ -269,44 +283,98 @@ final class RecommendationAndEstimateTest extends TestCase
         // Черновик Заказчика УК не видит и переносить из него не может.
         $other = $this->work();
         $this->expectException(ModelNotFoundException::class);
-        $service->defer($this->manager, $this->request->uuid, $result['request']['revision'], ['workIds' => [$other->uuid], 'partIds' => []]);
+        $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            $result['request']['revision'],
+            ['workIds' => [$other->uuid],
+            'partIds' => []
+        ]);
     }
 
     public function test_different_vin_and_foreign_tenant_are_rejected_without_moving_items(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $work = $this->work();
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$work->uuid], 'partIds' => []]
+        )['recommendation'];
         $this->request->update(['vehicle_id' => null]);
         try {
-            $service->restore($this->manager, $doc['id'], 0, array_column($doc['items'], 'id'), $this->request->uuid, 1);
+            $service->restore(
+                $this->manager,
+                $doc['id'],
+                0,
+                array_column($doc['items'], 'id'),
+                $this->request->uuid,
+                1
+            );
             $this->fail('Different VIN must fail');
         } catch (ApiException) {
-            $this->assertNull(Recommendation::query()->where('uuid', $doc['id'])->first()->items()->first()->moved_at);
+            $this->assertNull(Recommendation::query()
+                                    ->where('uuid', $doc['id'])
+                                    ->first()
+                                    ->items()
+                                    ->first()
+                                    ->moved_at
+                                );
         }
         $other = Tenant::query()->create(['name' => 'Other tenant']);
-        $org = Organization::query()->create(['tenant_id' => $other->id, 'kind' => 'manager', 'name' => 'Other']);
-        $user = User::query()->create(['organization_id' => $org->id, 'login' => Str::random(20), 'display_name' => 'Other', 'password' => bcrypt('test'), 'role' => 'manager', 'active' => true]);
-        $this->assertSame([], $service->forVehicle($user, $this->vehicle->uuid));
+        $org = Organization::query()->create([
+            'tenant_id' => $other->id,
+            'kind' => 'manager',
+            'name' => 'Other'
+        ]);
+        $user = User::query()->create([
+            'organization_id' => $org->id,
+            'login' => Str::random(20),
+            'display_name' => 'Other',
+            'password' => bcrypt('test'),
+            'role' => 'manager',
+            'active' => true
+        ]);
+        $userDto = UserDto::fromUserModel($user);
+        $this->assertSame([], $service->forVehicle($userDto, $this->vehicle->uuid));
     }
 
     public function test_ordered_part_cannot_be_deferred(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $part = $this->part();
         $part->update(['status' => 'ordered']);
         $this->expectException(ApiException::class);
-        app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [], 'partIds' => [$part->uuid]]);
+        app(RecommendationService::class)->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [], 'partIds' => [$part->uuid]]
+        );
     }
 
     public function test_vehicle_catalog_duplicate_considers_complete_variant(): void
     {
-        $payload = ['make' => 'TestMake', 'model' => 'TestModel', 'bodyCode' => 'G1', 'engineIndex' => 'E1', 'engineType' => 'Бензин', 'horsepower' => 100.0, 'engineVolumeLiters' => 1.6, 'transmission' => 'АКПП', 'driveType' => 'передний'];
+        $payload = [
+            'make' => 'TestMake',
+            'model' => 'TestModel',
+            'bodyCode' => 'G1',
+            'engineIndex' => 'E1',
+            'engineType' => 'Бензин',
+            'horsepower' => 100.0,
+            'engineVolumeLiters' => 1.6,
+            'transmission' => 'АКПП',
+            'driveType' => 'передний'
+        ];
+        $managerDto = UserDto::fromUserModel($this->manager);
         $service = app(VehicleReferenceService::class);
-        $first = $service->create($this->manager, $payload, true);
-        $second = $service->create($this->manager, array_replace($payload, ['engineIndex' => 'E2']), true);
+        $first = $service->create($managerDto, $payload, true);
+        $second = $service->create($managerDto, array_replace($payload, ['engineIndex' => 'E2']), true);
         $this->assertNotSame($first['id'], $second['id']);
         $this->expectException(ApiException::class);
-        $service->create($this->manager, $payload, true);
+        $service->create($managerDto, $payload, true);
     }
     public function test_http_common_save_and_recommendation_routes(): void
     {
@@ -343,10 +411,11 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_customer_restoration_requires_new_manager_approval(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $work = $this->work();
         $service = app(RecommendationService::class);
         $doc = $service->defer(
-            user: $this->manager,
+            userDto: $managerDto,
             key: $this->request->uuid,
             revision: 0,
             selection: ['workIds' => [$work->uuid], 'partIds' => []]
@@ -374,8 +443,14 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_any_cabinet_restores_into_open_request_up_to_in_work(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => []]
+        )['recommendation'];
 
         // Заявка у УК (этап 1), переносит Заказчик — не владелец этапа.
         $result = $service->restore($this->customer, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
@@ -386,8 +461,15 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_recommendation_document_can_be_locked_before_transfer(): void
     {
-        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
-        $lock = app(\App\Services\DocumentLockService::class)->acquire($this->manager, [
+        $managerDto = UserDto::fromUserModel($this->manager);
+
+        $doc = app(RecommendationService::class)->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => []]
+        )['recommendation'];
+        $lock = app(DocumentLockService::class)->acquire($this->manager, [
             'resourceType' => 'recommendation',
             'resourceKey' => $doc['id'],
             'label' => 'Рекомендации ТС',
@@ -397,8 +479,14 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_restore_is_closed_after_in_work_stage(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => []]
+        )['recommendation'];
         $this->request->update(['stage' => RepairStage::Ready]);
         $this->expectException(ApiException::class);
         $service->restore($this->manager, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
@@ -406,8 +494,14 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_only_customer_creates_request_from_recommendations(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => []]
+        )['recommendation'];
         foreach ([$this->manager, $this->station] as $user) {
             try {
                 $service->restore($user, $doc['id'], 0, [$doc['items'][0]['id']], null, null);
@@ -422,28 +516,42 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_in_work_restore_is_a_work_change_and_discard_returns_rows(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => []]
+        )['recommendation'];
         $this->request->update(['stage' => RepairStage::RepairInProgress]);
 
         $result = $service->restore($this->manager, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);
         $this->assertNotNull($this->request->fresh()->work_change);
         $this->assertSame([], $result['recommendation']['items']);
 
-        app(\App\Services\WorkChangeService::class)->discard($this->station, $this->request->uuid, 2);
+        app(WorkChangeService::class)->discard($this->station, $this->request->uuid, 2);
         $this->assertSame(0, $this->request->workLines()->count());
-        $item = \App\Models\RecommendationItem::query()->where('uuid', $doc['items'][0]['id'])->firstOrFail();
+        $item = RecommendationItem::query()->where('uuid', $doc['items'][0]['id'])->firstOrFail();
         $this->assertNull($item->moved_at);
         $this->assertNull($item->target_request_id);
     }
 
     public function test_selected_rows_are_deleted_from_recommendations(): void
     {
+        $customerDto = UserDto::fromUserModel($this->customer);
+        $managerDto = UserDto::fromUserModel($this->manager);
+
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => [$this->part()->uuid]])['recommendation'];
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => [$this->part()->uuid]]
+        )['recommendation'];
         $this->assertCount(2, $doc['items']);
 
-        $result = $service->deleteItems($this->customer, $doc['id'], 0, [$doc['items'][0]['id']])['recommendation'];
+        $result = $service->deleteItems($customerDto, $doc['id'], 0, [$doc['items'][0]['id']])['recommendation'];
         $this->assertCount(1, $result['items']);
         $this->assertSame(1, $result['openCount']);
         $this->assertSame(1, $result['deletedCount']);
@@ -459,7 +567,14 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_station_cannot_delete_recommendations_via_http(): void
     {
-        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$this->work()->uuid], 'partIds' => []])['recommendation'];
+        $managerDto = UserDto::fromUserModel($this->manager);
+
+        $doc = app(RecommendationService::class)->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$this->work()->uuid], 'partIds' => []]
+        )['recommendation'];
         $this->actingAs($this->station)
             ->postJson('/api/recommendations/' . $doc['id'] . '/delete-items', ['revision' => 0, 'itemIds' => [$doc['items'][0]['id']]])
             ->assertForbidden();
@@ -473,16 +588,27 @@ final class RecommendationAndEstimateTest extends TestCase
 
     public function test_catalog_manual_creation_is_manager_only_and_rejects_exact_duplicates(): void
     {
-        $payload = ['make' => 'TestMake', 'model' => 'TestModel', 'bodyCode' => 'G2'];
-        $this->actingAs($this->customer)->postJson('/api/vehicle-reference/catalog', ['record' => $payload])->assertForbidden();
-        $this->actingAs($this->manager)->postJson('/api/vehicle-reference/catalog', ['record' => $payload])->assertCreated();
-        $this->postJson('/api/vehicle-reference/catalog', ['record' => $payload])->assertConflict()->assertJsonPath('error.code', 'VEHICLE_VARIANT_DUPLICATE');
+        $payload = [
+            'make' => 'TestMake',
+            'model' => 'TestModel',
+            'bodyCode' => 'G2'
+        ];
+        $this->actingAs($this->customer)
+            ->postJson('/api/vehicle-reference/catalog', ['record' => $payload])
+            ->assertForbidden();
+        $this->actingAs($this->manager)
+            ->postJson('/api/vehicle-reference/catalog', ['record' => $payload])
+            ->assertCreated();
+        $this->postJson('/api/vehicle-reference/catalog', ['record' => $payload])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'VEHICLE_VARIANT_DUPLICATE');
     }
     public function test_changed_vehicle_vin_cannot_receive_old_recommendations(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $work = $this->work();
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []])['recommendation'];
+        $doc = $service->defer($managerDto, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []])['recommendation'];
         $this->vehicle->update(['vin' => 'TESTOTHER12345678']);
         $this->expectException(ApiException::class);
         $service->restore($this->manager, $doc['id'], 0, [$doc['items'][0]['id']], $this->request->uuid, 1);

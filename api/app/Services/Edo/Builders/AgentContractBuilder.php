@@ -21,7 +21,7 @@ final class AgentContractBuilder
 
     public function build(Organization $customer, EdoDocument $document, Tenant $ukTenant): EdoStructuredRequest
     {
-        $pdfContent = $this->generator->generateAgentContract($customer, $ukTenant);
+        $pdfContent = $this->generator->generateAgentContract($customer, $ukTenant->organizations->first());
 
         return new EdoStructuredRequest(
             type: EdoDocumentType::AgencyContract,

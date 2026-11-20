@@ -23,21 +23,21 @@ final class RepairRequestPolicy
     /**
      * Может ли пользователь просматривать конкретную заявку?
      */
-    public function view(User $user, RepairRequest $request): bool
+    public function view(User $user, RepairRequest $req): bool
     {
         // УК (Manager) видит все заявки своего тенанта
         if ($user->role === UserRole::Manager) {
-            return $request->tenant_id === $user->tenantId();
+            return $req->tenant_id === $user->tenantId();
         }
 
         // Заказчик видит заявки своей организации
         if ($user->role === UserRole::Customer) {
-            return $request->customer_organization_id === $user->organization_id;
+            return $req->customer_organization_id === $user->organization_id;
         }
 
         // СТО видит заявки, где она назначена
         if ($user->role === UserRole::Station) {
-            $stationOrganizationId = $request->stationRecord?->organization_id;
+            $stationOrganizationId = $req->stationRecord?->organization_id;
 
             return $stationOrganizationId === $user->organization_id;
         }
@@ -56,18 +56,17 @@ final class RepairRequestPolicy
     /**
      * Может ли пользователь обновлять заявку?
      */
-    public function update(User $user, RepairRequest $request): bool
+    public function update(User $user, RepairRequest $req): bool
     {
         // Здесь можно добавить проверку на этап, но лучше оставить это в Workflow
-        return $this->view($user, $request);
+        return $this->view($user, $req);
     }
 
     /**
      * Может ли пользователь удалять черновик?
      */
-    public function delete(User $user, RepairRequest $request): bool
+    public function delete(User $user, RepairRequest $req): bool
     {
-        return $request->stage === RepairStage::Draft
-            && $request->created_by === $user->id;
+        return $req->stage === RepairStage::Draft && $req->created_by === $user->id;
     }
 }

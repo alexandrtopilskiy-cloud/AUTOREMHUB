@@ -6,14 +6,10 @@ namespace App\Http\Requests;
 
 use App\Enums\RequestPartStatus;
 use Illuminate\Foundation\Http\FormRequest;
+use Override;
 
-final class UpdatePartStatusRequest extends FormRequest
+final class UpdatePartStatusRequest extends ApiValidationRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
-
     /**
      * @return array<string, array<int, string>>
      */
@@ -29,6 +25,14 @@ final class UpdatePartStatusRequest extends FormRequest
                 ]),
             ],
             'comment'  => ['required', 'string', 'max:10000'],
+        ];
+    }
+
+    #[Override]
+    public function messages()
+    {
+        return [
+            'comment' => 'Укажите комментарий'
         ];
     }
 }

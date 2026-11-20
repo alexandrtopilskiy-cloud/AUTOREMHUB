@@ -14,7 +14,6 @@ use App\Models\RepairRequest;
 use App\Models\RequestStatusPeriod;
 use App\Models\Supplier;
 use App\Models\TimeNorm;
-use App\Models\User;
 use App\Models\WorkOrder;
 use App\Models\WorkType;
 use App\Services\RepairRequestCalculator;
@@ -92,10 +91,9 @@ final class ApiPresenter
     /**
      * @return array<string, mixed>
      */
-    public function document(RepairRequest $request, User $user): array
+    public function document(RepairRequest $req, UserDto $userDto): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $request->load([
+        $req->load([
             'vehicleRecord.organization',
             'vehicleRecord.modelReference',
             'contactRecord',
@@ -117,30 +115,30 @@ final class ApiPresenter
             'documents.signedAttachment',
         ]);
 
-        $data = $this->resolveData($request);
-        $vehicle = $request->vehicleRecord;
-        $contact = $request->contactRecord;
-        $driver = $request->driverRecord;
-        $station = $request->stationRecord;
+        $data = $this->resolveData($req);
+        $vehicle = $req->vehicleRecord;
+        $contact = $req->contactRecord;
+        $driver = $req->driverRecord;
+        $station = $req->stationRecord;
         $timezone = (string) config('sto.service_timezone');
 
         return CommercialVisibility::forUser(array_merge($data, [
-            'id'                     => $request->uuid,
-            'uuid'                   => $request->uuid,
-            'systemId'               => $request->id,
-            'number'                 => $request->number,
-            'revision'               => $request->revision,
-            'stage'                  => $request->stage->value,
-            'createdAt'              => $request->created_at->toISOString(),
-            'updatedAt'              => $request->updated_at->toISOString(),
-            'estimateVersion'        => $request->estimate_version,
-            'reviewContext'          => $request->review_context?->value,
-            'declinedStationIds' => $request->data['declinedStationIds'] ?? [],
-            'statusLabel' => Workflow::statusLabel($request),
-            'ownerLabel' => Workflow::ownerLabel($request),
-            'workChange' => app(WorkChangeService::class)->present($request, $dto),
-            'reviewBaselineVersion'  => $request->review_baseline_version,
-            'estimateChangedSinceReview' => app(RepairRequestService::class)->estimateChangedSinceReview($request),
+            'id'                     => $req->uuid,
+            'uuid'                   => $req->uuid,
+            'systemId'               => $req->id,
+            'number'                 => $req->number,
+            'revision'               => $req->revision,
+            'stage'                  => $req->stage->value,
+            'createdAt'              => $req->created_at->toISOString(),
+            'updatedAt'              => $req->updated_at->toISOString(),
+            'estimateVersion'        => $req->estimate_version,
+            'reviewContext'          => $req->review_context?->value,
+            'declinedStationIds' => $req->data['declinedStationIds'] ?? [],
+            'statusLabel' => Workflow::statusLabel($req),
+            'ownerLabel' => Workflow::ownerLabel($req),
+            'workChange' => app(WorkChangeService::class)->present($req, $userDto),
+            'reviewBaselineVersion'  => $req->review_baseline_version,
+            'estimateChangedSinceReview' => app(RepairRequestService::class)->estimateChangedSinceReview($req),
             'vehicleId'              => $vehicle?->uuid ?? '',
             'vehicle'                => $vehicle?->name ?? '',
             'make'                   => $vehicle?->make ?? '',
@@ -149,62 +147,62 @@ final class ApiPresenter
             'vin'                    => $vehicle?->vin ?? '',
             'plate'                  => $vehicle?->plate ?? '',
             'year'                   => $vehicle?->year,
-            'company'                => $dto->role === UserRole::Station
+            'company'                => $userDto->role === UserRole::Station
                 ? ''
                 : ($vehicle?->organization?->name ?? ''),
-            'previousServiceMileage' => $request->previous_service_mileage,
-            'previousServiceAt'      => $request->previous_service_at?->toISOString(),
+            'previousServiceMileage' => $req->previous_service_mileage,
+            'previousServiceAt'      => $req->previous_service_at?->toISOString(),
             'laborRateType' => ($data['laborRateType'] ?? '') ?: 'general',
-            'laborRates' => $dto->role === UserRole::Manager ? [
+            'laborRates' => $userDto->role === UserRole::Manager ? [
                 'general' => $vehicle?->laborRate('general'),
                 'official' => $vehicle?->laborRate('official'),
                 'other' => $vehicle?->laborRate('other'),
             ] : [],
-            'laborHourRate'          => $dto->role !== UserRole::Customer
+            'laborHourRate'          => $userDto->role !== UserRole::Customer
                 ? ($vehicle?->laborRate($data['laborRateType'] ?? 'general') !== null
                     ? (float) $vehicle->laborRate($data['laborRateType'] ?? 'general') : null)
                 : null,
             'contactId'              => $contact?->uuid ?? '',
-            'contact'                => $this->formatContact($request, $data),
-            'contactDetails'         => $request->contact_snapshot ?? $contact?->snapshot(),
+            'contact'                => $this->formatContact($req, $data),
+            'contactDetails'         => $req->contact_snapshot ?? $contact?->snapshot(),
             'driverId'               => $driver?->uuid ?? '',
-            'driver'                 => $this->formatDriver($request),
-            'driverDetails'          => $request->driver_snapshot ?? $driver?->snapshot(),
+            'driver'                 => $this->formatDriver($req),
+            'driverDetails'          => $req->driver_snapshot ?? $driver?->snapshot(),
             'stationId'              => $station?->uuid ?? '',
             'station'                => $this->formatStation($station),
             'stationDetails'         => $station?->referenceDetails(),
-            'reasonId'               => $request->reasonRecord?->uuid ?? '',
-            'reasonSubtypeId'        => $request->reasonSubtype?->uuid ?? '',
-            'reason'                 => $request->reasonRecord?->name ?? '',
-            'diagnostics'            => $request->reasonSubtype?->name ?? '',
-            'plannedCompletionAt'    => $this->formatPlannedCompletionAt($request, $timezone),
-            'repairCompletedAt'      => $request->repair_completed_at?->toISOString(),
-            'overdueSeconds'         => $this->calculateOverdueSeconds($request),
-            'statusPeriods'          => $this->presentStatusPeriods($request),
-            'recommendations'        => $this->recommendationSummary($request, $dto),
-            'works'                  => $this->presentWorks($request, $dto),
-            'partMovements'          => $this->presentPartMovements($request),
-            'parts'                  => $this->presentParts($request, $dto),
-            'total'                  => (float) $this->repairRequestCalculator->total($request),
-            ...(AgentDiscount::visibleTo($dto->role)
-                ? ['agentDiscount' => AgentDiscount::summary($request)]
+            'reasonId'               => $req->reasonRecord?->uuid ?? '',
+            'reasonSubtypeId'        => $req->reasonSubtype?->uuid ?? '',
+            'reason'                 => $req->reasonRecord?->name ?? '',
+            'diagnostics'            => $req->reasonSubtype?->name ?? '',
+            'plannedCompletionAt'    => $this->formatPlannedCompletionAt($req, $timezone),
+            'repairCompletedAt'      => $req->repair_completed_at?->toISOString(),
+            'overdueSeconds'         => $this->calculateOverdueSeconds($req),
+            'statusPeriods'          => $this->presentStatusPeriods($req),
+            'recommendations'        => $this->recommendationSummary($req, $userDto),
+            'works'                  => $this->presentWorks($req, $userDto),
+            'partMovements'          => $this->presentPartMovements($req),
+            'parts'                  => $this->presentParts($req, $userDto),
+            'total'                  => (float) $this->repairRequestCalculator->total($req),
+            ...(AgentDiscount::visibleTo($userDto->role)
+                ? ['agentDiscount' => AgentDiscount::summary($req)]
                 : []),
-            'history'                => $this->presentHistory($request, $timezone),
-            'attachments'            => $this->presentAttachments($request),
-            'currentPeriodId'        => $this->currentPeriodId($request),
-            'diagnosticReports'      => $this->presentDiagnosticReports($request),
-            'approvals'              => $this->presentApprovals($request),
-            'workOrder'              => $this->workOrder($request),
-            'invoice'                => $this->presentInvoice($request),
-            'acceptanceAct'          => $this->presentAcceptanceAct($request),
-            'closing'                => app(ClosingDocumentService::class)->present($request, $dto),
+            'history'                => $this->presentHistory($req, $timezone),
+            'attachments'            => $this->presentAttachments($req),
+            'currentPeriodId'        => $this->currentPeriodId($req),
+            'diagnosticReports'      => $this->presentDiagnosticReports($req),
+            'approvals'              => $this->presentApprovals($req),
+            'workOrder'              => $this->workOrder($req),
+            'invoice'                => $this->presentInvoice($req),
+            'acceptanceAct'          => $this->presentAcceptanceAct($req),
+            'closing'                => app(ClosingDocumentService::class)->present($req, $userDto),
             // Склад: нехватка ЗЧ у СТО (этапы 4/5) и «ЗЧ от УК» (галочка, Перемещение).
-            ...app(\App\Services\StockService::class)->presentRequest($request, $dto->role),
-            'permissions' => array_merge(Workflow::permissions($request, $dto), [
-                'canViewRepairEstimate' => $dto->role !== UserRole::Customer || $request->stage->value >= RepairStage::CustomerApproval->value
-                    || $request->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
+            ...app(\App\Services\StockService::class)->presentRequest($req, $userDto->role),
+            'permissions' => array_merge(Workflow::permissions($req, $userDto), [
+                'canViewRepairEstimate' => $userDto->role !== UserRole::Customer || $req->stage->value >= RepairStage::CustomerApproval->value
+                    || $req->periods->contains(fn ($period) => (int) $period->getRawOriginal('stage') >= RepairStage::CustomerApproval->value),
             ]),
-        ]), $user);
+        ]), $userDto->role);
     }
 
     /**

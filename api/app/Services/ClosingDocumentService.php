@@ -17,11 +17,11 @@ use App\Models\RepairRequest;
 use App\Models\RequestDocument;
 use App\Models\RequestPart;
 use App\Models\RequestWork;
-use App\Models\User;
 use App\Services\Edo\Builders\Closing\InvoiceBuilder as ClosingInvoiceBuilder;
 use App\Services\Edo\Builders\Closing\WorkOrderBuilder as ClosingWorkOrderBuilder;
 use App\Support\AgentDiscount;
 use App\Support\DomainInput as Input;
+use App\Support\RussianPhone;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -41,17 +41,24 @@ final class ClosingDocumentService
     private const MONEY_SCALE = 2;
     private const DISK = 'local';
 
-    public function generateTransferAct(RepairRequest $request, User $user): RequestDocument
+    public function generateTransferAct(RepairRequest $req, UserDto $userDto): RequestDocument
     {
-        $request->loadMissing(['vehicleRecord', 'driverRecord', 'stationRecord.organization', 'customerOrganization', 'acceptanceAct', 'workOrder']);
-        $station = $request->stationRecord?->organization;
-        $customer = $request->customerOrganization;
-        $vehicle = $request->vehicleRecord;
-        $driver = $this->driver($request);
-        $powerOfAttorney = $this->powerOfAttorney($request);
+        $req->loadMissing([
+            'vehicleRecord',
+            'driverRecord',
+            'stationRecord.organization',
+            'customerOrganization',
+            'acceptanceAct',
+            'workOrder'
+        ]);
+        $station = $req->stationRecord?->organization;
+        $customer = $req->customerOrganization;
+        $vehicle = $req->vehicleRecord;
+        $driver = $this->driver($req);
+        $powerOfAttorney = $this->powerOfAttorney($req);
 
         $payload = [
-            'request'  => ['number' => $request->number, 'mileage' => $request->workOrder?->mileage ?? $request->acceptanceAct?->mileage ?? ($request->data['mileage'] ?? '')],
+            'request'  => ['number' => $req->number, 'mileage' => $req->workOrder?->mileage ?? $req->acceptanceAct?->mileage ?? ($req->data['mileage'] ?? '')],
             'vehicle'  => [
                 'name'  => trim(($vehicle?->make ?? '') . ' ' . ($vehicle?->model ?? '')),
                 'vin'   => $vehicle?->vin ?? '',
@@ -60,15 +67,24 @@ final class ClosingDocumentService
             ],
             'driver'   => $driver,
             'powerOfAttorney' => $powerOfAttorney,
-            'seller'   => $this->party($station, $request->stationRecord?->name),
+            'seller'   => $this->party($station, $req->stationRecord?->name),
             'buyer'    => $this->party($customer),
-            'repairCompletedAt' => $request->repair_completed_at?->toISOString(),
-            'acceptanceAct' => $request->acceptanceAct?->number,
-            'workOrder' => $request->workOrder?->number,
-            'sheet'    => $this->handoverSheet($request, 'out', $user),
+            'repairCompletedAt' => $req->repair_completed_at?->toISOString(),
+            'acceptanceAct' => $req->acceptanceAct?->number,
+            'workOrder' => $req->workOrder?->number,
+            'sheet'    => $this->handoverSheet($req, 'out', $userDto),
         ];
 
-        $document = $this->store($request, $user, RequestDocumentType::TransferAct, $station, $customer, '0', '0', $payload);
+        $document = $this->store(
+            $req,
+            $userDto,
+            RequestDocumentType::TransferAct,
+            $station,
+            $customer,
+            '0',
+            '0',
+            $payload
+        );
         // Новый акт — прежняя подпись недействительна.
         $document->forceFill([
             'signed_attachment_id'      => null,
@@ -80,7 +96,7 @@ final class ClosingDocumentService
         return $document;
     }
 
-    public function signTransferAct(RepairRequest $request, User $user, Attachment $attachment, bool $verified): RequestDocument
+    public function signTransferAct(RepairRequest $request, UserDto $userDto, Attachment $attachment, bool $verified): RequestDocument
     {
         $document = $request->document(RequestDocumentType::TransferAct);
 
@@ -96,7 +112,7 @@ final class ClosingDocumentService
             'signed_attachment_id'      => $attachment->id,
             'driver_documents_verified' => true,
             'signed_at'                 => now(),
-            'signed_by'                 => $user->id,
+            'signed_by'                 => $userDto->userId,
         ])->save();
 
         return $document;
@@ -114,13 +130,20 @@ final class ClosingDocumentService
     /**
      * @return array<int, RequestDocument>
      */
-    public function generateClosingDocuments(RepairRequest $request, User $user): array
+    public function generateClosingDocuments(RepairRequest $req, UserDto $userDto): array
     {
-        $request->load(['workLines', 'parts', 'stationRecord.organization', 'customerOrganization', 'workOrder', 'vehicleRecord']);
-        $station = $request->stationRecord?->organization;
-        $customer = $request->customerOrganization;
+        $req->load([
+            'workLines',
+            'parts',
+            'stationRecord.organization',
+            'customerOrganization',
+            'workOrder',
+            'vehicleRecord'
+        ]);
+        $station = $req->stationRecord?->organization;
+        $customer = $req->customerOrganization;
         $manager = Organization::query()
-            ->where('tenant_id', $request->tenant_id)
+            ->where('tenant_id', $req->tenant_id)
             ->where('kind', OrganizationKind::Manager->value)
             ->orderBy('id')
             ->first();
@@ -129,56 +152,56 @@ final class ClosingDocumentService
             Input::fail('Для документов нужны реквизиты СТО, УК и Заказчика');
         }
 
-        $stationRows = $this->rows($request, true, $station);
-        $customerRows = $this->rows($request, false, $manager);
+        $stationRows = $this->rows($req, true, $station);
+        $customerRows = $this->rows($req, false, $manager);
         $stationTotals = $this->totals($stationRows);
         $customerTotals = $this->totals($customerRows);
-        $summary = AgentDiscount::summary($request);
-        $vehicle = $request->vehicleRecord;
+        $summary = AgentDiscount::summary($req);
+        $vehicle = $req->vehicleRecord;
         $common = [
             'request' => [
-                'number'  => $request->number,
+                'number'  => $req->number,
                 'vehicle' => trim(($vehicle?->make ?? '') . ' ' . ($vehicle?->model ?? '')),
                 'vin'     => $vehicle?->vin ?? '',
                 'plate'   => $vehicle?->plate ?? '',
-                'mileage' => $request->workOrder?->mileage,
-                'repairCompletedAt' => $request->repair_completed_at?->toISOString(),
+                'mileage' => $req->workOrder?->mileage,
+                'repairCompletedAt' => $req->repair_completed_at?->toISOString(),
             ],
         ];
 
         $documents = [];
-        $stationSide = ['seller' => $this->party($station, $request->stationRecord?->name), 'buyer' => $this->party($manager)];
+        $stationSide = ['seller' => $this->party($station, $req->stationRecord?->name), 'buyer' => $this->party($manager)];
         $customerSide = ['seller' => $this->party($manager), 'buyer' => $this->party($customer)];
 
-        $stationOrder = $this->store($request, $user, RequestDocumentType::StationWorkOrder, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
+        $stationOrder = $this->store($req, $userDto, RequestDocumentType::StationWorkOrder, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
             'agentDiscount' => ['percent' => $summary['percent'], 'amount' => $summary['amount'], 'fullAmount' => round($summary['stationAmount'] + $summary['amount'], 2)],
         ]);
         $documents[] = $stationOrder;
-        $documents[] = $this->store($request, $user, RequestDocumentType::StationUpd, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::StationUpd, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
             'basis' => $this->basis($stationOrder),
         ]);
-        $documents[] = $this->store($request, $user, RequestDocumentType::StationInvoice, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::StationInvoice, $station, $manager, $stationTotals['amount'], $stationTotals['vat'], [
             ...$common, ...$stationSide, 'rows' => $stationRows, 'totals' => $stationTotals,
             'basis' => $this->basis($stationOrder),
         ]);
 
-        $customerOrder = $this->store($request, $user, RequestDocumentType::CustomerWorkOrder, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $customerOrder = $this->store($req, $userDto, RequestDocumentType::CustomerWorkOrder, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
         ]);
         $documents[] = $customerOrder;
-        $documents[] = $this->store($request, $user, RequestDocumentType::CustomerUpd, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::CustomerUpd, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
             'basis' => $this->basis($customerOrder),
         ]);
-        $documents[] = $this->store($request, $user, RequestDocumentType::CustomerInvoice, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::CustomerInvoice, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
             'basis' => $this->basis($customerOrder),
         ]);
-        $documents[] = $this->store($request, $user, RequestDocumentType::AgentReport, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
+        $documents[] = $this->store($req, $userDto, RequestDocumentType::AgentReport, $manager, $customer, $customerTotals['amount'], $customerTotals['vat'], [
             ...$common, ...$customerSide, 'rows' => $customerRows, 'totals' => $customerTotals,
-            'station' => $this->party($station, $request->stationRecord?->name),
+            'station' => $this->party($station, $req->stationRecord?->name),
             'contract' => RepairRequest::documentNumber('AD', (int) $customer->id),
             'basis' => $this->basis($customerOrder),
         ]);
@@ -223,7 +246,7 @@ final class ClosingDocumentService
         return true;
     }
 
-    public function markPaid(RepairRequest $request, User $user, RequestDocumentType $type, string $paidAt, string $amount, string $comment): RequestDocument
+    public function markPaid(RepairRequest $request, UserDto $userDto, RequestDocumentType $type, string $paidAt, string $amount, string $comment): RequestDocument
     {
         $document = $request->document($type);
 
@@ -252,7 +275,7 @@ final class ClosingDocumentService
             'paid_amount'    => $amount,
             'paid_comment'   => trim($comment),
             'paid_marked_at' => now(),
-            'paid_marked_by' => $user->id,
+            'paid_marked_by' => $userDto->userId,
         ])->save();
 
         return $document;
@@ -396,8 +419,8 @@ final class ClosingDocumentService
      * @param array<string, mixed> $payload
      */
     private function store(
-        RepairRequest $request,
-        User $user,
+        RepairRequest $req,
+        UserDto $userDto,
         RequestDocumentType $type,
         ?Organization $seller,
         ?Organization $buyer,
@@ -407,34 +430,34 @@ final class ClosingDocumentService
     ): RequestDocument {
         /** @var RequestDocument $document */
         $document = RequestDocument::query()->firstOrNew([
-            'repair_request_id' => $request->id,
+            'repair_request_id' => $req->id,
             'type'              => $type->value,
         ]);
 
         $document->fill([
-            'tenant_id'              => $request->tenant_id,
-            'number'                 => $request->numberWithPrefix($type->prefix()) . $type->suffix(),
+            'tenant_id'              => $req->tenant_id,
+            'number'                 => $req->numberWithPrefix($type->prefix()) . $type->suffix(),
             'document_date'          => now()->toDateString(),
             'seller_organization_id' => $seller?->id,
             'buyer_organization_id'  => $buyer?->id,
             'amount'                 => $amount,
             'vat_amount'             => $vat,
             'payload'                => $payload,
-            'created_by'             => $document->created_by ?? $user->id,
+            'created_by'             => $document->created_by ?? $userDto->userId,
         ]);
         $document->save();
 
-        $pdf = $this->renderPdf($request, $document, $type, $seller, $buyer, $payload);
+        $pdf = $this->renderPdf($req, $document, $type, $seller, $buyer, $payload);
 
         $previous = $document->attachment_id ? Attachment::query()->find($document->attachment_id) : null;
-        $objectKey = 'documents/' . $request->uuid . '/' . $type->value . '-' . Str::uuid() . '.pdf';
+        $objectKey = 'documents/' . $req->uuid . '/' . $type->value . '-' . Str::uuid() . '.pdf';
         Storage::disk(self::DISK)->put($objectKey, $pdf);
 
         $attachment = Attachment::query()->create([
             'uuid'                     => (string) Str::uuid(),
-            'repair_request_id'        => $request->id,
-            'uploaded_by'              => $user->id,
-            'request_status_period_id' => $request->periods()->whereNull('exited_at')->value('id'),
+            'repair_request_id'        => $req->id,
+            'uploaded_by'              => $userDto->userId,
+            'request_status_period_id' => $req->periods()->whereNull('exited_at')->value('id'),
             'disk'                     => self::DISK,
             'object_key'               => $objectKey,
             'original_name'            => str_replace('/', '-', $document->number) . ' ' . $type->label() . '.pdf',
@@ -461,7 +484,7 @@ final class ClosingDocumentService
      * @param array<string, mixed> $payload
      */
     private function renderPdf(
-        RepairRequest $request,
+        RepairRequest $req,
         RequestDocument $document,
         RequestDocumentType $type,
         ?Organization $seller,
@@ -470,7 +493,7 @@ final class ClosingDocumentService
     ): string {
         if ($seller !== null && $buyer !== null) {
             if ($type === RequestDocumentType::StationWorkOrder || $type === RequestDocumentType::CustomerWorkOrder) {
-                return app(ClosingWorkOrderBuilder::class)->pdf($request, $document, $seller, $buyer);
+                return app(ClosingWorkOrderBuilder::class)->pdf($req, $document, $seller, $buyer);
             }
 
             if ($type === RequestDocumentType::StationInvoice || $type === RequestDocumentType::CustomerInvoice) {
@@ -496,19 +519,26 @@ final class ClosingDocumentService
      *
      * @return array<int, array<string, mixed>>
      */
-    private function rows(RepairRequest $request, bool $stationSide, Organization $seller): array
+    private function rows(RepairRequest $req, bool $stationSide, Organization $seller): array
     {
         $vatRate = $seller->vat_rate !== null ? (string) $seller->vat_rate : null;
         $rows = [];
 
-        foreach ($request->workLines as $work) {
+        foreach ($req->workLines as $work) {
             /** @var RequestWork $work */
             $fields = AgentDiscount::workFields($work);
             $full = (string) ($work->line_amount ?? bcmul((string) $work->quantity, (string) ($work->price ?? 0), self::MONEY_SCALE));
-            $rows[] = $this->row('work', (string) $work->name, (string) $work->quantity, 'н/ч', $stationSide && $fields['stationAmount'] !== null ? (string) $fields['stationAmount'] : $full, $vatRate);
+            $rows[] = $this->row(
+                'work',
+                (string) $work->name,
+                (string) $work->quantity,
+                'н/ч',
+                $stationSide && $fields['stationAmount'] !== null ? (string) $fields['stationAmount'] : $full,
+                $vatRate
+            );
         }
 
-        foreach ($request->parts as $part) {
+        foreach ($req->parts as $part) {
             /** @var RequestPart $part */
             $quantity = bcsub((string) $part->quantity, (string) $part->returned_quantity, 3);
             if (bccomp($quantity, '0', 3) <= 0 || ($stationSide && $part->from_manager)) {
@@ -517,7 +547,14 @@ final class ClosingDocumentService
             $fields = AgentDiscount::partFields($part);
             $full = bcadd(bcmul($quantity, (string) $part->price, 5), '0.005', self::MONEY_SCALE);
             $name = trim((string) $part->name . ($part->article ? ' (' . $part->article . ')' : ''));
-            $rows[] = $this->row('part', $name, $quantity, (string) ($part->unit ?: 'шт'), $stationSide && $fields['stationAmount'] !== null ? (string) $fields['stationAmount'] : $full, $vatRate);
+            $rows[] = $this->row(
+                'part',
+                $name,
+                $quantity,
+                (string) ($part->unit ?: 'шт'),
+                $stationSide && $fields['stationAmount'] !== null ? (string) $fields['stationAmount'] : $full,
+                $vatRate
+            );
         }
 
         return $rows;
@@ -526,8 +563,14 @@ final class ClosingDocumentService
     /**
      * @return array<string, mixed>
      */
-    private function row(string $kind, string $name, string $quantity, string $unit, string $amount, ?string $vatRate): array
-    {
+    private function row(
+        string $kind,
+        string $name,
+        string $quantity,
+        string $unit,
+        string $amount,
+        ?string $vatRate
+    ): array {
         $amount = bcadd($amount, '0', self::MONEY_SCALE);
         $price = bccomp($quantity, '0', 3) > 0
             ? bcadd(bcdiv($amount, $quantity, 5), '0.005', self::MONEY_SCALE)
@@ -587,40 +630,47 @@ final class ClosingDocumentService
      *
      * @return array<string, mixed>
      */
-    public function handoverSheet(RepairRequest $request, string $direction, ?User $user = null): array
+    public function handoverSheet(RepairRequest $req, string $direction, ?UserDto $userDto = null): array
     {
-        $request->loadMissing(['vehicleRecord', 'driverRecord', 'stationRecord.organization', 'customerOrganization', 'acceptanceAct', 'workOrder']);
-        $vehicle = $request->vehicleRecord;
-        $stationRecord = $request->stationRecord;
+        $req->loadMissing([
+            'vehicleRecord',
+            'driverRecord',
+            'stationRecord.organization',
+            'customerOrganization',
+            'acceptanceAct',
+            'workOrder'
+        ]);
+        $vehicle = $req->vehicleRecord;
+        $stationRecord = $req->stationRecord;
         $in = $direction === 'in';
 
         return [
             'direction'     => $in ? 'in' : 'out',
             'number'        => $in
-                ? ($request->acceptanceAct?->number ?? $request->numberWithPrefix('APP') . '/1')
-                : $request->numberWithPrefix(RequestDocumentType::TransferAct->prefix()) . RequestDocumentType::TransferAct->suffix(),
+                ? ($req->acceptanceAct?->number ?? $req->numberWithPrefix('APP') . '/1')
+                : $req->numberWithPrefix(RequestDocumentType::TransferAct->prefix()) . RequestDocumentType::TransferAct->suffix(),
             'date'          => now()->toDateString(),
-            'requestNumber' => $request->number,
-            'workOrder'     => $request->workOrder?->number,
-            'acceptanceNumber' => $request->acceptanceAct?->number,
-            'customer'      => $this->party($request->customerOrganization),
+            'requestNumber' => $req->number,
+            'workOrder'     => $req->workOrder?->number,
+            'acceptanceNumber' => $req->acceptanceAct?->number,
+            'customer'      => $this->party($req->customerOrganization),
             'station'       => [
                 ...$this->party($stationRecord?->organization, $stationRecord?->name),
                 'address' => (string) (($stationRecord?->organization?->actual_address ?? '') ?: ($stationRecord?->address ?? '')),
             ],
-            'driver'        => $this->driver($request),
-            'stationRepresentative' => $user?->role === UserRole::Station
+            'driver'        => $this->driver($req),
+            'stationRepresentative' => $userDto?->role === UserRole::Station
                 ? [
-                    'fullName' => $user->fullName(),
-                    'phone'    => \App\Support\RussianPhone::format((string) (($user->phone ?? '') ?: ($stationRecord?->organization?->phone ?? ''))),
+                    'fullName' => $userDto->fullName,
+                    'phone'    => RussianPhone::format((string) ($userDto->phone ?: ($stationRecord?->organization?->phone ?? ''))),
                 ]
                 : [
                     'fullName' => (string) ($stationRecord?->contact ?? ''),
-                    'phone'    => \App\Support\RussianPhone::format((string) ($stationRecord?->organization?->phone ?? '')),
+                    'phone'    => RussianPhone::format((string) ($stationRecord?->organization?->phone ?? '')),
                 ],
             // В лист попадает только реально оформленная доверенность; иначе
             // № и дата заполняются от руки.
-            'powerOfAttorney' => $this->issuedPowerOfAttorney($request),
+            'powerOfAttorney' => $this->issuedPowerOfAttorney($req),
             'vehicle'       => [
                 'name'  => trim(($vehicle?->make ?? '') . ' ' . ($vehicle?->model ?? '')),
                 'plate' => (string) ($vehicle?->plate ?? ''),
@@ -631,9 +681,9 @@ final class ClosingDocumentService
     }
 
     /** PDF предзаполненного листа приёма-передачи ТС (для печати и подписи). */
-    public function handoverSheetPdf(RepairRequest $request, string $direction, ?User $user = null): string
+    public function handoverSheetPdf(RepairRequest $request, string $direction, ?UserDto $userDto = null): string
     {
-        return Pdf::loadView('pdf.handover_sheet', ['sheet' => $this->handoverSheet($request, $direction, $user)])
+        return Pdf::loadView('pdf.handover_sheet', ['sheet' => $this->handoverSheet($request, $direction, $userDto)])
             ->setPaper('a4', 'portrait')
             ->setOption('defaultFont', 'DejaVu Sans')
             ->output();

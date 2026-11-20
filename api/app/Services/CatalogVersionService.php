@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
-use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -52,7 +52,7 @@ final class CatalogVersionService
         'work_types',
     ];
 
-    public function version(User $user): string
+    public function version(UserDto $userDto): string
     {
         $parts = array_map(
             fn (string $table) => "SELECT '{$table}' AS t, COUNT(*)::text AS n, "
@@ -64,7 +64,7 @@ final class CatalogVersionService
 
         $rows = DB::select(implode(' UNION ALL ', $parts));
 
-        $state = [$user->id, $user->role->value, $user->organization_id];
+        $state = [$userDto->userId, $userDto->role->value, $userDto->organizationId];
         foreach ($rows as $row) {
             $state[] = $row->t . ':' . $row->n . ':' . $row->x;
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Api;
 
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Models\CatalogPart;
 use App\Models\Organization;
@@ -525,7 +526,9 @@ final class WarehouseTest extends TestCase
 
     public function test_station_accepts_parts_from_manager_with_transfer_document(): void
     {
-        app(WarehouseService::class)->saveMarkup($this->users['manager'], ['mode' => 'flat', 'percent' => 20, 'tiers' => []]);
+        $warehouseService = app(WarehouseService::class);
+
+        $warehouseService->saveMarkup($this->users['manager'], ['mode' => 'flat', 'percent' => 20, 'tiers' => []]);
         $this->stockPart($this->users['manager'], $this->catalog, 5, $this->supplier, 100, 130);
         $this->moveTo(RepairStage::WaitingVehicle);
         $this->request->forceFill(['parts_from_manager' => true])->save();
@@ -563,8 +566,11 @@ final class WarehouseTest extends TestCase
         $this->assertSame(120.0, (float) $doc->items()->first()->sale_price);
         $this->assertSame([], $stock->missingForRequest($this->request->refresh()), 'ЗЧ ЗР теперь покрыты складом СТО');
 
+        $managerDto = UserDto::fromUserModel($this->users['manager']);
+        $closingDocumentService = app(\App\Services\ClosingDocumentService::class);
+
         // Закрывающие документы: ЗЧ от УК реализует УК — у СТО только работы.
-        $docs = collect(app(\App\Services\ClosingDocumentService::class)->generateClosingDocuments($this->request->refresh(), $this->users['manager']))->keyBy(fn ($doc) => $doc->type instanceof \BackedEnum ? $doc->type->value : $doc->type);
+        $docs = collect($closingDocumentService->generateClosingDocuments($this->request->refresh(), $managerDto))->keyBy(fn ($doc) => $doc->type instanceof \BackedEnum ? $doc->type->value : $doc->type);
         foreach (['station_work_order', 'station_upd', 'station_invoice'] as $type) {
             $this->assertSame(['work'], array_values(array_unique(array_column($docs[$type]->payload['rows'], 'kind'))), $type);
         }

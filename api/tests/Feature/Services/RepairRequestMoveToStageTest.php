@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services;
 
+use App\DTO\UserDto;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Enums\UserRole;
@@ -92,8 +93,9 @@ final class RepairRequestMoveToStageTest extends TestCase
             'entered_at'        => now()->subHour(),
             'actor_id'          => $this->manager->id,
         ]);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->invokeMoveToStage($this->request, $this->manager, $to);
+        $this->invokeMoveToStage($this->request, $managerDto, $to);
 
         $this->assertSame(
             $to,
@@ -127,8 +129,9 @@ final class RepairRequestMoveToStageTest extends TestCase
             'entered_at'        => now()->subHour(),
             'actor_id'          => $this->manager->id,
         ]);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
-        $this->invokeMoveToStage($this->request, $this->manager, $to);
+        $this->invokeMoveToStage($this->request, $managerDto, $to);
 
         $this->assertSame($to, $this->request->stage);
 
@@ -153,10 +156,11 @@ final class RepairRequestMoveToStageTest extends TestCase
         // ModelNotFoundException. Это важно зафиксировать:
         // moveToStage не создаёт период «с нуля», а закрывает текущий.
         $this->expectException(ModelNotFoundException::class);
+        $managerDto = UserDto::fromUserModel($this->manager);
 
         $this->invokeMoveToStage(
             $this->request,
-            $this->manager,
+            $managerDto,
             RepairStage::StationApproval,
         );
     }
@@ -171,6 +175,7 @@ final class RepairRequestMoveToStageTest extends TestCase
             'password'        => 'test-password-long',
             'active'          => true,
         ]);
+        $otherDto = UserDto::fromUserModel($other);
 
         RequestStatusPeriod::query()->create([
             'repair_request_id' => $this->request->id,
@@ -179,7 +184,7 @@ final class RepairRequestMoveToStageTest extends TestCase
             'actor_id'          => $this->manager->id,
         ]);
 
-        $this->invokeMoveToStage($this->request, $other, RepairStage::StationApproval);
+        $this->invokeMoveToStage($this->request, $otherDto, RepairStage::StationApproval);
 
         $new = RequestStatusPeriod::query()
             ->where('repair_request_id', $this->request->id)
@@ -197,13 +202,13 @@ final class RepairRequestMoveToStageTest extends TestCase
 
     private function invokeMoveToStage(
         RepairRequest $request,
-        User $user,
+        UserDto $userDto,
         RepairStage $to,
     ): void
     {
         $method = new ReflectionMethod(RepairRequestService::class, 'moveToStage');
         $method->setAccessible(true);
-        $method->invoke($this->service(), $request, $user, $to);
+        $method->invoke($this->service(), $request, $userDto, $to);
     }
 
     private function service(): RepairRequestService

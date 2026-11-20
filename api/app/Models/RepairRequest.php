@@ -289,37 +289,37 @@ final class RepairRequest extends Entity
      * независимо от того, кто сейчас редактирует документ.
      * В отличие от forUser(), черновик виден коллегам по организации-заказчику.
      */
-    public static function forChatUser(User $user): Builder
+    public static function forChatUser(UserDto $userDto): Builder
     {
-        $query = self::query()->where('tenant_id', $user->tenantId());
+        $query = self::query()->where('tenant_id', $userDto->tenantId);
 
-        if ($user->role === UserRole::Customer) {
-            $query->where('customer_organization_id', $user->organization_id);
+        if ($userDto->role === UserRole::Customer) {
+            $query->where('customer_organization_id', $userDto->organizationId);
         }
 
-        if ($user->role === UserRole::Station) {
+        if ($userDto->role === UserRole::Station) {
             $query->whereIn(
                 'assigned_station_id',
                 Station::query()
                     ->select('id')
-                    ->where('organization_id', $user->organization_id),
+                    ->where('organization_id', $userDto->organizationId),
             );
         }
 
-        if ($user->role === UserRole::Manager) {
-            $query->where(function (Builder $drafts) use ($user): void {
+        if ($userDto->role === UserRole::Manager) {
+            $query->where(function (Builder $drafts) use ($userDto): void {
                 $drafts
                     ->where('stage', '>', RepairStage::Draft->value)
-                    ->orWhere('created_by', $user->id);
+                    ->orWhere('created_by', $userDto->userId);
             });
         }
 
         return $query;
     }
 
-    public static function resolveChatFor(User $user, string $key, bool $lock = false): self
+    public static function resolveChatFor(UserDto $userDto, string $key, bool $lock = false): self
     {
-        $query = self::forChatUser($user);
+        $query = self::forChatUser($userDto);
 
         $query->where(fn (Builder $q) => Str::isUuid($key)
             ? $q->where('uuid', $key)

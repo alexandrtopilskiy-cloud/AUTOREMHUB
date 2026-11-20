@@ -42,24 +42,25 @@ final class ClosingDocumentController
     {
         ApiInput::only($request, ['revision']);
         $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
 
-        $repairRequest = $this->service->mutate(
-            $user,
+        $req = $this->service->mutate(
+            $userDto,
             $id,
             ApiInput::revision($request),
             'documents_generated',
-            function (RepairRequest $repairRequest) use ($user): array {
-                $this->service->flag($repairRequest, $user, 'canGenerateDocuments');
+            function (RepairRequest $req) use ($userDto): array {
+                $this->service->flag($req, $userDto, 'canGenerateDocuments');
 
-                if ($repairRequest->stage === RepairStage::Ready) {
-                    $act = $this->documents->generateTransferAct($repairRequest, $user);
+                if ($req->stage === RepairStage::Ready) {
+                    $act = $this->documents->generateTransferAct($req, $userDto);
 
                     return ['comment' => 'Сформирован лист приёма-передачи ТС (выдача) ' . $act->number];
                 }
 
-                $this->documents->markGenerationQueued($repairRequest);
-                $requestId = $repairRequest->id;
-                $userId = $user->id;
+                $this->documents->markGenerationQueued($req);
+                $requestId = $req->id;
+                $userId = $userDto->userId;
                 DB::afterCommit(static function () use ($requestId, $userId): void {
                     ClosingDocumentsRequested::dispatch($requestId, $userId);
                 });
@@ -68,13 +69,14 @@ final class ClosingDocumentController
             },
         );
 
-        return $this->respond($repairRequest, $user);
+        return $this->respond($req, $userDto);
     }
 
     public function signTransferAct(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['revision', 'attachmentId', 'driverDocumentsVerified']);
         $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         $attachmentId = (string) $request->input('attachmentId', '');
         $verified = filter_var($request->input('driverDocumentsVerified'), FILTER_VALIDATE_BOOLEAN);
 
@@ -83,14 +85,14 @@ final class ClosingDocumentController
         }
 
         $repairRequest = $this->service->mutate(
-            $user,
+            $userDto,
             $id,
             ApiInput::revision($request),
             'transfer_act_signed',
-            function (RepairRequest $repairRequest) use ($user, $attachmentId, $verified): array {
-                $this->service->flag($repairRequest, $user, 'canSignTransferAct');
-                $file = $this->service->attachmentIds($repairRequest, [$attachmentId], AttachmentPurpose::TransferAct)[0];
-                $act = $this->documents->signTransferAct($repairRequest, $user, $file, $verified);
+            function (RepairRequest $req) use ($userDto, $attachmentId, $verified): array {
+                $this->service->flag($req, $userDto, 'canSignTransferAct');
+                $file = $this->service->attachmentIds($req, [$attachmentId], AttachmentPurpose::TransferAct)[0];
+                $act = $this->documents->signTransferAct($req, $userDto, $file, $verified);
 
                 return [
                     'comment' => 'Загружен подписанный лист приёма-передачи ТС ' . $act->number
@@ -100,7 +102,7 @@ final class ClosingDocumentController
             },
         );
 
-        return $this->respond($repairRequest, $user);
+        return $this->respond($repairRequest, $userDto);
     }
 
     public function customerPayment(Request $request, string $id): JsonResponse
@@ -151,9 +153,11 @@ final class ClosingDocumentController
      */
     public function handoverSheet(Request $request, string $id, string $direction): Response
     {
-        $repairRequest = RepairRequest::resolveFor(UserDto::fromUserModel($request->user()), $id);
-        $sheet = $this->documents->handoverSheet($repairRequest, $direction, $request->user());
-        $pdf = $this->documents->handoverSheetPdf($repairRequest, $direction, $request->user());
+        $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
+        $repairRequest = RepairRequest::resolveFor($userDto, $id);
+        $sheet = $this->documents->handoverSheet($repairRequest, $direction, $userDto);
+        $pdf = $this->documents->handoverSheetPdf($repairRequest, $direction, $userDto);
         $name = str_replace('/', '-', (string) $sheet['number']) . ' Лист приёма-передачи ТС.pdf';
 
         return response($pdf, 200, [
@@ -166,18 +170,19 @@ final class ClosingDocumentController
     {
         ApiInput::only($request, ['revision', 'paidAt', 'amount', 'comment']);
         $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
         $paidAt = trim((string) $request->input('paidAt', ''));
         $amount = str_replace([' ', ','], ['', '.'], trim((string) $request->input('amount', '')));
         $comment = (string) $request->input('comment', '');
 
-        $repairRequest = $this->service->mutate(
-            $user,
+        $req = $this->service->mutate(
+            $userDto,
             $id,
             ApiInput::revision($request),
             $type === RequestDocumentType::CustomerInvoice ? 'customer_payment' : 'station_payment',
-            function (RepairRequest $repairRequest) use ($user, $flag, $type, $label, $paidAt, $amount, $comment): array {
-                $this->service->flag($repairRequest, $user, $flag);
-                $invoice = $this->documents->markPaid($repairRequest, $user, $type, $paidAt, $amount, $comment);
+            function (RepairRequest $req) use ($userDto, $flag, $type, $label, $paidAt, $amount, $comment): array {
+                $this->service->flag($req, $userDto, $flag);
+                $invoice = $this->documents->markPaid($req, $userDto, $type, $paidAt, $amount, $comment);
 
                 return [
                     'comment' => $label . ' по счёту ' . $invoice->number . ' от ' . $invoice->paid_at?->format('d.m.Y')
@@ -186,22 +191,23 @@ final class ClosingDocumentController
             },
         );
 
-        return $this->respond($repairRequest, $user);
+        return $this->respond($req, $userDto);
     }
 
     private function deletePayment(Request $request, string $id, string $flag, RequestDocumentType $type, string $label): JsonResponse
     {
         ApiInput::only($request, ['revision']);
         $user = $request->user();
+        $userDto = UserDto::fromUserModel($user);
 
-        $repairRequest = $this->service->mutate(
-            $user,
+        $req = $this->service->mutate(
+            $userDto,
             $id,
             ApiInput::revision($request),
             $type === RequestDocumentType::CustomerInvoice ? 'customer_payment_deleted' : 'station_payment_deleted',
-            function (RepairRequest $repairRequest) use ($user, $flag, $type, $label): array {
-                $this->service->flag($repairRequest, $user, $flag);
-                [$invoice, $paidAt, $paidAmount] = $this->documents->deletePayment($repairRequest, $type);
+            function (RepairRequest $req) use ($userDto, $flag, $type, $label): array {
+                $this->service->flag($req, $userDto, $flag);
+                [$invoice, $paidAt, $paidAmount] = $this->documents->deletePayment($req, $type);
 
                 return [
                     'comment' => $label . ' по счёту ' . $invoice->number . ' удалена (была принята '
@@ -210,11 +216,11 @@ final class ClosingDocumentController
             },
         );
 
-        return $this->respond($repairRequest, $user);
+        return $this->respond($req, $userDto);
     }
 
-    private function respond(RepairRequest $repairRequest, $user): JsonResponse
+    private function respond(RepairRequest $repairRequest, UserDto $userDto): JsonResponse
     {
-        return response()->json(['request' => $this->apiPresenter->document($repairRequest, $user)]);
+        return response()->json(['request' => $this->apiPresenter->document($repairRequest, $userDto)]);
     }
 }

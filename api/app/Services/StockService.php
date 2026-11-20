@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\OrganizationKind;
 use App\Enums\RepairStage;
 use App\Models\CatalogPart;
@@ -353,21 +354,21 @@ final class StockService
      * Перемещения — цена реализации УК: закуп + наценка из Настроек УК.
      * На СТО дополнительной наценки нет.
      */
-    public function transferFromManager(RepairRequest $request, User $user): StockDocument
+    public function transferFromManager(RepairRequest $req, UserDto $userDto): StockDocument
     {
-        if (!$request->awaitsManagerParts()) {
+        if (!$req->awaitsManagerParts()) {
             Input::fail('ЗЧ от УК по этой ЗР уже приняты');
         }
-        $managerId = self::managerOrganizationId((int) $request->tenant_id);
-        $stationOrganizationId = $request->stationRecord?->organization_id;
+        $managerId = self::managerOrganizationId((int) $req->tenant_id);
+        $stationOrganizationId = $req->stationRecord?->organization_id;
         if ($managerId === null || $stationOrganizationId === null) {
             Input::fail('Для перемещения ЗЧ нужны организации УК и СТО');
         }
-        $missing = $this->missingForRequest($request);
+        $missing = $this->missingForRequest($req);
         if ($missing !== []) {
             Input::fail('Недостаточно ЗЧ на складе УК: ' . implode('; ', $missing) . '. Обратитесь в УК.', 'parts');
         }
-        $target = WarehouseService::fromManagerWarehouse((int) $stationOrganizationId, (int) $request->tenant_id);
+        $target = WarehouseService::fromManagerWarehouse((int) $stationOrganizationId, (int) $req->tenant_id);
         $sources = Warehouse::query()->where('organization_id', $managerId)->orderBy('id')->pluck('id')->all();
         if ($sources === []) {
             Input::fail('У УК нет складов');
@@ -375,7 +376,7 @@ final class StockService
         $now = now()->toImmutable();
         $sequence = (int) StockDocument::query()->where('organization_id', $managerId)->where('type', StockDocument::TRANSFER)->max('sequence') + 1;
         $doc = new StockDocument([
-            'tenant_id' => $request->tenant_id,
+            'tenant_id' => $req->tenant_id,
             'organization_id' => $managerId,
             'type' => StockDocument::TRANSFER,
             'status' => StockDocument::POSTED,
@@ -383,12 +384,12 @@ final class StockService
             'warehouse_id' => $sources[0],
             'target_organization_id' => $stationOrganizationId,
             'target_warehouse_id' => $target->id,
-            'repair_request_id' => $request->id,
-            'vehicle_id' => $request->vehicle_id,
-            'comment' => 'ЗЧ от УК по ' . $request->number,
-            'created_by' => $user->id,
+            'repair_request_id' => $req->id,
+            'vehicle_id' => $req->vehicle_id,
+            'comment' => 'ЗЧ от УК по ' . $req->number,
+            'created_by' => $userDto->userId,
             'posted_at' => $now,
-            'posted_by' => $user->id,
+            'posted_by' => $userDto->userId,
         ]);
         $doc->sequence = $sequence;
         $doc->number = StockDocument::prefix(StockDocument::TRANSFER) . str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
@@ -397,7 +398,7 @@ final class StockService
         $line = 0;
         $firstSource = null;
         $markup = app(WarehouseService::class);
-        foreach ($request->parts()->orderBy('id')->get() as $part) {
+        foreach ($req->parts()->orderBy('id')->get() as $part) {
             $need = round((float) $part->quantity - (float) $part->returned_quantity, 3);
             if ($need <= 0 || $part->catalog_part_id === null) {
                 continue;
@@ -431,8 +432,30 @@ final class StockService
                     'purchase_price' => $cost,
                     'sale_price' => $price,
                 ]);
-                $this->move((int) $request->tenant_id, $managerId, (int) $row->warehouse_id, (int) $part->catalog_part_id, -$take, $cost, $now, StockMovement::SOURCE_TRANSFER, $doc->id, $item->id);
-                $this->move((int) $request->tenant_id, (int) $stationOrganizationId, $target->id, (int) $part->catalog_part_id, $take, $price, $now, StockMovement::SOURCE_TRANSFER, $doc->id, $item->id);
+                $this->move(
+                    (int) $req->tenant_id,
+                    $managerId,
+                    (int) $row->warehouse_id,
+                    (int) $part->catalog_part_id,
+                    -$take,
+                    $cost,
+                    $now,
+                    StockMovement::SOURCE_TRANSFER,
+                    $doc->id,
+                    $item->id
+                );
+                $this->move(
+                    (int) $req->tenant_id,
+                    (int) $stationOrganizationId,
+                    $target->id,
+                    (int) $part->catalog_part_id,
+                    $take,
+                    $price,
+                    $now,
+                    StockMovement::SOURCE_TRANSFER,
+                    $doc->id,
+                    $item->id
+                );
                 $firstSource ??= (int) $row->warehouse_id;
                 $need = round($need - $take, 3);
             }
@@ -452,7 +475,7 @@ final class StockService
             $doc->warehouse_id = $firstSource;
             $doc->save();
         }
-        $request->parts_transfer_document_id = $doc->id;
+        $req->parts_transfer_document_id = $doc->id;
 
         return $doc;
     }

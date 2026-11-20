@@ -12,7 +12,6 @@ use App\Enums\UserRole;
 use App\Exceptions\ApiException;
 use App\Models\Organization;
 use App\Models\OrganizationPerson;
-use App\Models\User;
 use App\Models\VehicleContact;
 use App\Support\DomainInput as Input;
 use App\Support\RussianPhone;
@@ -29,14 +28,14 @@ final class OrganizationPersonService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function records(User $user): array
+    public function records(UserDto $userDto): array
     {
-        return OrganizationPerson::forUser($user)
+        return OrganizationPerson::forUser($userDto)
             ->with('organization')
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->get()
-            ->map(fn (OrganizationPerson $person): array => $this->present($person, $user))
+            ->map(fn (OrganizationPerson $person): array => $this->present($person, $userDto))
             ->all();
     }
 
@@ -45,15 +44,14 @@ final class OrganizationPersonService
      *
      * @return array<string, mixed>
      */
-    public function create(User $user, array $payload): array
+    public function create(UserDto $userDto, array $payload): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->assertEditor($user);
+        $this->assertEditor($userDto);
 
-        $payload = $this->validatePayload($user, $payload, true);
+        $payload = $this->validatePayload($userDto, $payload, true);
 
-        return DB::transaction(function () use ($user, $dto, $payload): array {
-            $organization = $this->organizationForPayload($user, $payload);
+        return DB::transaction(function () use ($userDto, $payload): array {
+            $organization = $this->organizationForPayload($userDto, $payload);
 
             $existing = OrganizationPerson::query()
                 ->where('organization_id', $organization->id)
@@ -79,7 +77,7 @@ final class OrganizationPersonService
                 ])->save();
 
                 $this->audit->record(
-                    $dto,
+                    $userDto,
                     $this->catalogKind($existing->kind),
                     $existing,
                     'restore',
@@ -87,11 +85,11 @@ final class OrganizationPersonService
                     $existing->attributesToArray(),
                 );
 
-                return $this->present($existing->refresh(), $user);
+                return $this->present($existing->refresh(), $userDto);
             }
 
             $person = OrganizationPerson::query()->create([
-                'tenant_id'       => $dto->tenantId,
+                'tenant_id'       => $userDto->tenantId,
                 'organization_id' => $organization->id,
                 'kind'            => $payload['kind'],
                 'last_name'       => trim($payload['lastName']),
@@ -102,7 +100,7 @@ final class OrganizationPersonService
             ]);
 
             $this->audit->record(
-                $dto,
+                $userDto,
                 $this->catalogKind($person->kind),
                 $person,
                 'create',
@@ -110,7 +108,7 @@ final class OrganizationPersonService
                 $person->attributesToArray(),
             );
 
-            return $this->present($person->refresh(), $user);
+            return $this->present($person->refresh(), $userDto);
         });
     }
 
@@ -119,19 +117,18 @@ final class OrganizationPersonService
      *
      * @return array<string, mixed>
      */
-    public function update(User $user, string $id, array $payload): array
+    public function update(UserDto $userDto, string $id, array $payload): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->assertEditor($user);
-        $person = $this->resolve($user, $id);
+        $this->assertEditor($userDto);
+        $person = $this->resolve($userDto, $id);
         $this->documentLocks->assertAvailable(
-            $dto,
+            $userDto,
             'catalog_record',
             $this->catalogKind($person->kind)->value . ':' . $person->uuid,
         );
-        $payload = $this->validatePayload($user, $payload, false);
+        $payload = $this->validatePayload($userDto, $payload, false);
 
-        return DB::transaction(function () use ($user, $dto, $person, $payload): array {
+        return DB::transaction(function () use ($userDto, $person, $payload): array {
             $person = OrganizationPerson::query()
                 ->whereKey($person->id)
                 ->lockForUpdate()
@@ -178,7 +175,7 @@ final class OrganizationPersonService
                 ]);
 
             $this->audit->record(
-                $dto,
+                $userDto,
                 $this->catalogKind($person->kind),
                 $person,
                 'update',
@@ -186,25 +183,24 @@ final class OrganizationPersonService
                 $person->attributesToArray(),
             );
 
-            return $this->present($person->refresh(), $user);
+            return $this->present($person->refresh(), $userDto);
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function delete(User $user, string $id): array
+    public function delete(UserDto $userDto, string $id): array
     {
-        $dto = UserDto::fromUserModel($user);
-        $this->assertEditor($user);
-        $person = $this->resolve($user, $id);
+        $this->assertEditor($userDto);
+        $person = $this->resolve($userDto, $id);
         $this->documentLocks->assertAvailable(
-            $dto,
+            $userDto,
             'catalog_record',
             $this->catalogKind($person->kind)->value . ':' . $person->uuid,
         );
 
-        return DB::transaction(function () use ($dto, $person): array {
+        return DB::transaction(function () use ($userDto, $person): array {
             $person = OrganizationPerson::query()
                 ->whereKey($person->id)
                 ->lockForUpdate()
@@ -218,7 +214,7 @@ final class OrganizationPersonService
                 ->update(['active' => false, 'updated_at' => now()]);
 
             $this->audit->record(
-                $dto,
+                $userDto,
                 $this->catalogKind($person->kind),
                 $person,
                 'delete',
@@ -236,7 +232,7 @@ final class OrganizationPersonService
     /**
      * @return array<string, mixed>
      */
-    public function present(OrganizationPerson $person, User $user): array
+    public function present(OrganizationPerson $person, UserDto $userDto): array
     {
         $person->loadMissing('organization');
 
@@ -257,12 +253,12 @@ final class OrganizationPersonService
             'active'         => $person->active,
             'permissions'    => [
                 'canEdit' => in_array(
-                    $user->role,
+                    $userDto->role,
                     [UserRole::Customer, UserRole::Manager],
                     true,
                 ),
                 'canDelete' => in_array(
-                    $user->role,
+                    $userDto->role,
                     [UserRole::Customer, UserRole::Manager],
                     true,
                 ),
@@ -270,16 +266,16 @@ final class OrganizationPersonService
         ];
     }
 
-    private function assertEditor(User $user): void
+    private function assertEditor(UserDto $userDto): void
     {
-        if (!in_array($user->role, [UserRole::Customer, UserRole::Manager], true)) {
+        if (!in_array($userDto->role, [UserRole::Customer, UserRole::Manager], true)) {
             throw new ApiException(403, 'FORBIDDEN', 'Справочник лиц недоступен');
         }
     }
 
-    private function resolve(User $user, string $id): OrganizationPerson
+    private function resolve(UserDto $userDto, string $id): OrganizationPerson
     {
-        return OrganizationPerson::forUser($user)
+        return OrganizationPerson::forUser($userDto)
             ->where('uuid', $id)
             ->firstOrFail();
     }
@@ -289,7 +285,7 @@ final class OrganizationPersonService
      *
      * @return array<string, mixed>
      */
-    private function validatePayload(User $user, array $payload, bool $create): array
+    private function validatePayload(UserDto $userDto, array $payload, bool $create): array
     {
         if (isset($payload['phone'])) {
             $phone = RussianPhone::normalize((string) $payload['phone']);
@@ -304,7 +300,7 @@ final class OrganizationPersonService
             $payload['phone'] = $phone;
         }
 
-        if ($user->role === UserRole::Customer) {
+        if ($userDto->role === UserRole::Customer) {
             unset($payload['organizationId']);
         }
 
@@ -314,7 +310,7 @@ final class OrganizationPersonService
                 'string',
                 'in:' . implode(',', PersonKind::values()),
             ],
-            'organizationId' => $user->role === UserRole::Manager
+            'organizationId' => $userDto->role === UserRole::Manager
                 ? [$create ? 'required' : 'sometimes', 'uuid']
                 : ['sometimes'],
             'lastName'       => [$create ? 'required' : 'sometimes', 'required', 'string', 'max:100'],
@@ -327,14 +323,18 @@ final class OrganizationPersonService
     /**
      * @param array<string, mixed> $payload
      */
-    private function organizationForPayload(User $user, array $payload): Organization
+    private function organizationForPayload(UserDto $userDto, array $payload): Organization
     {
-        if ($user->role === UserRole::Customer) {
-            return $user->organization;
+        if ($userDto->role === UserRole::Customer) {
+            return Organization::query()
+                ->where('id', $userDto->organizationId)
+                ->where('kind', OrganizationKind::Customer->value)
+                // ->where('uuid', $payload['organizationId'] ?? '')
+                ->firstOrFail();
         }
 
         return Organization::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $userDto->tenantId)
             ->where('kind', OrganizationKind::Customer->value)
             ->where('uuid', $payload['organizationId'] ?? '')
             ->firstOrFail();
@@ -358,10 +358,8 @@ final class OrganizationPersonService
         }
     }
 
-    private function assertVehiclePhoneAvailable(
-        OrganizationPerson $person,
-        string $phone,
-    ): void {
+    private function assertVehiclePhoneAvailable(OrganizationPerson $person, string $phone): void
+    {
         $vehicleIds = VehicleContact::query()
             ->where('organization_person_id', $person->id)
             ->pluck('vehicle_id');

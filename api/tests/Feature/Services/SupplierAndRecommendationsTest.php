@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Services;
 
 use App\DTO\UpdateRepairRequestDto;
+use App\DTO\UserDto;
 use App\Enums\RepairStage;
 use App\Exceptions\ApiException;
 use App\Models\CatalogPart;
@@ -40,9 +41,12 @@ final class SupplierAndRecommendationsTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private UserDto $managerDto;
     private User $manager;
+    private UserDto $customerDto;
     private User $customer;
-    private User $station;
+    private UserDto $stationDto;
+    private User $stationUser;
     private Vehicle $vehicle;
     private RepairRequest $request;
     private Supplier $supplier;
@@ -53,28 +57,54 @@ final class SupplierAndRecommendationsTest extends TestCase
         parent::setUp();
         $tenant = Tenant::query()->create(['name' => 'Recommendations test']);
 
-        $roles = ['manager', 'customer', 'station'];
-        foreach ($roles as $role) {
-            $orgData = [
-                'tenant_id' => $tenant->id,
-                'kind' => $role,
-                'name' => $role,
-            ];
-            $org = Organization::query()->create($orgData);
-            $userData = [
-                'organization_id' => $org->id,
-                'display_name' => 'Иван ' . $role,
-                'login' => $role . Str::random(8),
-                'password' => bcrypt('test'),
-                'role' => $role,
-                'active' => true,
-            ];
-            $this->{$role} = User::query()->create($userData);
-        }
-
-        $vehicleData = [
+        $orgManager = Organization::query()->create([
             'tenant_id' => $tenant->id,
-            'organization_id' => $this->customer->organization_id,
+            'kind' => 'manager',
+            'name' => 'manager',
+        ]);
+        $this->manager = User::query()->create([
+            'organization_id' => $orgManager->id,
+            'display_name' => 'Иван manager',
+            'login' => 'manager' . Str::random(8),
+            'password' => bcrypt('test'),
+            'role' => 'manager',
+            'active' => true,
+        ]);
+        $this->managerDto = UserDto::fromUserModel($this->manager);
+
+        $orgCustomer = Organization::query()->create([
+            'tenant_id' => $tenant->id,
+            'kind' => 'customer',
+            'name' => 'customer',
+        ]);
+        $this->customer = User::query()->create([
+            'organization_id' => $orgCustomer->id,
+            'display_name' => 'Иван customer',
+            'login' => 'customer' . Str::random(8),
+            'password' => bcrypt('test'),
+            'role' => 'customer',
+            'active' => true,
+        ]);
+        $this->customerDto = UserDto::fromUserModel($this->customer);
+
+        $orgStation = Organization::query()->create([
+            'tenant_id' => $tenant->id,
+            'kind' => 'station',
+            'name' => 'station',
+        ]);
+        $this->stationUser = User::query()->create([
+            'organization_id' => $orgStation->id,
+            'display_name' => 'Иван station',
+            'login' => 'station' . Str::random(8),
+            'password' => bcrypt('test'),
+            'role' => 'station',
+            'active' => true,
+        ]);
+        $this->stationDto = UserDto::fromUserModel($this->stationUser);
+
+        $this->vehicle = Vehicle::query()->create([
+            'tenant_id' => $tenant->id,
+            'organization_id' => $this->customerDto->organizationId,
             'name' => 'Test Car',
             'make' => 'Test',
             'model' => 'Car',
@@ -82,21 +112,19 @@ final class SupplierAndRecommendationsTest extends TestCase
             'plate' => 'A111AA78',
             'plate_normalized' => 'A111AA78',
             'labor_hour_rate' => 1000,
-        ];
-        $this->vehicle = Vehicle::query()->create($vehicleData);
+        ]);
 
-        $stationData = [
+        $station = Station::query()->create([
             'tenant_id' => $tenant->id,
-            'organization_id' => $this->station->organization_id,
+            'organization_id' => $this->stationDto->organizationId,
             'name' => 'Station',
-        ];
-        $station = Station::query()->create($stationData);
+        ]);
 
-        $requestData = [
+        $this->request = RepairRequest::query()->create([
             'public_id' => (string)Str::uuid(),
             'tenant_id' => $tenant->id,
-            'customer_organization_id' => $this->customer->organization_id,
-            'created_by' => $this->customer->id,
+            'customer_organization_id' => $this->customerDto->organizationId,
+            'created_by' => $this->customerDto->userId,
             'vehicle_id' => $this->vehicle->id,
             'assigned_station_id' => $station->id,
             'stage' => RepairStage::ManagerRouting,
@@ -107,38 +135,34 @@ final class SupplierAndRecommendationsTest extends TestCase
             ],
             'works' => [],
             'history' => [],
-        ];
-        $this->request = RepairRequest::query()->create($requestData);
+        ]);
 
-        $requestedPeriodData = [
+        RequestStatusPeriod::query()->create([
             'repair_request_id' => $this->request->id,
             'stage' => 1,
             'entered_at' => now(),
-            'actor_id' => $this->manager->id,
-        ];
-        RequestStatusPeriod::query()->create($requestedPeriodData);
+            'actor_id' => $this->managerDto->userId,
+        ]);
 
-        $supplierData = [
+        $this->supplier = Supplier::query()->create([
             'tenant_id' => $tenant->id,
             'name' => 'Supplier',
             'active' => true,
-        ];
-        $this->supplier = Supplier::query()->create($supplierData);
+        ]);
 
-        $catalogData = [
+        $this->catalog = CatalogPart::query()->create([
             'tenant_id' => $tenant->id,
             'name' => 'Filter',
             'article' => 'F-1',
             'unit' => 'шт.',
             'manufacturer' => 'Test',
             'active' => true,
-        ];
-        $this->catalog = CatalogPart::query()->create($catalogData);
+        ]);
     }
 
     private function work(): RequestWork
     {
-        $data = [
+        return RequestWork::query()->create([
             'repair_request_id' => $this->request->id,
             'name' => 'Двигатель - замена масла',
             'quantity' => 1,
@@ -147,14 +171,12 @@ final class SupplierAndRecommendationsTest extends TestCase
             'norm_hours' => 1.5,
             'line_amount' => 1500,
             'is_maintenance' => true,
-        ];
-
-        return RequestWork::query()->create($data);
+        ]);
     }
 
     private function part(): RequestPart
     {
-        $data = [
+        return RequestPart::query()->create([
             'repair_request_id' => $this->request->id,
             'catalog_part_id' => $this->catalog->id,
             'name' => 'Filter',
@@ -164,8 +186,7 @@ final class SupplierAndRecommendationsTest extends TestCase
             'quantity' => 2,
             'price' => 250,
             'status' => 'proposed',
-        ];
-        return RequestPart::query()->create($data);
+        ]);
     }
 
     private function partPayload(): array
@@ -226,7 +247,7 @@ final class SupplierAndRecommendationsTest extends TestCase
         $this->assertSame('044525225', $supplier->requisites['bik']);
         $this->assertCount(1, $supplier->contacts);
 
-        $reference = app(CatalogService::class)->reference($this->station);
+        $reference = app(CatalogService::class)->reference($this->stationDto);
 
         $this->assertContains($supplier->uuid, array_column($reference['suppliers'], 'id'));
     }
@@ -234,14 +255,14 @@ final class SupplierAndRecommendationsTest extends TestCase
     public function test_station_creates_individual_supplier_and_can_edit_own_supplier(): void
     {
         $service = app(CatalogService::class);
-        $supplier = $service->create($this->station, 'suppliers', $this->supplierPayload(true));
+        $supplier = $service->create($this->stationDto, 'suppliers', $this->supplierPayload(true));
 
         $this->assertTrue($supplier['permissions']['canEdit']);
 
-        $saved = $service->update($this->station, $supplier['id'], ['name' => 'ИП Иванов Иван']);
+        $saved = $service->update($this->stationDto, $supplier['id'], ['name' => 'ИП Иванов Иван']);
 
         $this->assertSame('ИП Иванов Иван', $saved['name']);
-        $this->assertContains($supplier['id'], array_column($service->records($this->station), 'id'));
+        $this->assertContains($supplier['id'], array_column($service->records($this->stationDto), 'id'));
     }
 
     public function test_individual_supplier_rejects_company_inn_and_bank_account_format(): void
@@ -250,7 +271,7 @@ final class SupplierAndRecommendationsTest extends TestCase
         $payload['taxId'] = '7707083893';
         $payload['settlementAccount'] = '123';
 
-        $this->actingAs($this->station)
+        $this->actingAs($this->stationUser)
             ->postJson('/api/catalogs/suppliers', ['record' => $payload])
             ->assertUnprocessable();
         $this->assertSame(0, Supplier::query()->where('legal_form', 'ip')->count());
@@ -284,18 +305,18 @@ final class SupplierAndRecommendationsTest extends TestCase
         ];
 
         $service = app(CatalogService::class);
-        $part = $service->create($this->station, 'parts', $payload);
+        $part = $service->create($this->stationDto, 'parts', $payload);
 
-        $this->assertSame($this->station->organization->name, $part['createdByOrganization']);
+        $this->assertSame($this->stationDto->organizationName, $part['createdByOrganization']);
         $this->assertTrue($part['permissions']['canEdit']);
 
-        $updated = $service->update($this->manager, $part['id'], ['name' => 'Фильтр 2']);
+        $updated = $service->update($this->managerDto, $part['id'], ['name' => 'Фильтр 2']);
 
         $this->assertSame('Фильтр 2', $updated['name']);
         $this->assertArrayNotHasKey('salePrice', $updated);
         $this->assertArrayNotHasKey('supplierId', $updated);
         $this->assertSame($part['createdByOrganization'], $updated['createdByOrganization']);
-        $this->assertContains($part['id'], array_column($service->reference($this->station)['parts'], 'id'));
+        $this->assertContains($part['id'], array_column($service->reference($this->stationDto)['parts'], 'id'));
         $this->actingAs($this->manager)
             ->patchJson('/api/catalogs/' . $part['id'], ['patch' => ['createdByOrganization' => 'Подмена']])
             ->assertUnprocessable();
@@ -303,16 +324,23 @@ final class SupplierAndRecommendationsTest extends TestCase
 
     public function test_customer_document_and_recommendations_hide_supplier_and_purchase_price(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $part = $this->part();
         $part->update(['purchase_price' => 120.0]);
-        $shown = app(ApiPresenter::class)->document($this->request, $this->customer);
+        $shown = app(ApiPresenter::class)->document($this->request, $this->customerDto);
 
         $this->assertArrayNotHasKey('supplierId', $shown['parts'][0]);
         $this->assertArrayNotHasKey('supplierName', $shown['parts'][0]);
         $this->assertArrayNotHasKey('purchasePrice', $shown['parts'][0]);
 
-        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [], 'partIds' => [$part->uuid]])['recommendation'];
-        $rows = app(RecommendationService::class)->forVehicle($this->customer, $this->vehicle->uuid);
+        $doc = app(RecommendationService::class)->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [], 'partIds' => [$part->uuid]]
+        )['recommendation'];
+        $customerDto = UserDto::fromUserModel($this->customer);
+        $rows = app(RecommendationService::class)->forVehicle($customerDto, $this->vehicle->uuid);
         $this->assertSame($this->vehicle->plate, $rows[0]['plate']);
         $this->assertArrayNotHasKey('supplierId', $rows[0]['items'][0]['position']);
         $this->assertArrayNotHasKey('purchasePrice', $rows[0]['items'][0]['position']);
@@ -321,8 +349,14 @@ final class SupplierAndRecommendationsTest extends TestCase
 
     public function test_recommendations_list_without_vehicle_is_limited_to_customer_organization(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $part = $this->part();
-        $doc = app(RecommendationService::class)->defer($this->manager, $this->request->uuid, 0, ['workIds' => [], 'partIds' => [$part->uuid]])['recommendation'];
+        $doc = app(RecommendationService::class)->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [], 'partIds' => [$part->uuid]]
+        )['recommendation'];
 
         $this->actingAs($this->customer)->getJson('/api/recommendations')
             ->assertOk()
@@ -334,33 +368,58 @@ final class SupplierAndRecommendationsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('recommendations.0.id', $doc['id']);
 
-        $otherOrg = Organization::query()->create(['tenant_id' => $this->customer->tenantId(), 'kind' => 'customer', 'name' => 'Другой заказчик']);
-        $other = User::query()->create(['organization_id' => $otherOrg->id, 'login' => 'other' . Str::random(8), 'display_name' => 'Другой', 'password' => bcrypt('test'), 'role' => 'customer', 'active' => true]);
-        $this->assertSame([], app(RecommendationService::class)->all($other));
-        $this->actingAs($other)->getJson('/api/recommendations?vehicleId=not-a-uuid')->assertUnprocessable();
+        $otherOrg = Organization::query()->create([
+            'tenant_id' => $this->customer->tenantId(),
+            'kind' => 'customer',
+            'name' => 'Другой заказчик'
+        ]);
+        $other = User::query()->create([
+            'organization_id' => $otherOrg->id,
+            'login' => 'other' . Str::random(8),
+            'display_name' => 'Другой',
+            'password' => bcrypt('test'),
+            'role' => 'customer',
+            'active' => true
+        ]);
+        $otherDto = UserDto::fromUserModel($other);
+        $this->assertSame([], app(RecommendationService::class)->all($otherDto));
+        $this->actingAs($other)
+            ->getJson('/api/recommendations?vehicleId=not-a-uuid')
+            ->assertUnprocessable();
     }
 
     public function test_estimate_visibility_survives_return_from_customer_to_manager(): void
     {
         $presenter = app(ApiPresenter::class);
-        $this->assertFalse($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
+        $this->assertFalse($presenter->document($this->request, $this->customerDto)['permissions']['canViewRepairEstimate']);
         $this->request->update(['stage' => RepairStage::CustomerApproval]);
-        $this->assertTrue($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
+        $this->assertTrue($presenter->document($this->request, $this->customerDto)['permissions']['canViewRepairEstimate']);
         RequestStatusPeriod::query()->where('repair_request_id', $this->request->id)->update(['exited_at' => now()]);
         RequestStatusPeriod::query()->create(['repair_request_id' => $this->request->id, 'stage' => 3, 'entered_at' => now(), 'actor_id' => $this->customer->id]);
         $this->request->update(['stage' => RepairStage::ManagerRouting]);
-        $this->assertTrue($presenter->document($this->request, $this->customer)['permissions']['canViewRepairEstimate']);
+        $this->assertTrue($presenter->document($this->request, $this->customerDto)['permissions']['canViewRepairEstimate']);
     }
 
     /** Два переноса из ЗР по одному ТС попадают в один документ рекомендаций. */
     private function deferTwice(): array
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $service = app(RecommendationService::class);
         $work = $this->work();
         $part = $this->part();
         $part->update(['manufacturer_snapshot' => 'Original', 'purchase_price' => 120]);
-        $a = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [$work->uuid], 'partIds' => []])['recommendation'];
-        $b = $service->defer($this->manager, $this->request->uuid, 1, ['workIds' => [], 'partIds' => [$part->uuid]])['recommendation'];
+        $a = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [$work->uuid], 'partIds' => []]
+        )['recommendation'];
+        $b = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            1,
+            ['workIds' => [], 'partIds' => [$part->uuid]]
+        )['recommendation'];
         return [$a, $b];
     }
 
@@ -438,12 +497,34 @@ final class SupplierAndRecommendationsTest extends TestCase
 
     public function test_legacy_part_snapshot_with_extra_fields_restores_without_sql_error(): void
     {
+        $managerDto = UserDto::fromUserModel($this->manager);
         $part = $this->part();
         $service = app(RecommendationService::class);
-        $doc = $service->defer($this->manager, $this->request->uuid, 0, ['workIds' => [], 'partIds' => [$part->uuid]])['recommendation'];
-        $item = RecommendationItem::query()->where('uuid', $doc['items'][0]['id'])->firstOrFail();
-        $item->update(['snapshot' => [...$item->snapshot, '_clientId' => 'old-ui-key', 'manufacturer' => 'Display only', 'supplierName' => 'Display only']]);
-        $restored = $service->restore($this->manager, $doc['id'], 0, [$item->uuid], $this->request->uuid, 1);
+        $doc = $service->defer(
+            $managerDto,
+            $this->request->uuid,
+            0,
+            ['workIds' => [], 'partIds' => [$part->uuid]]
+        )['recommendation'];
+        $item = RecommendationItem::query()
+            ->where('uuid', $doc['items'][0]['id'])
+            ->firstOrFail();
+        $item->update([
+            'snapshot' => [
+                ...$item->snapshot,
+                '_clientId' => 'old-ui-key',
+                'manufacturer' => 'Display only',
+                'supplierName' => 'Display only'
+            ]
+        ]);
+        $restored = $service->restore(
+            $this->manager,
+            $doc['id'],
+            0,
+            [$item->uuid],
+            $this->request->uuid,
+            1
+        );
         $this->assertSame(250.0, $restored['request']['parts'][0]['price']);
         $this->assertSame(2, $restored['request']['revision']);
     }
@@ -462,7 +543,7 @@ final class SupplierAndRecommendationsTest extends TestCase
         $service->update($this->manager, $dto);
 
         $this->catalog->update(['manufacturer' => 'Changed']);
-        $shown = app(ApiPresenter::class)->document($this->request->fresh(), $this->manager);
+        $shown = app(ApiPresenter::class)->document($this->request->fresh(), $this->managerDto);
 
         $this->assertSame('Original', $shown['parts'][0]['manufacturer']);
         $this->assertNull($shown['parts'][0]['purchasePrice']);
@@ -484,8 +565,8 @@ final class SupplierAndRecommendationsTest extends TestCase
     }
     public function test_station_cannot_modify_supplier_owned_by_management(): void
     {
-        $supplier = app(CatalogService::class)->create($this->manager, 'suppliers', $this->supplierPayload());
-        $this->actingAs($this->station)->patchJson('/api/catalogs/' . $supplier['id'], ['patch' => ['name' => 'Подмена']])->assertForbidden();
+        $supplier = app(CatalogService::class)->create($this->managerDto, 'suppliers', $this->supplierPayload());
+        $this->actingAs($this->stationUser)->patchJson('/api/catalogs/' . $supplier['id'], ['patch' => ['name' => 'Подмена']])->assertForbidden();
         $this->assertSame('ООО Поставщик', Supplier::query()->where('uuid', $supplier['id'])->value('name'));
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\DTO\UserDto;
 use App\Enums\CatalogKind;
 use App\Enums\OrganizationKind;
 use App\Enums\PersonKind;
@@ -12,6 +13,7 @@ use App\Exceptions\ApiException;
 use App\Models\CatalogPart;
 use App\Models\Organization;
 use App\Models\OrganizationPerson;
+use App\Models\PartManufacturer;
 use App\Models\TimeNormApplicability;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -90,7 +92,8 @@ final class CatalogExcelImportService
      */
     public function import(User $user, string $kind, string $path): array
     {
-        $this->assertManager($user);
+        $userDto = UserDto::fromUserModel($user);
+        $this->assertManager($userDto);
         $catalogKind = CatalogKind::tryFrom($kind);
 
         if ($catalogKind === null || !CatalogImportSchema::supports($catalogKind->value)) {
@@ -109,7 +112,7 @@ final class CatalogExcelImportService
         }
 
         $conflicts = [];
-        $operations = $this->operations($user, $catalogKind, $parsed['rows'], $conflicts);
+        $operations = $this->operations($userDto, $catalogKind, $parsed['rows'], $conflicts);
 
         if ($conflicts !== []) {
             return $this->result(
@@ -127,8 +130,8 @@ final class CatalogExcelImportService
 
             foreach ($operations as $operation) {
                 try {
-                    $this->assertNotDuplicate($user, $catalogKind, $operation['payload']);
-                    $this->create($user, $catalogKind, $operation['payload']);
+                    $this->assertNotDuplicate($userDto, $catalogKind, $operation['payload']);
+                    $this->create($userDto, $catalogKind, $operation['payload']);
                     $imported++;
                 } catch (ValidationException $exception) {
                     foreach ($exception->errors() as $field => $messages) {
@@ -378,7 +381,7 @@ final class CatalogExcelImportService
      * @return array<int, array<string, mixed>>
      */
     private function operations(
-        User $user,
+        UserDto $userDto,
         CatalogKind $kind,
         array $rows,
         array &$conflicts,
@@ -387,7 +390,7 @@ final class CatalogExcelImportService
 
         foreach ($rows as $row) {
             $before = count($conflicts);
-            $payload = $this->payload($user, $kind, $row, $conflicts);
+            $payload = $this->payload($userDto, $kind, $row, $conflicts);
 
             if (count($conflicts) > $before) {
                 continue;
@@ -458,7 +461,7 @@ final class CatalogExcelImportService
      * @return array<string, mixed>
      */
     private function payload(
-        User $user,
+        UserDto $userDto,
         CatalogKind $kind,
         array $row,
         array &$conflicts,
@@ -466,7 +469,7 @@ final class CatalogExcelImportService
         $values = $row['values'];
 
         return match ($kind) {
-            CatalogKind::Vehicles => $this->vehiclePayload($user, $row, $conflicts),
+            CatalogKind::Vehicles => $this->vehiclePayload($userDto, $row, $conflicts),
             CatalogKind::VehicleModels => [
                 'make'          => $values['make'],
                 'model'         => $values['model'],
@@ -482,21 +485,21 @@ final class CatalogExcelImportService
             ],
             CatalogKind::Drivers,
             CatalogKind::ContactPersons => $this->personPayload(
-                $user,
+                $userDto,
                 $kind,
                 $row,
                 $conflicts,
             ),
-            CatalogKind::WorkTypes => $this->workPayload($user, $row, $conflicts),
+            CatalogKind::WorkTypes => $this->workPayload($userDto, $row, $conflicts),
             CatalogKind::NormApplicabilities => [
                 'name'   => $values['name'],
                 'active' => $this->boolean($row, 'active', true),
             ],
-            CatalogKind::Parts => $this->partPayload($user, $row, $conflicts),
+            CatalogKind::Parts => $this->partPayload($userDto, $row, $conflicts),
             CatalogKind::Customers,
             CatalogKind::Managers => $this->organizationPayload($row),
             CatalogKind::Stations => $this->stationPayload($row, $conflicts),
-            CatalogKind::Users => $this->userPayload($user, $row, $conflicts),
+            CatalogKind::Users => $this->userPayload($userDto, $row, $conflicts),
             default => throw new ApiException(
                 422,
                 'VALIDATION_ERROR',
@@ -506,11 +509,11 @@ final class CatalogExcelImportService
     }
 
     /** @return array<string, mixed> */
-    private function vehiclePayload(User $user, array $row, array &$conflicts): array
+    private function vehiclePayload(UserDto $userDto, array $row, array &$conflicts): array
     {
         $values = $row['values'];
         $organization = $this->organization(
-            $user,
+            $userDto,
             CatalogKind::Vehicles->value,
             $row,
             'organization',
@@ -565,14 +568,14 @@ final class CatalogExcelImportService
 
     /** @return array<string, mixed> */
     private function personPayload(
-        User $user,
+        UserDto $userDto,
         CatalogKind $kind,
         array $row,
         array &$conflicts,
     ): array {
         $values = $row['values'];
         $organization = $this->organization(
-            $user,
+            $userDto,
             $kind->value,
             $row,
             'organization',
@@ -593,14 +596,14 @@ final class CatalogExcelImportService
     }
 
     /** @return array<string, mixed> */
-    private function workPayload(User $user, array $row, array &$conflicts): array
+    private function workPayload(UserDto $userDto, array $row, array &$conflicts): array
     {
         $values = $row['values'];
         $applicabilityName = $values['applicability'] !== ''
             ? $values['applicability']
             : 'Общая';
         $applicability = TimeNormApplicability::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $userDto->tenantId)
             ->where(
                 'normalized_name',
                 VehicleReferenceService::normalizeName($applicabilityName),
@@ -731,7 +734,7 @@ final class CatalogExcelImportService
     }
 
     /** @return array<string, mixed> */
-    private function partPayload(User $user, array $row, array &$conflicts): array
+    private function partPayload(UserDto $userDto, array $row, array &$conflicts): array
     {
         $values = $row['values'];
 
@@ -745,7 +748,12 @@ final class CatalogExcelImportService
             );
         }
 
-        $manufacturer = \App\Models\PartManufacturer::query()->where('tenant_id', $user->tenantId())->where('status', 'approved')->where('active', true)->where('normalized_name', mb_strtolower(trim($values['manufacturer'])))->first();
+        $manufacturer = PartManufacturer::query()
+            ->where('tenant_id', $userDto->tenantId)
+            ->where('status', 'approved')
+            ->where('active', true)
+            ->where('normalized_name', mb_strtolower(trim($values['manufacturer'])))
+            ->first();
         if (!$manufacturer) {
             $this->addRowConflict($conflicts, 'parts', $row, 'manufacturer', 'Производитель не найден в согласованном справочнике');
         }
@@ -760,11 +768,11 @@ final class CatalogExcelImportService
     }
 
     /** @return array<string, mixed> */
-    private function userPayload(User $user, array $row, array &$conflicts): array
+    private function userPayload(UserDto $userDto, array $row, array &$conflicts): array
     {
         $values = $row['values'];
         $organization = $this->organization(
-            $user,
+            $userDto,
             CatalogKind::Users->value,
             $row,
             'organization',
@@ -794,7 +802,7 @@ final class CatalogExcelImportService
     }
 
     private function organization(
-        User $user,
+        UserDto $userDto,
         string $catalog,
         array $row,
         string $field,
@@ -803,7 +811,7 @@ final class CatalogExcelImportService
     ): ?Organization {
         $name = VehicleReferenceService::normalizeName($row['values'][$field]);
         $query = Organization::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $userDto->tenantId)
             ->whereRaw('LOWER(TRIM(name)) = ?', [$name]);
 
         if ($kind !== null) {
@@ -988,11 +996,11 @@ final class CatalogExcelImportService
 
     /** @param array<string, mixed> $payload */
     private function assertNotDuplicate(
-        User $user,
+        UserDto $userDto,
         CatalogKind $kind,
         array $payload,
     ): void {
-        $tenantId = $user->tenantId();
+        $tenantId = $userDto->tenantId;
         $field = match ($kind) {
             CatalogKind::Vehicles => Vehicle::query()
                 ->where('vin', mb_strtoupper((string) $payload['vin']))
@@ -1047,14 +1055,14 @@ final class CatalogExcelImportService
     }
 
     /** @param array<string, mixed> $payload */
-    private function create(User $user, CatalogKind $kind, array $payload): void
+    private function create(UserDto $userDto, CatalogKind $kind, array $payload): void
     {
         match ($kind) {
-            CatalogKind::Vehicles => $this->vehicles->create($user, $payload),
-            CatalogKind::VehicleModels => $this->vehicleReference->create($user, $payload),
+            CatalogKind::Vehicles => $this->vehicles->create($userDto, $payload),
+            CatalogKind::VehicleModels => $this->vehicleReference->create($userDto, $payload),
             CatalogKind::Drivers,
-            CatalogKind::ContactPersons => $this->people->create($user, $payload),
-            default => $this->catalogs->create($user, $kind, $payload),
+            CatalogKind::ContactPersons => $this->people->create($userDto, $payload),
+            default => $this->catalogs->create($userDto, $kind, $payload),
         };
     }
 
@@ -1349,9 +1357,9 @@ final class CatalogExcelImportService
         ];
     }
 
-    private function assertManager(User $user): void
+    private function assertManager(UserDto $userDto): void
     {
-        if ($user->role !== UserRole::Manager) {
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',

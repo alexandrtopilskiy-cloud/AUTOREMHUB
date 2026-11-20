@@ -13,6 +13,7 @@ use App\Enums\Edo\EdoDocumentType;
 use App\Models\Attachment;
 use App\Models\EdoDocument;
 use App\Models\RepairRequest;
+use App\Models\User;
 use App\Services\Edo\Builders\EstimateBuilder;
 use App\Traits\SendsEdoDocuments;
 use Illuminate\Support\Facades\DB;
@@ -28,39 +29,39 @@ final class EdoEstimateService
         private readonly EdoDispatcher $dispatcher,
     ) {}
 
-    public function sendEstimate(RepairRequest $request): EdoDocument
+    public function sendEstimate(RepairRequest $req): EdoDocument
     {
-        return DB::transaction(function () use ($request) {
-            $sender = $request->ukOrganization; // УК
-            $receiver = $request->customerOrganization; // Заказчик
+        return DB::transaction(function () use ($req) {
+            $sender = $req->ukOrganization; // УК
+            $receiver = $req->customerOrganization; // Заказчик
 
             if (!$sender) {
-                throw new \RuntimeException("У заявки {$request->number} не найдена УК (отправитель)");
+                throw new \RuntimeException("У заявки {$req->number} не найдена УК (отправитель)");
             }
             if (!$receiver) {
-                throw new \RuntimeException("У заявки {$request->number} не найден Заказчик (получатель)");
+                throw new \RuntimeException("У заявки {$req->number} не найден Заказчик (получатель)");
             }
 
             // Провайдер для кабинета УК
             $provider = $this->dispatcher->forOrganization($sender);
 
-            $document = $request->edoDocuments()
+            $document = $req->edoDocuments()
                 ->firstOrCreate(
                 ['document_type' => EdoDocumentType::WorkOrder->value],
                 [
-                    'tenant_id'         => $request->tenant_id,
+                    'tenant_id'         => $req->tenant_id,
                     'organization_id'   => $sender->id,
                     'counterparty_id'   => $receiver->id,
-                    'provider'          => $this->dispatcher->providerFor($ukOrg)->value,
-                    'number'            => 'EST-' . $request->number,
+                    'provider'          => $this->dispatcher->providerFor($sender)->value,
+                    'number'            => 'EST-' . $req->number,
                     'document_date'     => now()->toDateString(),
                     'status'            => EdoDocumentStatus::Draft,
                     'source_type'       => RepairRequest::class,
-                    'source_id'         => $request->id,
+                    'source_id'         => $req->id,
                 ]
             );
 
-            $structuredRequest = $this->builder->build($request, $document, $sender, $receiver);
+            $structuredRequest = $this->builder->build($req, $document, $sender, $receiver);
 
             $fileContent = base64_decode($structuredRequest->meta['file_content']);
             $fileDto = new EdoFile(
@@ -77,12 +78,15 @@ final class EdoEstimateService
             );
             $result = $this->dispatchToProvider($provider, $structuredRequest, $fileDto, $signatureDto);
 
+            /** @var User $user */
+            $user = auth();
+
             // 1. Создаем запись в Attachment, чтобы файл появился в карточке заявки
             $attachment = Attachment::create([
                 'uuid'                      => Str::uuid(),
-                'repair_request_id'         => $request->id,
-                'uploaded_by'               => auth()->id() ?? $request->created_by, // Или системный пользователь
-                'request_status_period_id'  => $request->periods()->whereNull('exited_at')->first()?->id,
+                'repair_request_id'         => $req->id,
+                'uploaded_by'               => $user->id() ?? $req->created_by, // Или системный пользователь
+                'request_status_period_id'  => $req->periods()->whereNull('exited_at')->first()?->id,
                 'disk'                      => 'local',
                 'object_key'                => $objectKey,
                 'original_name'             => $structuredRequest->meta['file_name'],

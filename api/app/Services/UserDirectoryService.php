@@ -41,15 +41,15 @@ final class UserDirectoryService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function records(User $actor): array
+    public function records(UserDto $actorDto): array
     {
-        $this->assertManager($actor);
+        $this->assertManager($actorDto);
 
         return User::query()
             ->with('organization')
             ->whereHas(
                 'organization',
-                fn ($query) => $query->where('tenant_id', $actor->tenantId()),
+                fn ($query) => $query->where('tenant_id', $actorDto->tenantId),
             )
             ->orderBy('organization_id')
             ->orderBy('id')
@@ -97,21 +97,20 @@ final class UserDirectoryService
      *
      * @return array<string, mixed>
      */
-    public function create(User $actor, array $payload): array
+    public function create(UserDto $actorDto, array $payload): array
     {
-        $dto = UserDto::fromUserModel($actor);
-        $this->assertManager($actor);
-        $payload = $this->validate($actor, $payload, true);
+        $this->assertManager($actorDto);
+        $payload = $this->validate($actorDto, $payload, true);
 
-        return DB::transaction(function () use ($dto, $payload): array {
-            $organization = $this->organization($dto->tenantId, $payload['organizationId']);
+        return DB::transaction(function () use ($actorDto, $payload): array {
+            $organization = $this->organization($actorDto->tenantId, $payload['organizationId']);
             $user = new User();
 
             $this->fill($user, $organization, $payload, true);
             $user->save();
 
             $this->audit->record(
-                $dto,
+                $actorDto,
                 CatalogKind::Users,
                 $user,
                 'create',
@@ -128,23 +127,22 @@ final class UserDirectoryService
      *
      * @return array<string, mixed>
      */
-    public function update(User $actor, User $user, array $payload): array
+    public function update(UserDto $actorDto, User $user, array $payload): array
     {
-        $dto = UserDto::fromUserModel($actor);
-        $this->assertManager($actor);
+        $this->assertManager($actorDto);
 
-        if ($user->organization->tenant_id !== $actor->tenantId()) {
+        if ($user->organization->tenant_id !== $actorDto->tenantId) {
             abort(404);
         }
 
         $this->documentLocks->assertAvailable(
-            $dto,
+            $actorDto,
             'catalog_record',
             CatalogKind::Users->value . ':' . $user->uuid,
         );
-        $payload = $this->validate($actor, $payload, false, $user);
+        $payload = $this->validate($actorDto, $payload, false, $user);
 
-        return DB::transaction(function () use ($dto, $user, $payload): array {
+        return DB::transaction(function () use ($actorDto, $user, $payload): array {
             $user = User::query()
                 ->with('organization')
                 ->whereKey($user->id)
@@ -152,7 +150,7 @@ final class UserDirectoryService
                 ->firstOrFail();
             $before = $this->auditSnapshot($user);
             $organization = array_key_exists('organizationId', $payload)
-                ? $this->organization($dto->tenantId, $payload['organizationId'])
+                ? $this->organization($actorDto->tenantId, $payload['organizationId'])
                 : $user->organization;
             $passwordChanged = isset($payload['password']);
 
@@ -174,7 +172,7 @@ final class UserDirectoryService
             $before['password_changed'] = false;
 
             $this->audit->record(
-                $dto,
+                $actorDto,
                 CatalogKind::Users,
                 $user,
                 'update',
@@ -192,7 +190,7 @@ final class UserDirectoryService
      * @return array<string, mixed>
      */
     private function validate(
-        User $actor,
+        UserDto $actorDto,
         array $payload,
         bool $create,
         ?User $target = null,
@@ -265,7 +263,7 @@ final class UserDirectoryService
         );
 
         if (isset($validated['organizationId'])) {
-            $this->organization($actor->tenantId(), $validated['organizationId']);
+            $this->organization($actorDto->tenantId, $validated['organizationId']);
         }
 
         return $validated;
@@ -351,9 +349,9 @@ final class UserDirectoryService
         ];
     }
 
-    private function assertManager(User $user): void
+    private function assertManager(UserDto $userDto): void
     {
-        if ($user->role !== UserRole::Manager) {
+        if ($userDto->role !== UserRole::Manager) {
             throw new ApiException(
                 403,
                 'FORBIDDEN',

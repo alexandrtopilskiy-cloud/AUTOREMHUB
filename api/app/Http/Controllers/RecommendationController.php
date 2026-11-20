@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\DTO\UserDto;
+use App\Exceptions\ApiException;
 use App\Services\RecommendationService;
 use App\Support\ApiInput;
 use Illuminate\Http\Request;
@@ -19,46 +21,66 @@ final class RecommendationController
     {
         $data = $request->validate(['vehicleId' => ['nullable', 'uuid']]);
         $vehicleId = $data['vehicleId'] ?? null;
+        $userDto = UserDto::fromUserModel($request->user());
 
         return response()->json(['recommendations' => $vehicleId === null
-            ? $this->service->all($request->user())
-            : $this->service->forVehicle($request->user(), $vehicleId)]);
+            ? $this->service->all($userDto)
+            : $this->service->forVehicle($userDto, $vehicleId)]);
     }
 
     public function defer(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['revision', 'workIds', 'partIds']);
-        return response()->json($this->service->defer($request->user(), $id, ApiInput::revision($request), ['workIds' => $request->json('workIds', []), 'partIds' => $request->json('partIds', [])]));
+        $userDto = UserDto::fromUserModel($request->user());
+
+        return response()->json($this->service->defer(
+            $userDto,
+            $id,
+            ApiInput::revision($request),
+            [
+                'workIds' => $request->json('workIds', []),
+                'partIds' => $request->json('partIds', [])
+            ]
+        ));
     }
 
     public function restoreMany(Request $request): JsonResponse
     {
         ApiInput::only($request, ['documents', 'requestId', 'requestRevision']);
+        $userDto = UserDto::fromUserModel($request->user());
+
         $documents = $request->json('documents');
         if (!is_array($documents) || !array_is_list($documents)) {
-            throw new \App\Exceptions\ApiException(422, 'VALIDATION_ERROR', 'Передайте список documents');
+            throw new ApiException(422, 'VALIDATION_ERROR', 'Передайте список documents');
         }
         foreach ($documents as $document) {
             if (!is_array($document) || !is_int($document['revision'] ?? null) || $document['revision'] < 0) {
-                throw new \App\Exceptions\ApiException(422, 'VALIDATION_ERROR', 'Ревизия рекомендаций должна быть JSON-целым числом');
+                throw new ApiException(422, 'VALIDATION_ERROR', 'Ревизия рекомендаций должна быть JSON-целым числом');
             }
         }
         $requestId = $request->json('requestId');
         $requestRevision = $request->json('requestRevision');
         if ($requestId !== null && (!is_string($requestId) || !is_int($requestRevision) || $requestRevision < 0)) {
-            throw new \App\Exceptions\ApiException(422, 'VALIDATION_ERROR', 'Укажите заявку и её JSON-целую ревизию');
+            throw new ApiException(422, 'VALIDATION_ERROR', 'Укажите заявку и её JSON-целую ревизию');
         }
-        return response()->json($this->service->restoreMany($request->user(), $documents, $requestId, $requestRevision));
+        return response()->json($this->service->restoreMany(
+            $request->user(),
+            $documents,
+            $requestId,
+            $requestRevision
+        ));
     }
 
     public function deleteItems(Request $request, string $id): JsonResponse
     {
         ApiInput::only($request, ['revision', 'itemIds']);
+        $userDto = UserDto::fromUserModel($request->user());
+
         $itemIds = $request->json('itemIds');
         if (!is_array($itemIds)) {
             throw new \App\Exceptions\ApiException(422, 'VALIDATION_ERROR', 'Передайте список itemIds');
         }
-        return response()->json($this->service->deleteItems($request->user(), $id, ApiInput::revision($request), $itemIds));
+        return response()->json($this->service->deleteItems($userDto, $id, ApiInput::revision($request), $itemIds));
     }
 
     public function restore(Request $request, string $id): JsonResponse
@@ -68,6 +90,13 @@ final class RecommendationController
             \App\Support\DomainInput::fail('requestRevision должен быть JSON-числом', 'requestRevision');
         }
         $data = $request->validate(['itemIds' => ['required', 'array'], 'requestId' => ['nullable', 'uuid'], 'requestRevision' => ['nullable', 'integer', 'min:0']]);
-        return response()->json($this->service->restore($request->user(), $id, ApiInput::revision($request), $data['itemIds'], $data['requestId'] ?? null, $data['requestRevision'] ?? null));
+        return response()->json($this->service->restore(
+            $request->user(),
+            $id,
+            ApiInput::revision($request),
+            $data['itemIds'],
+            $data['requestId'] ?? null,
+            $data['requestRevision'] ?? null
+        ));
     }
 }

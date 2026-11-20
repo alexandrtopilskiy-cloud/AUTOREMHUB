@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\DTO\UserDto;
 use App\Enums\PersonKind;
 use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Builder;
@@ -56,17 +57,17 @@ final class OrganizationPerson extends Entity
         ]));
     }
 
-    public static function forUser(User $user): Builder
+    public static function forUser(UserDto $userDto): Builder
     {
         $query = self::query()
-            ->where('tenant_id', $user->tenantId())
+            ->where('tenant_id', $userDto->tenantId)
             ->where('active', true);
 
-        if ($user->role === UserRole::Customer) {
-            $query->where('organization_id', $user->organization_id);
+        if ($userDto->role === UserRole::Customer) {
+            $query->where('organization_id', $userDto->organizationId);
         }
 
-        if ($user->role === UserRole::Station) {
+        if ($userDto->role === UserRole::Station) {
             $query->whereRaw('1 = 0');
         }
 
